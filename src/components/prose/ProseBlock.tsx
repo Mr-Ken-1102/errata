@@ -7,6 +7,7 @@ import { ChevronRail } from './ChevronRail'
 import { ProseImageHeader } from './ProseImageHeader'
 import { resolveHeaderImage } from '@/lib/fragment-visuals'
 import { GenerationThoughts } from './GenerationThoughts'
+import { ProseInlineEditor } from './ProseInlineEditor'
 import { type ThoughtStep } from './InlineGenerationInput'
 import { buildAnnotationHighlighter, formatDialogue, composeTextTransforms, stripEmphasisInDialogue, type Annotation } from '@/lib/character-mentions'
 import { RefreshCw, Undo2, PenLine, Bug, Trash2, GitBranch, MessageSquare, ChevronLeft, ChevronRight, Info, BookOpen, Volume2, Square } from 'lucide-react'
@@ -138,6 +139,7 @@ export const ProseBlock = memo(function ProseBlock({
   const [ttsSettings] = useTtsSettings()
   const isReadingThis = useIsReadingFragment(fragment.id)
   const [editingPrompt, setEditingPrompt] = useState(false)
+  const [editingContent, setEditingContent] = useState(false)
   const [clickY, setClickY] = useState(0)
   const blockRef = useRef<HTMLDivElement>(null)
   const actionPanelRef = useRef<HTMLDivElement>(null)
@@ -164,6 +166,21 @@ export const ProseBlock = memo(function ProseBlock({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showActions, actionMode, editingPrompt])
+
+  // Inline passage edit — double-click the prose to open, Ctrl+Enter to save
+  const saveContentMutation = useMutation({
+    mutationFn: (content: string) =>
+      api.fragments.update(storyId, fragment.id, {
+        name: fragment.name,
+        description: fragment.description,
+        content,
+      }),
+    onSuccess: () => {
+      setEditingContent(false)
+      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
+    },
+  })
 
   const revertMutation = useMutation({
     mutationFn: () => api.fragments.revert(storyId, fragment.id),
@@ -547,6 +564,14 @@ export const ProseBlock = memo(function ProseBlock({
         </>
       )}
 
+      {editingContent ? (
+        <ProseInlineEditor
+          content={fragment.content}
+          saving={saveContentMutation.isPending}
+          onSave={(content) => saveContentMutation.mutate(content)}
+          onCancel={() => { if (!saveContentMutation.isPending) setEditingContent(false) }}
+        />
+      ) : (
       <div
         role="button"
         tabIndex={0}
@@ -557,6 +582,12 @@ export const ProseBlock = memo(function ProseBlock({
             setClickY(e.clientY - blockRect.top)
           }
           setShowActions(v => !v)
+        }}
+        onDoubleClick={() => {
+          if (isStreamingAction) return
+          setShowActions(false)
+          setActionMode(null)
+          setEditingContent(true)
         }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { setShowActions(false); return }
@@ -589,9 +620,10 @@ export const ProseBlock = memo(function ProseBlock({
         />
 
       </div>
+      )}
 
       {/* Action toolbar — compact pill near click point */}
-      {(showActions || actionMode) && !isStreamingAction && (
+      {(showActions || actionMode) && !isStreamingAction && !editingContent && (
         <div
           ref={actionPanelRef}
           className="absolute left-0 right-0 z-10 flex justify-center animate-in fade-in zoom-in-95 duration-150"
