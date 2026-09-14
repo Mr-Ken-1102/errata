@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 interface ProseInlineEditorProps {
   content: string
+  /** Caret position to open at (source offset). Defaults to the start. */
+  initialCaret?: number
   saving?: boolean
   onSave: (content: string) => void
   onCancel: () => void
@@ -14,7 +16,7 @@ interface ProseInlineEditorProps {
  *
  * Ctrl/Cmd+Enter saves, Esc cancels. Saving with unchanged text just closes.
  */
-export function ProseInlineEditor({ content, saving, onSave, onCancel }: ProseInlineEditorProps) {
+export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCancel }: ProseInlineEditorProps) {
   const [draft, setDraft] = useState(content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dirty = draft !== content
@@ -27,12 +29,19 @@ export function ProseInlineEditor({ content, saving, onSave, onCancel }: ProseIn
     el.style.height = `${el.scrollHeight}px`
   }, [draft])
 
+  // Focus without moving the page: the reader double-clicked a word and
+  // expects the passage to stay put, with the caret landing on that word.
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
-    el.focus()
-    const end = el.value.length
-    el.setSelectionRange(end, end)
+    const scroller = findScrollParent(el)
+    const scrollTop = scroller ? scroller.scrollTop : window.scrollY
+    el.focus({ preventScroll: true })
+    const caret = Math.max(0, Math.min(el.value.length, initialCaret ?? 0))
+    el.setSelectionRange(caret, caret)
+    if (scroller) scroller.scrollTop = scrollTop
+    else window.scrollTo({ top: scrollTop })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const commit = () => {
@@ -41,8 +50,23 @@ export function ProseInlineEditor({ content, saving, onSave, onCancel }: ProseIn
     onSave(draft)
   }
 
+  // Clicking anywhere outside the passage commits the edit: the reader is
+  // done with it, and losing the draft would be the surprising outcome.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const root = rootRef.current
+      if (root && !root.contains(e.target as Node)) commitRef.current()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   return (
     <div
+      ref={rootRef}
       className="rounded-lg p-4 -mx-4 bg-card/50 ring-1 ring-primary/15"
       data-component-id="prose-inline-editor"
       onClick={(e) => e.stopPropagation()}
@@ -63,7 +87,7 @@ export function ProseInlineEditor({ content, saving, onSave, onCancel }: ProseIn
       />
       <div className="mt-3 flex items-center gap-2 border-t border-border/20 pt-2">
         <span className="text-[0.6rem] font-mono tracking-wide text-muted-foreground/50">
-          {saving ? 'SAVING' : 'CTRL+ENTER · ESC'}
+          {saving ? 'SAVING' : 'CTRL+ENTER · CLICK AWAY TO SAVE · ESC'}
         </span>
         <button
           type="button"
@@ -84,4 +108,14 @@ export function ProseInlineEditor({ content, saving, onSave, onCancel }: ProseIn
       </div>
     </div>
   )
+}
+
+function findScrollParent(el: HTMLElement): HTMLElement | null {
+  let node = el.parentElement
+  while (node && node !== document.body) {
+    const { overflowY } = getComputedStyle(node)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node
+    node = node.parentElement
+  }
+  return null
 }

@@ -8,6 +8,7 @@ import { ProseImageHeader } from './ProseImageHeader'
 import { resolveHeaderImage } from '@/lib/fragment-visuals'
 import { GenerationThoughts } from './GenerationThoughts'
 import { ProseInlineEditor } from './ProseInlineEditor'
+import { anchorFromPoint, resolveCaretOffset } from '@/lib/prose-caret'
 import { type ThoughtStep } from './InlineGenerationInput'
 import { buildAnnotationHighlighter, formatDialogue, composeTextTransforms, stripEmphasisInDialogue, type Annotation } from '@/lib/character-mentions'
 import { RefreshCw, Undo2, PenLine, Bug, Trash2, GitBranch, MessageSquare, ChevronLeft, ChevronRight, Info, BookOpen, Volume2, Square } from 'lucide-react'
@@ -35,6 +36,20 @@ interface ProseBlockProps {
   mentionColors?: Map<string, string>
   onClickMention?: (fragmentId: string) => void
   mediaById?: Map<string, Fragment>
+}
+
+/** Gap between the click point and the toolbar edge, so the cursor never sits on it. */
+const TOOLBAR_GAP = 12
+/** Below this offset there's no room above the click, so the toolbar opens beneath it. */
+const TOOLBAR_CLEARANCE = 120
+
+/**
+ * The toolbar sits just above the click point (never on top of it) so a second
+ * click lands on the prose again — double-click still opens the inline editor.
+ */
+export function toolbarPlacement(clickY: number): React.CSSProperties {
+  if (clickY > TOOLBAR_CLEARANCE) return { top: clickY - TOOLBAR_GAP, transform: 'translateY(-100%)' }
+  return { top: clickY + TOOLBAR_GAP }
 }
 
 /** Isolated sub-component so query cache subscriptions don't force ProseBlock re-renders */
@@ -140,6 +155,7 @@ export const ProseBlock = memo(function ProseBlock({
   const isReadingThis = useIsReadingFragment(fragment.id)
   const [editingPrompt, setEditingPrompt] = useState(false)
   const [editingContent, setEditingContent] = useState(false)
+  const [editCaret, setEditCaret] = useState(0)
   const [clickY, setClickY] = useState(0)
   const blockRef = useRef<HTMLDivElement>(null)
   const actionPanelRef = useRef<HTMLDivElement>(null)
@@ -567,6 +583,7 @@ export const ProseBlock = memo(function ProseBlock({
       {editingContent ? (
         <ProseInlineEditor
           content={fragment.content}
+          initialCaret={editCaret}
           saving={saveContentMutation.isPending}
           onSave={(content) => saveContentMutation.mutate(content)}
           onCancel={() => { if (!saveContentMutation.isPending) setEditingContent(false) }}
@@ -583,8 +600,13 @@ export const ProseBlock = memo(function ProseBlock({
           }
           setShowActions(v => !v)
         }}
-        onDoubleClick={() => {
+        onDoubleClick={(e: React.MouseEvent<HTMLDivElement>) => {
           if (isStreamingAction) return
+          // Place the caret on the word under the pointer, and clear the
+          // word selection the double-click left behind.
+          const anchor = anchorFromPoint(e.currentTarget, e.clientX, e.clientY)
+          window.getSelection()?.removeAllRanges()
+          setEditCaret(resolveCaretOffset(fragment.content, anchor))
           setShowActions(false)
           setActionMode(null)
           setEditingContent(true)
@@ -627,7 +649,7 @@ export const ProseBlock = memo(function ProseBlock({
         <div
           ref={actionPanelRef}
           className="absolute left-0 right-0 z-10 flex justify-center animate-in fade-in zoom-in-95 duration-150"
-          style={{ top: clickY, transform: 'translateY(-50%)' }}
+          style={toolbarPlacement(clickY)}
           data-component-id="prose-block-actions"
         >
           {actionMode ? (

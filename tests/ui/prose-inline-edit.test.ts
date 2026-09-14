@@ -4,7 +4,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ProseInlineEditor } from '@/components/prose/ProseInlineEditor'
-import { ProseBlock } from '@/components/prose/ProseBlock'
+import { ProseBlock, toolbarPlacement } from '@/components/prose/ProseBlock'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import type { Fragment } from '@/lib/api'
 
@@ -76,6 +76,42 @@ describe('ProseInlineEditor', () => {
   })
 })
 
+describe('ProseInlineEditor click-away', () => {
+  it('saves a dirty draft when the reader clicks outside the passage', () => {
+    const onSave = vi.fn()
+    const onCancel = vi.fn()
+    const { container } = render(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'Twice.' } })
+
+    // Clicks inside the editor chrome do nothing
+    fireEvent.mouseDown(textarea)
+    expect(onSave).not.toHaveBeenCalled()
+
+    fireEvent.mouseDown(document.body)
+    expect(onSave).toHaveBeenCalledWith('Twice.')
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('just closes when the draft is unchanged', () => {
+    const onSave = vi.fn()
+    const onCancel = vi.fn()
+    render(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
+    fireEvent.mouseDown(document.body)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores outside clicks while a save is in flight', () => {
+    const onSave = vi.fn()
+    const onCancel = vi.fn()
+    render(createElement(ProseInlineEditor, { content: 'Once.', saving: true, onSave, onCancel }))
+    fireEvent.mouseDown(document.body)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+})
+
 describe('ProseBlock double-click editing', () => {
   function renderBlock(fragment = makeFragment()) {
     const client = new QueryClient()
@@ -139,5 +175,45 @@ describe('ProseBlock double-click editing', () => {
     fireEvent.keyDown(textarea, { key: 'Escape' })
     expect(container.querySelector('[data-component-id="prose-inline-editor"]')).toBeNull()
     expect(updateMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('ProseBlock action toolbar placement', () => {
+  it('opens above the click point with a gap so a second click still hits the prose', () => {
+    expect(toolbarPlacement(400)).toEqual({ top: 388, transform: 'translateY(-100%)' })
+  })
+
+  it('opens below the click point when there is no room above', () => {
+    expect(toolbarPlacement(40)).toEqual({ top: 52 })
+  })
+
+  it('positions the rendered toolbar from the click', () => {
+    const client = new QueryClient()
+    const { container } = render(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(
+          ConfirmProvider,
+          null,
+          createElement(ProseBlock, {
+            storyId: 's1',
+            fragment: makeFragment(),
+            displayIndex: 0,
+            sectionIndex: 0,
+            chainEntry: null,
+            isLast: true,
+            onSelect: () => {},
+            quickSwitch: false,
+          }),
+        ),
+      ),
+    )
+    const surface = container.querySelector('[data-component-id="prose-pr-abcd-select"]') as HTMLElement
+    fireEvent.click(surface, { clientY: 300 })
+    const toolbar = container.querySelector('[data-component-id="prose-block-actions"]') as HTMLElement
+    expect(toolbar).not.toBeNull()
+    expect(toolbar.style.top).toBe('288px')
+    expect(toolbar.style.transform).toBe('translateY(-100%)')
   })
 })
