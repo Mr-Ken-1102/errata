@@ -34,6 +34,24 @@ describe('toLibrarianProviderMessages', () => {
     expect(sent[1].content).toContain('ch-alice')
   })
 
+  it('does not claim an interrupted tool call was applied without a result', () => {
+    const history: ChatHistoryMessage[] = [
+      { role: 'user', content: 'change Alice' },
+      {
+        role: 'assistant',
+        content: '',
+        status: 'error',
+        toolCalls: [{
+          toolName: 'editFragments',
+          args: { id: 'ch-alice' },
+        }],
+      },
+    ]
+    const sent = toLibrarianProviderMessages(history)
+    expect(sent[1].content).not.toContain('Already applied this turn')
+    expect(sent[1].content).toContain('ended early')
+  })
+
   it('marks interrupted turns and truncates giant arguments', () => {
     const history: ChatHistoryMessage[] = [
       { role: 'user', content: 'rewrite it' },
