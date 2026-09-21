@@ -386,6 +386,22 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     disposedRef.current = false
     let cancelled = false
 
+    // The watched surface (branch/conversation/fragment) changed. Invalidate
+    // any reader/reconnect from the previous key before discovering a run for
+    // the new one, otherwise late events can bleed into the next surface.
+    epochRef.current += 1
+    currentReaderRef.current?.cancel().catch(() => {})
+    currentReaderRef.current = null
+    clearReconnectTimer()
+    connectedRef.current = false
+    settledRef.current = true
+    runIdRef.current = null
+    cursorRef.current = 0
+    setRunId(null)
+    setPhase('idle')
+    setIsReconnecting(false)
+    setError(null)
+
     void (async () => {
       const stored = readStored(key)
       let targetRunId = stored?.runId ?? null
@@ -488,6 +504,8 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       disposedRef.current = true
       epochRef.current += 1
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      currentReaderRef.current?.cancel().catch(() => {})
+      currentReaderRef.current = null
     }
   }, [])
 
