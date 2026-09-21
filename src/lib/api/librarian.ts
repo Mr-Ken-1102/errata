@@ -1,4 +1,4 @@
-import { apiFetch, fetchEventStream } from './client'
+import { apiFetch } from './client'
 import { fetchRunEventStream } from './runs'
 import type {
   LibrarianStatusResponse,
