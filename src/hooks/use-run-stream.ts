@@ -73,6 +73,8 @@ export type RunPhase = 'idle' | RunStatus
 
 export interface UseRunStreamOptions {
   storyId: string
+  /** Active story branch/timeline. Included in persisted cursor identity. */
+  branchId?: string | null
   kind: RunKind
   /** conversationId / fragmentId — identifies which run belongs to this view. */
   scopeId?: string | null
@@ -101,8 +103,13 @@ export interface UseRunStreamResult {
   detach: () => void
 }
 
-function storageKey(storyId: string, kind: RunKind, scopeId: string | null): string {
-  return `errata:run:${storyId}:${kind}:${scopeId ?? ''}`
+function storageKey(
+  storyId: string,
+  branchId: string | null,
+  kind: RunKind,
+  scopeId: string | null,
+): string {
+  return `errata:run:${storyId}:${branchId ?? ''}:${kind}:${scopeId ?? ''}`
 }
 
 function readStored(key: string): { runId: string; cursor: number } | null {
@@ -131,7 +138,7 @@ function makeClientRequestId(): string {
 }
 
 export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
-  const { storyId, kind, scopeId = null, autoAttach = true } = options
+  const { storyId, branchId = null, kind, scopeId = null, autoAttach = true } = options
 
   const [runId, setRunId] = useState<string | null>(null)
   const [phase, setPhase] = useState<RunPhase>('idle')
@@ -160,7 +167,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
   /** The reader currently parked on the live stream, so a stale wake can free it. */
   const currentReaderRef = useRef<ReadableStreamDefaultReader<SequencedChatEvent> | null>(null)
 
-  const key = storageKey(storyId, kind, scopeId)
+  const key = storageKey(storyId, branchId, kind, scopeId)
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
