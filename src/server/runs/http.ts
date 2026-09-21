@@ -47,9 +47,10 @@ export function resolveExistingRun(
   storyId: string,
   scopeId: string | null,
   clientRequestId: string | undefined,
+  branchId?: string,
 ): Response | null {
   if (!clientRequestId) return null
-  const existing = findRunByClientRequestId(storyId, clientRequestId)
+  const existing = findRunByClientRequestId(storyId, clientRequestId, branchId)
   if (!existing || existing.scopeId !== scopeId) return null
   return runStreamResponse(existing, 0)
 }
