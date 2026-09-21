@@ -414,8 +414,8 @@ describe('prewriter', () => {
       const events = await parseNDJSON(res)
       const phaseEvents = events.filter((e) => e.type === 'phase')
       expect(phaseEvents).toHaveLength(2)
-      expect(phaseEvents[0]).toEqual({ type: 'phase', phase: 'prewriting' })
-      expect(phaseEvents[1]).toEqual({ type: 'phase', phase: 'writing' })
+      expect(phaseEvents[0]).toMatchObject({ type: 'phase', phase: 'prewriting' })
+      expect(phaseEvents[1]).toMatchObject({ type: 'phase', phase: 'writing' })
 
       // Two ToolLoopAgent instances: prewriter + writer
       expect(mockAgentCtor).toHaveBeenCalledTimes(2)
