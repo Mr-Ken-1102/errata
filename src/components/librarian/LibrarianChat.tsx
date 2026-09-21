@@ -84,12 +84,15 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const initialInputAppliedRef = useRef<string | null>(null)
   const prevConversationIdRef = useRef<string | null | undefined>(undefined)
   const liveRef = useRef<AssistantMessage | null>(null)
+
+  const surfaceKey = `${branchId ?? ''}:${conversationId ?? 'legacy'}`
+  const historyReady = loadedKey === surfaceKey
 
   const historyQueryKey = useMemo(() => (
     conversationId
@@ -189,7 +192,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
     onEvent: handleEvent,
     onSettled: handleSettled,
     // Install durable history first. Then cursor replay can safely layer on top.
-    autoAttach: loaded,
+    autoAttach: historyReady,
   })
   const isStreaming = run.isStreaming
 
@@ -198,7 +201,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
     if (prevConversationIdRef.current !== conversationId) {
       prevConversationIdRef.current = conversationId
       setMessages([])
-      setLoaded(false)
+      setLoadedKey(null)
       setError(null)
       liveRef.current = null
     }
@@ -207,7 +210,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
   // Branch changes are a different story timeline, even with the same conversation id.
   useEffect(() => {
     setMessages([])
-    setLoaded(false)
+    setLoadedKey(null)
     setError(null)
     liveRef.current = null
   }, [branchId])
@@ -227,10 +230,10 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
   })
 
   useEffect(() => {
-    if (!chatHistory || loaded) return
+    if (!chatHistory || historyReady) return
     installHistory(chatHistory)
-    setLoaded(true)
-  }, [chatHistory, installHistory, loaded])
+    setLoadedKey(surfaceKey)
+  }, [chatHistory, historyReady, installHistory, surfaceKey])
 
   const isNearBottomRef = useRef(true)
 
@@ -264,7 +267,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || !loaded) return
+    if (!text || !historyReady) return
     if (isStreaming) {
       setError('Wait for the current reply to finish before sending another.')
       return
@@ -298,7 +301,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
     } finally {
       textareaRef.current?.focus()
     }
-  }, [conversationId, input, isStreaming, loaded, refreshHistory, run, storyId])
+  }, [conversationId, historyReady, input, isStreaming, refreshHistory, run, storyId])
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (
@@ -379,14 +382,14 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask the librarian..."
-            disabled={isStreaming || !loaded}
+            disabled={isStreaming || !historyReady}
             className="min-h-[40px] max-h-[400px] resize-none text-xs bg-transparent placeholder:italic placeholder:text-muted-foreground flex-1"
             rows={1}
             data-component-id="librarian-chat-input"
           />
           <ChatSendButton
             isStreaming={isStreaming}
-            canSend={loaded && !!input.trim()}
+            canSend={historyReady && !!input.trim()}
             onSend={() => { void handleSend() }}
             onStop={() => { void run.cancel() }}
             stopLabel="Stop the librarian"
