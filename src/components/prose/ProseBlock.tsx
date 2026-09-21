@@ -9,6 +9,8 @@ import { ChevronRail } from './ChevronRail'
 import { ProseImageHeader } from './ProseImageHeader'
 import { resolveHeaderImage } from '@/lib/fragment-visuals'
 import { GenerationThoughts } from './GenerationThoughts'
+import { ProseInlineEditor } from './ProseInlineEditor'
+import { anchorFromPoint, resolveCaretOffset } from '@/lib/prose-caret'
 import { type ThoughtStep } from './InlineGenerationInput'
 import { buildAnnotationHighlighter, filterMentionAnnotations, formatDialogue, composeTextTransforms, stripEmphasisInDialogue, type Annotation } from '@/lib/fragment-mentions'
 import { RefreshCw, Undo2, PenLine, Bug, Trash2, GitBranch, MessageSquare, ChevronLeft, ChevronRight, Info, BookOpen, Volume2, Square } from 'lucide-react'
@@ -39,6 +41,17 @@ interface ProseBlockProps {
   mediaById?: Map<string, Fragment>
   scrollAnchorId?: string
   expandThoughtsByDefault?: boolean
+}
+
+/** Gap between the click point and the toolbar edge, so the cursor never sits on it. */
+const TOOLBAR_GAP = 12
+/** Below this offset there's no room above the click, so the toolbar opens beneath it. */
+const TOOLBAR_CLEARANCE = 120
+
+/** Keep the action toolbar away from the click point so double-click still reaches prose. */
+export function toolbarPlacement(clickY: number): React.CSSProperties {
+  if (clickY > TOOLBAR_CLEARANCE) return { top: clickY - TOOLBAR_GAP, transform: 'translateY(-100%)' }
+  return { top: clickY + TOOLBAR_GAP }
 }
 
 /** Isolated sub-component so query cache subscriptions don't force ProseBlock re-renders */
@@ -140,6 +153,8 @@ export const ProseBlock = memo(function ProseBlock({
   const [ttsSettings] = useTtsSettings()
   const isReadingThis = useIsReadingFragment(fragment.id)
   const [editingPrompt, setEditingPrompt] = useState(false)
+  const [editingContent, setEditingContent] = useState(false)
+  const [editCaret, setEditCaret] = useState(0)
   const [clickY, setClickY] = useState(0)
   const blockRef = useRef<HTMLDivElement>(null)
   const actionPanelRef = useRef<HTMLDivElement>(null)
@@ -166,6 +181,21 @@ export const ProseBlock = memo(function ProseBlock({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showActions, actionMode, editingPrompt])
+
+  // Inline passage edit — double-click prose to open, Ctrl/Cmd+Enter to save.
+  const saveContentMutation = useMutation({
+    mutationFn: (content: string) =>
+      api.fragments.update(storyId, fragment.id, {
+        name: fragment.name,
+        description: fragment.description,
+        content,
+      }),
+    onSuccess: () => {
+      setEditingContent(false)
+      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
+    },
+  })
 
   const revertMutation = useMutation({
     mutationFn: () => api.fragments.revert(storyId, fragment.id),
@@ -551,6 +581,15 @@ export const ProseBlock = memo(function ProseBlock({
         </>
       )}
 
+      {editingContent ? (
+        <ProseInlineEditor
+          content={fragment.content}
+          initialCaret={editCaret}
+          saving={saveContentMutation.isPending}
+          onSave={(content) => saveContentMutation.mutate(content)}
+          onCancel={() => { if (!saveContentMutation.isPending) setEditingContent(false) }}
+        />
+      ) : (
       <div
         role="button"
         tabIndex={0}
@@ -561,6 +600,15 @@ export const ProseBlock = memo(function ProseBlock({
             setClickY(e.clientY - blockRect.top)
           }
           setShowActions(v => !v)
+        }}
+        onDoubleClick={(e: React.MouseEvent<HTMLDivElement>) => {
+          if (isStreamingAction) return
+          const anchor = anchorFromPoint(e.currentTarget, e.clientX, e.clientY)
+          window.getSelection()?.removeAllRanges()
+          setEditCaret(resolveCaretOffset(fragment.content, anchor))
+          setShowActions(false)
+          setActionMode(null)
+          setEditingContent(true)
         }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { setShowActions(false); return }
@@ -595,13 +643,14 @@ export const ProseBlock = memo(function ProseBlock({
         />
 
       </div>
+      )}
 
       {/* Action toolbar — compact pill near click point */}
-      {(showActions || actionMode) && !isStreamingAction && (
+      {(showActions || actionMode) && !isStreamingAction && !editingContent && (
         <div
           ref={actionPanelRef}
           className="absolute left-0 right-0 z-10 flex justify-center animate-in fade-in zoom-in-95 duration-150"
-          style={{ top: clickY, transform: 'translateY(-50%)' }}
+          style={toolbarPlacement(clickY)}
           data-component-id="prose-block-actions"
         >
           {actionMode ? (
