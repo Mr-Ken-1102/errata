@@ -1,4 +1,5 @@
 import { apiFetch, fetchEventStream } from './client'
+import { fetchRunEventStream } from './runs'
 import type {
   LibrarianStatusResponse,
   LibrarianAnalysisSummary,
@@ -41,23 +42,30 @@ export const librarian = {
     apiFetch<{ analysis: LibrarianAnalysis }>(`/stories/${storyId}/librarian/analyses/${analysisId}/contradictions/${index}/dismiss`, { method: 'POST' }),
   deleteAnalysis: (storyId: string, analysisId: string) =>
     apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/analyses/${analysisId}`, { method: 'DELETE' }),
-  refine: (storyId: string, fragmentId: string, instructions: string | undefined, runId: string, signal?: AbortSignal) =>
-    fetchEventStream(`/stories/${storyId}/librarian/refine`, { fragmentId, instructions, runId }, signal),
+  refine: (storyId: string, fragmentId: string, instructions?: string) =>
+    fetchRunEventStream(`/stories/${storyId}/librarian/refine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fragmentId, instructions }),
+    }),
   transformProseSelection: (
     storyId: string,
     fragmentId: string,
     operation: 'rewrite' | 'expand' | 'compress' | 'custom',
     selectedText: string,
     options?: { sourceContent?: string; contextBefore?: string; contextAfter?: string; instruction?: string; runId?: string },
-  ) => fetchEventStream(`/stories/${storyId}/librarian/prose-transform`, {
-    fragmentId,
-    operation,
-    selectedText,
-    sourceContent: options?.sourceContent,
-    contextBefore: options?.contextBefore,
-    contextAfter: options?.contextAfter,
-    instruction: options?.instruction,
-    runId: options?.runId,
+  ) => fetchRunEventStream(`/stories/${storyId}/librarian/prose-transform`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fragmentId,
+      operation,
+      selectedText,
+      sourceContent: options?.sourceContent,
+      contextBefore: options?.contextBefore,
+      contextAfter: options?.contextAfter,
+      instruction: options?.instruction,
+    }),
   }),
   chat: (storyId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, runId: string, signal?: AbortSignal) =>
     fetchEventStream(`/stories/${storyId}/librarian/chat`, { messages, runId }, signal),
