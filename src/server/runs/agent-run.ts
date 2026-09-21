@@ -16,6 +16,7 @@ export interface StartAgentRunOptions {
   kind: RunKind
   scopeId?: string | null
   clientRequestId?: string
+  branchId?: string
   agentName: string
   input: Record<string, unknown>
   onStart?: (runId: string) => Promise<void> | void
@@ -51,6 +52,7 @@ export async function startAgentRun(opts: StartAgentRunOptions): Promise<Run> {
     kind: opts.kind,
     scopeId: opts.scopeId ?? null,
     ...(opts.clientRequestId ? { clientRequestId: opts.clientRequestId } : {}),
+    ...(opts.branchId ? { branchId: opts.branchId } : {}),
     body: async ({ runId, emit, signal }) => {
       await opts.onStart?.(runId)
       const agent = createAgentInstance(opts.agentName, {
