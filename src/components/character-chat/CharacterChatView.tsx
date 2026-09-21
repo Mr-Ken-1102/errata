@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Fragment } from '@/lib/api'
+import { api, type ChatEvent, type Fragment } from '@/lib/api'
 import type { PersonaMode, CharacterChatConversationSummary } from '@/lib/api/types'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Caption, EmptyHint } from '@/components/ui/prose-text'
-import { AssistantMessageView } from '@/components/chat/ChatMessageParts'
+import { AssistantMessageView, type AssistantMessage, type ChatMessage } from '@/components/chat/ChatMessageParts'
 import { ChatSendButton } from '@/components/chat/ChatSendButton'
-import { useChatTurn, type ChatTurnMessage } from '@/components/chat/use-chat-turn'
+import { useRunStream } from '@/hooks/use-run-stream'
 import { CharacterAvatar } from '@/components/shared/CharacterAvatar'
 import { ChatConfig } from './ChatConfig'
 import { ConversationList } from './ConversationList'
@@ -34,48 +34,125 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // The conversation is created by the first turn that is actually sent, so a
-  // turn that never lands leaves no empty conversation behind either.
-  const startTurn = useCallback(async (
-    turnMessages: ChatTurnMessage[],
-    runId: string,
-    signal: AbortSignal,
-  ) => {
-    if (!characterId) throw new Error('Select a character first')
-    let activeConvId = conversationId
-    if (!activeConvId) {
-      const conv = await api.characterChat.createConversation(storyId, {
-        characterId,
-        persona,
-        storyPointFragmentId: storyPointId,
-      })
-      activeConvId = conv.id
-      setConversationId(conv.id)
-    }
-    return api.characterChat.chat(storyId, activeConvId, turnMessages, runId, signal)
-  }, [characterId, conversationId, persona, storyId, storyPointId])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const liveRef = useRef<AssistantMessage | null>(null)
+  const conversationIdRef = useRef<string | null>(null)
 
-  const cancelTurn = useCallback(
-    (runId: string) => api.agents.cancel(storyId, runId),
-    [storyId],
+  useEffect(() => {
+    conversationIdRef.current = conversationId
+  }, [conversationId])
+
+  const activeConversationStorageKey = useMemo(
+    () => `errata:character-chat:active:${storyId}:${branchId ?? ''}`,
+    [branchId, storyId],
   )
 
-  const commitTurn = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ['character-chat-conversations', storyId] })
-  }, [queryClient, storyId])
+  const installConversation = useCallback((conversation: Awaited<ReturnType<typeof api.characterChat.getConversation>>) => {
+    setCharacterId(conversation.characterId)
+    setPersona(conversation.persona)
+    setStoryPointId(conversation.storyPointFragmentId)
+    setConversationId(conversation.id)
+    conversationIdRef.current = conversation.id
+    setMessages(conversation.messages.map((message): ChatMessage => (
+      message.role === 'assistant'
+        ? {
+            role: 'assistant',
+            content: message.content,
+            ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+            ...(message.error ? { error: message.error } : {}),
+          }
+        : { role: 'user', content: message.content }
+    )))
+    const last = conversation.messages[conversation.messages.length - 1]
+    liveRef.current = last?.role === 'assistant' && last.status === 'streaming'
+      ? {
+          role: 'assistant',
+          content: last.content,
+          ...(last.reasoning ? { reasoning: last.reasoning } : {}),
+          ...(last.error ? { error: last.error } : {}),
+        }
+      : null
+  }, [])
 
-  const {
-    messages,
-    setMessages,
-    input,
-    setInput,
-    isStreaming,
-    error,
-    setError,
-    send,
-    stop,
-    textareaRef,
-  } = useChatTurn({ start: startTurn, cancel: cancelTurn, onCommit: commitTurn })
+  const refreshConversation = useCallback(async () => {
+    const currentId = conversationIdRef.current
+    if (!currentId) return null
+    const conversation = await api.characterChat.getConversation(storyId, currentId)
+    installConversation(conversation)
+    return conversation
+  }, [installConversation, storyId])
+
+  const handleRunEvent = useCallback((event: ChatEvent) => {
+    if (event.type === 'run-start') {
+      const fresh: AssistantMessage = { role: 'assistant', content: '' }
+      liveRef.current = fresh
+      setMessages(previous => {
+        const next = [...previous]
+        if (next[next.length - 1]?.role === 'assistant') next[next.length - 1] = fresh
+        else next.push(fresh)
+        return next
+      })
+      return
+    }
+    if (event.type === 'run-end' || event.type === 'keepalive') return
+
+    const current = liveRef.current ?? { role: 'assistant' as const, content: '' }
+    let next = current
+    switch (event.type) {
+      case 'text':
+        next = { ...current, content: current.content + event.text }
+        break
+      case 'reasoning':
+        next = { ...current, reasoning: (current.reasoning ?? '') + event.text }
+        break
+      case 'error':
+        next = { ...current, error: event.error }
+        break
+      default:
+        return
+    }
+
+    liveRef.current = next
+    setMessages(previous => {
+      const copy = [...previous]
+      if (copy[copy.length - 1]?.role === 'assistant') copy[copy.length - 1] = next
+      else copy.push(next)
+      return copy
+    })
+  }, [])
+
+  const handleRunSettled = useCallback(async (
+    status: 'running' | 'complete' | 'error' | 'cancelled',
+    message?: string,
+  ) => {
+    liveRef.current = null
+    if (message) setError(message)
+    try {
+      await refreshConversation()
+    } catch {
+      // Keep streamed state if the authoritative reload fails.
+    }
+    await queryClient.invalidateQueries({ queryKey: ['character-chat-conversations', storyId] })
+    if (status === 'cancelled') setError(null)
+    textareaRef.current?.focus()
+  }, [queryClient, refreshConversation, storyId])
+
+  const run = useRunStream({
+    storyId,
+    branchId,
+    kind: 'character-chat',
+    scopeId: conversationId,
+    onEvent: handleRunEvent,
+    onSettled: handleRunSettled,
+    // During the first-send handoff the conversation id has just been created,
+    // but the pending message has not started yet. Avoid an attach/start race.
+    autoAttach: !!conversationId && pendingFirstMessage === null,
+  })
+  const isStreaming = run.isStreaming || pendingFirstMessage !== null
 
   // Data queries
   const { data: allFragments } = useQuery(q.fragments(storyId, branchId))
@@ -127,54 +204,166 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     }
   }, [messages, scrollToBottom])
 
-  // Handle character change — reset conversation
+  useEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+    element.style.height = 'auto'
+    element.style.height = Math.min(element.scrollHeight, 400) + 'px'
+  }, [input])
+
+  const clearActiveConversation = useCallback(() => {
+    try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
+    setConversationId(null)
+    conversationIdRef.current = null
+    setMessages([])
+    setError(null)
+    liveRef.current = null
+    setPendingFirstMessage(null)
+  }, [activeConversationStorageKey])
+
+  // Handle character change — reset conversation.
   const handleCharacterChange = useCallback((id: string) => {
     setCharacterId(id)
-    setConversationId(null)
-    setMessages([])
-    setError(null)
-  }, [])
+    clearActiveConversation()
+  }, [clearActiveConversation])
 
-  // Start new conversation
+  // Start new conversation without leaving an empty persisted conversation.
   const startNewConversation = useCallback(() => {
-    setConversationId(null)
-    setMessages([])
-    setError(null)
+    clearActiveConversation()
     setShowConversations(false)
     textareaRef.current?.focus()
-  }, [])
+  }, [clearActiveConversation])
 
-  // Resume a conversation
   const resumeConversation = useCallback(async (conv: CharacterChatConversationSummary) => {
     try {
       const full = await api.characterChat.getConversation(storyId, conv.id)
-      setCharacterId(full.characterId)
-      setPersona(full.persona)
-      setStoryPointId(full.storyPointFragmentId)
-      setConversationId(full.id)
-      setMessages(full.messages.map((m) => {
-        if (m.role === 'assistant') {
-          return {
-            role: 'assistant' as const,
-            content: m.content,
-            ...(m.reasoning ? { reasoning: m.reasoning } : {}),
-          }
-        }
-        return { role: 'user' as const, content: m.content }
-      }))
+      installConversation(full)
+      try { sessionStorage.setItem(activeConversationStorageKey, full.id) } catch { /* ignore */ }
       setError(null)
       setShowConversations(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load conversation')
+    } catch (resumeError) {
+      setError(resumeError instanceof Error ? resumeError.message : 'Failed to load conversation')
     }
-  }, [storyId])
+  }, [activeConversationStorageKey, installConversation, storyId])
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
+  // Restore the conversation that was open in this branch so a page reload can
+  // reattach to its server-owned run.
+  useEffect(() => {
+    let cancelled = false
+    clearActiveConversation()
+
+    let saved: string | null = null
+    try { saved = sessionStorage.getItem(activeConversationStorageKey) } catch { /* ignore */ }
+    if (!saved) return
+
+    void api.characterChat.getConversation(storyId, saved).then((conversation) => {
+      if (cancelled) return
+      installConversation(conversation)
+    }).catch(() => {
+      try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
+    })
+
+    return () => { cancelled = true }
+  }, [activeConversationStorageKey, installConversation, storyId])
+
+  const startExistingConversationTurn = useCallback(async (conversationIdToUse: string, text: string) => {
+    await run.start((clientRequestId) =>
+      api.characterChat.chat(
+        storyId,
+        conversationIdToUse,
+        text,
+        clientRequestId,
+      ),
+    )
+  }, [run, storyId])
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim()
+    if (!text || isStreaming || !characterId) return
+
+    setInput('')
+    setError(null)
+    liveRef.current = { role: 'assistant', content: '' }
+    setMessages(previous => [
+      ...previous,
+      { role: 'user', content: text },
+      { role: 'assistant', content: '' },
+    ])
+
+    if (!conversationId) {
+      // Two-phase first send: create the scope now; start the run only after
+      // React has rendered useRunStream with that concrete conversation id.
+      setPendingFirstMessage(text)
+      try {
+        const conversation = await api.characterChat.createConversation(storyId, {
+          characterId,
+          persona,
+          storyPointFragmentId: storyPointId,
+        })
+        conversationIdRef.current = conversation.id
+        setConversationId(conversation.id)
+        try { sessionStorage.setItem(activeConversationStorageKey, conversation.id) } catch { /* ignore */ }
+      } catch (createError) {
+        setPendingFirstMessage(null)
+        setMessages(previous => previous.slice(0, Math.max(0, previous.length - 2)))
+        setInput(text)
+        setError(createError instanceof Error ? createError.message : 'Failed to create conversation')
+      }
+      return
     }
-  }, [send])
+
+    try {
+      await startExistingConversationTurn(conversationId, text)
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      await refreshConversation().catch(() => {})
+    } finally {
+      textareaRef.current?.focus()
+    }
+  }, [
+    activeConversationStorageKey,
+    characterId,
+    conversationId,
+    input,
+    isStreaming,
+    persona,
+    refreshConversation,
+    startExistingConversationTurn,
+    storyId,
+    storyPointId,
+  ])
+
+  // Complete the first-send handoff only after useRunStream has been rendered
+  // with the newly created conversation id.
+  useEffect(() => {
+    if (!conversationId || pendingFirstMessage === null) return
+    const text = pendingFirstMessage
+    let cancelled = false
+
+    void startExistingConversationTurn(conversationId, text).catch(async (sendError) => {
+      if (cancelled) return
+      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      await refreshConversation().catch(() => {})
+    }).finally(() => {
+      if (!cancelled) {
+        setPendingFirstMessage(null)
+        textareaRef.current?.focus()
+      }
+    })
+
+    return () => { cancelled = true }
+  }, [conversationId, pendingFirstMessage, refreshConversation, startExistingConversationTurn])
+
+  const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === 'Enter'
+      && !event.shiftKey
+      && !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault()
+      void handleSend()
+    }
+  }, [handleSend])
 
   return (
     <div className="flex flex-col h-full relative" data-component-id="character-chat-view">
@@ -310,8 +499,8 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
             <ChatSendButton
               isStreaming={isStreaming}
               canSend={!!input.trim() && !!characterId}
-              onSend={send}
-              onStop={stop}
+              onSend={() => { void handleSend() }}
+              onStop={() => { void run.cancel() }}
               stopLabel={`Stop ${selectedCharacter?.name ?? 'the character'}`}
               idPrefix="character-chat"
               size="md"
