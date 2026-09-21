@@ -606,7 +606,7 @@ export const ProseBlock = memo(function ProseBlock({
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') { setActionMode(null); setActionInput('') }
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleActionSubmit() }
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); handleActionSubmit() }
                 }}
               />
               <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/20">
