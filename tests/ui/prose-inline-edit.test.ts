@@ -61,6 +61,23 @@ describe('ProseInlineEditor', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
+  it('does not save on Ctrl/Cmd+Enter while IME composition is active', () => {
+    const onSave = vi.fn()
+    const onCancel = vi.fn()
+    const { container } = render(createElement(ProseInlineEditor, { content: 'Một câu.', onSave, onCancel }))
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+
+    fireEvent.change(textarea, { target: { value: 'Một câu tiếng Việt.' } })
+    fireEvent.keyDown(textarea, {
+      key: 'Enter',
+      ctrlKey: true,
+      isComposing: true,
+    })
+
+    expect(onSave).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
   it('cancels on Escape and treats an unchanged save as cancel', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
