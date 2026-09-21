@@ -1,8 +1,10 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { getContentRoot } from '../fragments/branches'
+import { getActiveBranchId, getContentRoot, getScopedBranchId } from '../fragments/branches'
 import { writeJsonAtomic } from '../fs-utils'
+import { withKeyLock } from '../async-lock'
+import { getRun } from '../runs'
 
 // --- Types ---
 
@@ -11,11 +13,16 @@ export type PersonaMode =
   | { type: 'stranger' }
   | { type: 'custom'; prompt: string }
 
+export type CharacterChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
+
 export interface CharacterChatMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
   createdAt: string
+  runId?: string
+  status?: CharacterChatTurnStatus
+  error?: string
 }
 
 export interface CharacterChatConversation {
@@ -65,6 +72,15 @@ async function conversationPath(dataDir: string, storyId: string, conversationId
   return join(dir, `${conversationId}.json`)
 }
 
+async function conversationLockKey(
+  dataDir: string,
+  storyId: string,
+  conversationId: string,
+): Promise<string> {
+  const branchId = getScopedBranchId(storyId) ?? await getActiveBranchId(dataDir, storyId)
+  return `character-chat:${storyId}:${branchId}:${conversationId}`
+}
+
 // --- CRUD ---
 
 export async function saveConversation(
@@ -80,7 +96,7 @@ export async function saveConversation(
   )
 }
 
-export async function getConversation(
+async function readConversationFile(
   dataDir: string,
   storyId: string,
   conversationId: string,
@@ -89,6 +105,75 @@ export async function getConversation(
   if (!existsSync(path)) return null
   const raw = await readFile(path, 'utf-8')
   return JSON.parse(raw) as CharacterChatConversation
+}
+
+export async function getConversation(
+  dataDir: string,
+  storyId: string,
+  conversationId: string,
+): Promise<CharacterChatConversation | null> {
+  const conversation = await readConversationFile(dataDir, storyId, conversationId)
+  if (!conversation) return null
+
+  let changed = false
+  const messages = conversation.messages.map((message) => {
+    if (message.status !== 'streaming') return message
+    if (message.runId && getRun(message.runId)?.status === 'running') return message
+    changed = true
+    return {
+      ...message,
+      status: 'error' as const,
+      error: message.error ?? 'Generation was interrupted',
+    }
+  })
+
+  return changed ? { ...conversation, messages } : conversation
+}
+
+export async function appendMessage(
+  dataDir: string,
+  storyId: string,
+  conversationId: string,
+  message: CharacterChatMessage,
+): Promise<CharacterChatConversation | null> {
+  const lockKey = await conversationLockKey(dataDir, storyId, conversationId)
+  return withKeyLock(lockKey, async () => {
+    const conversation = await readConversationFile(dataDir, storyId, conversationId)
+    if (!conversation) return null
+    const updated: CharacterChatConversation = {
+      ...conversation,
+      messages: [...conversation.messages, message],
+      updatedAt: new Date().toISOString(),
+    }
+    await saveConversation(dataDir, storyId, updated)
+    return updated
+  })
+}
+
+export async function updateMessageByRunId(
+  dataDir: string,
+  storyId: string,
+  conversationId: string,
+  runId: string,
+  patch: Partial<CharacterChatMessage>,
+): Promise<CharacterChatConversation | null> {
+  const lockKey = await conversationLockKey(dataDir, storyId, conversationId)
+  return withKeyLock(lockKey, async () => {
+    const conversation = await readConversationFile(dataDir, storyId, conversationId)
+    if (!conversation) return null
+    const index = conversation.messages.findIndex(message => message.runId === runId)
+    if (index === -1) return conversation
+
+    const messages = [...conversation.messages]
+    messages[index] = { ...messages[index], ...patch }
+    const updated: CharacterChatConversation = {
+      ...conversation,
+      messages,
+      updatedAt: new Date().toISOString(),
+    }
+    await saveConversation(dataDir, storyId, updated)
+    return updated
+  })
 }
 
 export async function listConversations(
