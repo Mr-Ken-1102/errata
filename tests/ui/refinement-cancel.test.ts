@@ -3,10 +3,12 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from '@/lib/api'
-import { eventStream } from './event-stream'
-
-const { refine, cancel } = vi.hoisted(() => ({ refine: vi.fn(), cancel: vi.fn() }))
+import type { ChatEvent, SequencedChatEvent } from '@/lib/api'
+ 
+const mocks = vi.hoisted(() => ({
+  refine: vi.fn(),
+  cancelRun: vi.fn(),
+}))
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -14,15 +16,14 @@ vi.mock('@/lib/api', async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
-      agents: { ...actual.api.agents, cancel },
-      librarian: { ...actual.api.librarian, refine },
+      librarian: { ...actual.api.librarian, refine: mocks.refine },
+      runs: { ...actual.api.runs, cancel: mocks.cancelRun },
     },
   }
 })
 
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
 
-/** The tool result the librarian emits the moment an edit lands. */
 const APPLIED_EDIT: ChatEvent = {
   type: 'tool-result',
   id: 'call-1',
@@ -38,35 +39,45 @@ const APPLIED_EDIT: ChatEvent = {
   },
 }
 
-/** The prose the librarian streams while it works. */
-const EXPLAINING: ChatEvent = { type: 'text', text: 'Reworking the sheet' }
+function controlledRun(runId: string, script: ChatEvent[] = []) {
+  let controller!: ReadableStreamDefaultController<SequencedChatEvent>
+  let seq = 0
+  const stream = new ReadableStream<SequencedChatEvent>({
+    start(next) {
+      controller = next
+      controller.enqueue({
+        type: 'run-start',
+        runId,
+        kind: 'librarian.refine',
+        status: 'running',
+        seq: seq++,
+      })
+      controller.enqueue({ type: 'text', text: 'Reworking the sheet', seq: seq++ })
+      for (const event of script) {
+        controller.enqueue({ ...event, seq: seq++ } as SequencedChatEvent)
+      }
+    },
+  })
 
-/**
- * Arms the refine endpoint with a run that emits `script` then sits mid-run
- * until it is stopped, and collects the signals it was called with.
- */
+  return {
+    runId,
+    stream,
+    finishCancelled() {
+      controller.enqueue({ type: 'run-end', status: 'cancelled', seq: seq++ })
+      controller.close()
+    },
+  }
+}
+
 function mockRefine(script: ChatEvent[] = []) {
-  const signals: AbortSignal[] = []
-  const runIds: string[] = []
-  const servers = new Map<string, AbortController>()
-  refine.mockImplementation(async (...args: unknown[]) => {
-    const runId = args[3] as string
-    const signal = args[4] as AbortSignal
-    const server = new AbortController()
-    runIds.push(runId)
-    signals.push(signal)
-    servers.set(runId, server)
-    return eventStream([EXPLAINING, ...script], {
-      onExhausted: 'hang',
-      signal: server.signal,
-      onAbort: 'finish',
-    })
+  const run = controlledRun('run-refine-1', script)
+  mocks.refine.mockResolvedValue(run.stream)
+  mocks.cancelRun.mockImplementation(async (_storyId: string, runId: string) => {
+    expect(runId).toBe(run.runId)
+    run.finishCancelled()
+    return { ok: true, cancelled: true }
   })
-  cancel.mockImplementation(async (_storyId: string, runId: string) => {
-    servers.get(runId)?.abort()
-    return { ok: true, active: true }
-  })
-  return { signals, runIds }
+  return run
 }
 
 function renderPanel(onComplete: () => void, onClose: () => void) {
@@ -96,26 +107,23 @@ describe('cancelling a refinement', () => {
   afterEach(cleanup)
 
   beforeEach(() => {
-    refine.mockReset()
-    cancel.mockReset()
+    mocks.refine.mockReset()
+    mocks.cancelRun.mockReset()
   })
 
-  it('aborts the request rather than only closing the panel', async () => {
-    const { signals, runIds } = mockRefine()
+  it('uses the server-owned run id for explicit cancellation', async () => {
+    const run = mockRefine()
     const onComplete = vi.fn()
     const onClose = vi.fn()
     const { byId } = renderPanel(onComplete, onClose)
     await startRefining(byId, 'tighten the voice')
 
     await waitFor(() => expect(byId('refinement-stop')).toBeTruthy())
-    expect(signals[0]?.aborted).toBe(false)
-
     await act(async () => { fireEvent.click(byId('refinement-stop')!) })
 
-    await waitFor(() => expect(cancel).toHaveBeenCalledWith('story-1', runIds[0]))
-    // Explicit cancellation leaves the response attached for finish.stopped.
-    expect(signals[0]?.aborted).toBe(false)
-    // Cancelling stops the run; it does not dismiss the panel out from under it.
+    await waitFor(() => {
+      expect(mocks.cancelRun).toHaveBeenCalledWith('story-1', run.runId)
+    })
     expect(onClose).not.toHaveBeenCalled()
     expect(onComplete).not.toHaveBeenCalled()
   })
@@ -133,12 +141,11 @@ describe('cancelling a refinement', () => {
     await waitFor(() => {
       expect(byId<HTMLTextAreaElement>('refinement-input')?.value).toBe('tighten the voice')
     })
-    // Cut short is not finished — the done state must not claim the fragment was updated.
     expect(byId('refinement-done')).toBeNull()
     expect(byId('refinement-cancelled')?.textContent).toContain('Refinement stopped')
   })
 
-  it('does not infer completion from a tool result emitted before stop', async () => {
+  it('does not infer completion from a tool result emitted before Stop', async () => {
     mockRefine([APPLIED_EDIT])
     const onComplete = vi.fn()
     const { byId } = renderPanel(onComplete, vi.fn())
@@ -152,15 +159,35 @@ describe('cancelling a refinement', () => {
     expect(byId('refinement-done')).toBeNull()
   })
 
-  it('aborts the run when the panel unmounts', async () => {
-    const { runIds } = mockRefine()
+  it('cancels the server-owned run when the panel unmounts', async () => {
+    const run = mockRefine()
     const { byId, unmount } = renderPanel(vi.fn(), vi.fn())
     await startRefining(byId, 'tighten the voice')
 
     await waitFor(() => expect(byId('refinement-stop')).toBeTruthy())
-
     await act(async () => { unmount() })
 
-    expect(cancel).toHaveBeenCalledWith('story-1', runIds[0])
+    expect(mocks.cancelRun).toHaveBeenCalledWith('story-1', run.runId)
+  })
+
+  it('does not submit Ctrl/Cmd+Enter while Vietnamese IME composition is active', async () => {
+    mockRefine()
+    const { byId } = renderPanel(vi.fn(), vi.fn())
+    const input = byId<HTMLTextAreaElement>('refinement-input')!
+    fireEvent.change(input, { target: { value: 'giữ giọng kể nhất quán' } })
+
+    fireEvent.keyDown(input, {
+      key: 'Enter',
+      ctrlKey: true,
+      isComposing: true,
+    })
+    expect(mocks.refine).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(input, {
+      key: 'Enter',
+      ctrlKey: true,
+      isComposing: false,
+    })
+    await waitFor(() => expect(mocks.refine).toHaveBeenCalledTimes(1))
   })
 })
