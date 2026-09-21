@@ -299,7 +299,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       const epoch = epochRef.current
 
       try {
-        const stream = await api.runs.events(storyId, currentRunId, cursorRef.current)
+        const stream = await api.runs.events(storyId, currentRunId, cursorRef.current, branchId)
         attemptRef.current = 0
         const terminal = await consume(stream, epoch)
         if (!terminal && epoch === epochRef.current) scheduleReconnect()
@@ -315,7 +315,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
         scheduleReconnect()
       }
     }, delay)
-  }, [clearReconnectTimer, consume, settle, storyId])
+  }, [branchId, clearReconnectTimer, consume, settle, storyId])
 
   const start = useCallback(async (
     post: (clientRequestId: string) => Promise<ReadableStream<SequencedChatEvent>>,
@@ -367,7 +367,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
         cursorRef.current = 0
         setRunId(conflictRunId)
         try {
-          const stream = await api.runs.events(storyId, conflictRunId, 0)
+          const stream = await api.runs.events(storyId, conflictRunId, 0, branchId)
           const terminal = await consume(stream, epoch)
           if (!terminal && epoch === epochRef.current) scheduleReconnect()
           return
@@ -384,17 +384,17 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       settle('error', message)
       throw err
     }
-  }, [clearReconnectTimer, consume, scheduleReconnect, settle, storyId])
+  }, [branchId, clearReconnectTimer, consume, scheduleReconnect, settle, storyId])
 
   const cancel = useCallback(async () => {
     const currentRunId = runIdRef.current
     if (!currentRunId) return
     try {
-      await api.runs.cancel(storyId, currentRunId)
+      await api.runs.cancel(storyId, currentRunId, branchId)
     } catch {
       // The run may have finished between render and click.
     }
-  }, [storyId])
+  }, [branchId, storyId])
 
   const detach = useCallback(() => {
     epochRef.current += 1
@@ -440,7 +440,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
 
       try {
         if (targetRunId) {
-          const summary = await api.runs.get(storyId, targetRunId)
+          const summary = await api.runs.get(storyId, targetRunId, branchId)
           if (recoverFullRunOnAttach) {
             // Reconstruct non-durable UI state from the authoritative run log.
             // This also covers a run that finished while the page was away.
@@ -451,7 +451,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
           }
         }
         if (!targetRunId) {
-          const active = await api.runs.list(storyId, { active: true, scopeId })
+          const active = await api.runs.list(storyId, { active: true, scopeId, branchId })
           // Match the scope too. A null scopeId can't be expressed as a query
           // param, so the server returns every active run for the story —
           // without this check the legacy chat would latch onto a
@@ -482,7 +482,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       setPhase('running')
 
       try {
-        const stream = await api.runs.events(storyId, targetRunId, cursor)
+        const stream = await api.runs.events(storyId, targetRunId, cursor, branchId)
         const terminal = await consume(stream, epoch)
         if (!terminal && epoch === epochRef.current) scheduleReconnect()
       } catch {
@@ -496,6 +496,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     // Re-attach when the surface we're watching changes.
   }, [
     autoAttach,
+    branchId,
     consume,
     kind,
     key,

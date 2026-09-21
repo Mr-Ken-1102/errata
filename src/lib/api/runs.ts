@@ -91,6 +91,11 @@ export interface ConsumeRunResult {
   error?: string
 }
 
+export interface ConsumeRunOptions {
+  /** Timeline pinned when the run was started. */
+  branchId?: string | null
+}
+
 function conflictRunId(error: unknown): string | null {
   if (!(error instanceof ApiError) || error.status !== 409) return null
   return typeof error.data.runId === 'string' ? error.data.runId : null
@@ -107,6 +112,7 @@ export async function startAndConsumeRun(
   storyId: string,
   post: (clientRequestId: string) => Promise<ReadableStream<SequencedChatEvent>>,
   onEvent: (event: ChatEvent) => void,
+  options: ConsumeRunOptions = {},
 ): Promise<ConsumeRunResult> {
   const clientRequestId = createRunRequestId()
   let stream: ReadableStream<SequencedChatEvent>
@@ -116,7 +122,7 @@ export async function startAndConsumeRun(
   } catch (firstError) {
     const existing = conflictRunId(firstError)
     if (existing) {
-      stream = await runs.events(storyId, existing, 0)
+      stream = await runs.events(storyId, existing, 0, options.branchId)
     } else if (!(firstError instanceof ApiError)) {
       // A transport failure may have happened after the server accepted the
       // request. The same key makes this retry attach rather than duplicate.
@@ -132,7 +138,7 @@ export async function startAndConsumeRun(
     }
   }
 
-  let result = await consumeRun(storyId, stream, onEvent)
+  let result = await consumeRun(storyId, stream, onEvent, options)
   if (
     result.runId === null
     && result.status === 'error'
@@ -145,9 +151,9 @@ export async function startAndConsumeRun(
     } catch (retryError) {
       const existing = conflictRunId(retryError)
       if (!existing) throw retryError
-      stream = await runs.events(storyId, existing, 0)
+      stream = await runs.events(storyId, existing, 0, options.branchId)
     }
-    result = await consumeRun(storyId, stream, onEvent)
+    result = await consumeRun(storyId, stream, onEvent, options)
   }
 
   return result
@@ -169,6 +175,7 @@ export async function consumeRun(
   storyId: string,
   initial: ReadableStream<SequencedChatEvent>,
   onEvent: (event: ChatEvent) => void,
+  options: ConsumeRunOptions = {},
 ): Promise<ConsumeRunResult> {
   let runId: string | null = null
   let cursor = 0
@@ -217,7 +224,7 @@ export async function consumeRun(
     const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)]
     await new Promise(r => setTimeout(r, delay))
     try {
-      const stream = await runs.events(storyId, runId, cursor)
+      const stream = await runs.events(storyId, runId, cursor, options.branchId)
       attempt = 0
       if (await read(stream)) return result!
     } catch (err) {
@@ -234,30 +241,38 @@ export async function consumeRun(
 
 export const runs = {
   /** List runs for a story. `active` filters to generations still in flight. */
-  list: (storyId: string, opts?: { active?: boolean; scopeId?: string | null }) => {
+  list: (storyId: string, opts?: { active?: boolean; scopeId?: string | null; branchId?: string | null }) => {
     const params = new URLSearchParams()
     if (opts?.active) params.set('active', '1')
     if (opts?.scopeId != null) params.set('scopeId', opts.scopeId)
+    if (opts?.branchId) params.set('branchId', opts.branchId)
     const query = params.toString()
     return apiFetch<RunSummary[]>(`/stories/${storyId}/runs${query ? `?${query}` : ''}`)
   },
 
-  get: (storyId: string, runId: string) =>
-    apiFetch<RunSummary>(`/stories/${storyId}/runs/${runId}`),
+  get: (storyId: string, runId: string, branchId?: string | null) => {
+    const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : ''
+    return apiFetch<RunSummary>(`/stories/${storyId}/runs/${runId}${query}`)
+  },
 
   /**
    * Reattach to a run, replaying everything from `cursor` and then following
    * live. This is what turns a dropped connection into a non-event.
    */
-  events: (storyId: string, runId: string, cursor = 0) =>
-    fetchRunEventStream(
-      `/stories/${storyId}/runs/${runId}/events?cursor=${cursor}`,
-    ) as Promise<ReadableStream<SequencedChatEvent>>,
+  events: (storyId: string, runId: string, cursor = 0, branchId?: string | null) => {
+    const params = new URLSearchParams({ cursor: String(cursor) })
+    if (branchId) params.set('branchId', branchId)
+    return fetchRunEventStream(
+      `/stories/${storyId}/runs/${runId}/events?${params.toString()}`,
+    ) as Promise<ReadableStream<SequencedChatEvent>>
+  },
 
   /** Explicit user Stop — the only thing that ends a generation early. */
-  cancel: (storyId: string, runId: string) =>
-    apiFetch<{ ok: boolean; cancelled: boolean }>(
-      `/stories/${storyId}/runs/${runId}/cancel`,
+  cancel: (storyId: string, runId: string, branchId?: string | null) => {
+    const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : ''
+    return apiFetch<{ ok: boolean; cancelled: boolean }>(
+      `/stories/${storyId}/runs/${runId}/cancel${query}`,
       { method: 'POST' },
-    ),
+    )
+  },
 }

@@ -18,7 +18,9 @@ export function runRoutes(dataDir: string) {
     .get('/stories/:storyId/runs', async ({ params, query }) => {
       const active = query.active === '1' || query.active === 'true'
       const scopeId = typeof query.scopeId === 'string' ? query.scopeId : undefined
-      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const branchId = typeof query.branchId === 'string'
+        ? query.branchId
+        : await getActiveBranchId(dataDir, params.storyId)
       return listRuns(params.storyId, {
         branchId,
         ...(active ? { active: true } : {}),
@@ -28,13 +30,16 @@ export function runRoutes(dataDir: string) {
       query: t.Object({
         active: t.Optional(t.String()),
         scopeId: t.Optional(t.String()),
+        branchId: t.Optional(t.String()),
       }),
       detail: { summary: 'List runs for a story (use ?active=1 for in-flight runs)' },
     })
 
-    .get('/stories/:storyId/runs/:runId', async ({ params, set }) => {
+    .get('/stories/:storyId/runs/:runId', async ({ params, query, set }) => {
       const run = getRun(params.runId)
-      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const branchId = typeof query.branchId === 'string'
+        ? query.branchId
+        : await getActiveBranchId(dataDir, params.storyId)
       if (!run || run.storyId !== params.storyId || run.branchId !== branchId) {
         set.status = 404
         return { error: 'Run not found' }
@@ -50,11 +55,16 @@ export function runRoutes(dataDir: string) {
         ...(run.error ? { error: run.error } : {}),
         seq: run.events.length,
       }
-    }, { detail: { summary: 'Get a run' } })
+    }, {
+      query: t.Object({ branchId: t.Optional(t.String()) }),
+      detail: { summary: 'Get a run' },
+    })
 
     .get('/stories/:storyId/runs/:runId/events', async ({ params, query, set }) => {
       const run = getRun(params.runId)
-      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const branchId = typeof query.branchId === 'string'
+        ? query.branchId
+        : await getActiveBranchId(dataDir, params.storyId)
       if (!run || run.storyId !== params.storyId || run.branchId !== branchId) {
         set.status = 404
         return { error: 'Run not found' }
@@ -62,13 +72,18 @@ export function runRoutes(dataDir: string) {
       const cursor = Number.parseInt(query.cursor ?? '0', 10)
       return runStreamResponse(run, Number.isFinite(cursor) && cursor > 0 ? cursor : 0)
     }, {
-      query: t.Object({ cursor: t.Optional(t.String()) }),
+      query: t.Object({
+        cursor: t.Optional(t.String()),
+        branchId: t.Optional(t.String()),
+      }),
       detail: { summary: 'Stream a run’s events from a cursor (NDJSON, replay then live)' },
     })
 
-    .post('/stories/:storyId/runs/:runId/cancel', async ({ params, set }) => {
+    .post('/stories/:storyId/runs/:runId/cancel', async ({ params, query, set }) => {
       const run = getRun(params.runId)
-      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const branchId = typeof query.branchId === 'string'
+        ? query.branchId
+        : await getActiveBranchId(dataDir, params.storyId)
       if (!run || run.storyId !== params.storyId || run.branchId !== branchId) {
         set.status = 404
         return { error: 'Run not found' }
@@ -76,5 +91,8 @@ export function runRoutes(dataDir: string) {
       const cancelled = cancelRun(params.runId)
       logger.info('Run cancel requested', { runId: params.runId, cancelled })
       return { ok: true, cancelled, status: run.status }
-    }, { detail: { summary: 'Cancel a run (the only thing that stops a generation)' } })
+    }, {
+      query: t.Object({ branchId: t.Optional(t.String()) }),
+      detail: { summary: 'Cancel a run (the only thing that stops a generation)' },
+    })
 }
