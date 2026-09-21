@@ -279,7 +279,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
         clientRequestId,
       ),
     )
-  }, [run, storyId])
+  }, [run.start, storyId])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -468,6 +468,12 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
               </div>
             )
           })}
+
+          {run.isReconnecting && (
+            <div className="text-[0.625rem] text-muted-foreground italic">
+              Reconnecting — the character is still responding on the server.
+            </div>
+          )}
 
           {error && (
             <div className="text-xs text-destructive bg-destructive/5 rounded-lg p-3">
