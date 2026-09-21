@@ -108,10 +108,6 @@ async function startLibrarianChatRun(args: {
     logger,
   } = args
 
-  const priorHistory = conversationId
-    ? await getConversationHistory(dataDir, storyId, conversationId)
-    : await getLibrarianChatHistory(dataDir, storyId)
-
   const appendMessage = (entry: ChatHistoryMessage) => conversationId
     ? appendConversationMessage(dataDir, storyId, conversationId, entry)
     : appendChatMessage(dataDir, storyId, entry)
@@ -174,7 +170,8 @@ async function startLibrarianChatRun(args: {
             ? 'error'
             : 'complete'
 
-      await updateChatMessageByRunId(dataDir, storyId, conversationId, resultRunId(), {
+      if (!trackerRunId) throw new Error('Librarian chat run id was not initialized')
+      await updateChatMessageByRunId(dataDir, storyId, conversationId, trackerRunId, {
         content: result.text,
         ...(result.reasoning ? { reasoning: result.reasoning } : {}),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
@@ -193,7 +190,8 @@ async function startLibrarianChatRun(args: {
     onError: async (error, signal) => {
       await tracker?.flush()
       const status = abortedByUser(signal) ? 'cancelled' : 'error'
-      await updateChatMessageByRunId(dataDir, storyId, conversationId, resultRunId(), {
+      if (!trackerRunId) return
+      await updateChatMessageByRunId(dataDir, storyId, conversationId, trackerRunId, {
         status,
         ...(status === 'error'
           ? { error: abortedByTimeout(signal) ? 'Generation timed out.' : describeError(error) }
@@ -202,11 +200,6 @@ async function startLibrarianChatRun(args: {
     },
   })
 
-  function resultRunId(): string {
-    const current = trackerRunId
-    if (!current) throw new Error('Librarian chat run id was not initialized')
-    return current
-  }
 
 }
 
