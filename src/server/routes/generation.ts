@@ -117,7 +117,7 @@ export function generationRoutes(dataDir: string) {
       // A continuation is one story-level surface. Regenerate/refine is scoped
       // to the fragment being replaced, so independent passages may proceed
       // without attaching to each other.
-      const scopeId = body.fragmentId ?? null
+      const scopeId = body.scopeId ?? body.fragmentId ?? null
       const lockKey = `generation-start:${params.storyId}:${branchId}:${scopeId ?? 'story'}`
 
       return withKeyLock(lockKey, async () => {
@@ -194,6 +194,7 @@ export function generationRoutes(dataDir: string) {
         input: t.String(),
         runId: t.Optional(t.String()),
         clientRequestId: t.Optional(t.String()),
+        scopeId: t.Optional(t.String()),
         branchId: t.Optional(t.String()),
         saveResult: t.Optional(t.Boolean()),
         mode: t.Optional(t.Union([t.Literal('generate'), t.Literal('regenerate'), t.Literal('refine')])),
