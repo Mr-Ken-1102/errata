@@ -127,7 +127,7 @@ export function SettingsView({
         onClick={onClose}
         className={cn(
           'fixed inset-0 z-40 cursor-default bg-background/60 backdrop-blur-[2px] transition-opacity duration-200 motion-reduce:transition-none',
-          visible ? 'opacity-100' : 'opacity-0',
+          visible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
         )}
       />
 
@@ -140,7 +140,7 @@ export function SettingsView({
           'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r border-border/50 bg-background shadow-[8px_0_40px_-12px_rgba(0,0,0,0.35)] outline-none',
           'sm:w-[min(46rem,55vw)]',
           'transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-          visible ? 'translate-x-0' : '-translate-x-full',
+          visible ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none',
         )}
         data-component-id="settings-view-root"
       >
