@@ -351,7 +351,7 @@ describe('character chat endpoints', () => {
 
       mockEmptyResponse()
 
-      await app.fetch(
+      const response = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -360,6 +360,7 @@ describe('character chat endpoints', () => {
           }),
         }),
       )
+      await response.text()
 
       expect(mockAgentCtor).toHaveBeenCalled()
       const config = mockAgentCtor.mock.calls[0][0]
@@ -378,7 +379,7 @@ describe('character chat endpoints', () => {
 
       mockEmptyResponse()
 
-      await app.fetch(
+      const response = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -387,6 +388,7 @@ describe('character chat endpoints', () => {
           }),
         }),
       )
+      await response.text()
 
       expect(mockAgentCtor).toHaveBeenCalled()
       const config = mockAgentCtor.mock.calls[0][0]
@@ -447,7 +449,7 @@ describe('character chat endpoints', () => {
 
       mockSimpleResponse()
 
-      await app.fetch(
+      const response = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -456,9 +458,7 @@ describe('character chat endpoints', () => {
           }),
         }),
       )
-
-      // Wait for async persistence
-      await new Promise((r) => setTimeout(r, 100))
+      await response.text()
 
       const getRes = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}`),
