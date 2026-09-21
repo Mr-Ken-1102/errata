@@ -197,6 +197,8 @@ export function generationRoutes(dataDir: string) {
     }, {
       body: t.Object({
         input: t.String(),
+        // Backward-compatible input only. It is never authoritative: startRun
+        // creates the run id and overwrites this value before runGeneration.
         runId: t.Optional(t.String()),
         clientRequestId: t.Optional(t.String()),
         scopeId: t.Optional(t.String()),

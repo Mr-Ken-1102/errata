@@ -179,6 +179,35 @@ describe('server-owned generation route', () => {
     expect(engineReaderCancelled).not.toHaveBeenCalled()
   })
 
+  it('ignores a client-supplied run id and passes the server-owned id to the engine', async () => {
+    let engineBody: unknown
+    mocks.runGeneration.mockImplementation(async (
+      _dataDir: string,
+      _storyId: string,
+      body: unknown,
+    ) => {
+      engineBody = body
+      return {
+        ok: true as const,
+        eventStream: engineStream([
+          { type: 'finish', finishReason: 'stop', stepCount: 1 },
+        ]),
+      }
+    })
+
+    const response = await post({
+      input: 'Continue',
+      runId: 'client-owned-run-id',
+      clientRequestId: 'server-authority-1',
+    })
+    const events = await readAllEvents(response)
+    const started = events.find(event => event.type === 'run-start')
+
+    expect(started?.runId).toBeTruthy()
+    expect(started?.runId).not.toBe('client-owned-run-id')
+    expect(engineBody).toMatchObject({ runId: started.runId })
+  })
+
   it('replays the same producer for an idempotent POST retry', async () => {
     const gate = deferred()
     mocks.runGeneration.mockImplementation(async (
