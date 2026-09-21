@@ -70,7 +70,11 @@ export function toLibrarianProviderMessages(
     if (message.content.trim()) parts.push(message.content.trim())
 
     const applied = (message.toolCalls ?? [])
-      .filter(toolCall => toolCall.toolName !== 'planEdits' && toolCall.error === undefined)
+      .filter(toolCall =>
+        toolCall.toolName !== 'planEdits'
+        && toolCall.error === undefined
+        && toolCall.result !== undefined
+      )
       .map(summarizeChatToolCall)
     if (applied.length > 0) {
       parts.push(`[Already applied this turn: ${applied.join('; ')}]`)
