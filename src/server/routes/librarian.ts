@@ -41,7 +41,7 @@ import { runStreamResponse, resolveExistingRun } from '../runs/http'
 import { findLiveRun, abortedByTimeout, abortedByUser, type Run } from '../runs'
 import { createTurnTracker, type TurnTracker } from '../runs/turn-tracker'
 import { describeError } from '../error-message'
-import { getActiveBranchId } from '../fragments/branches'
+import { getActiveBranchId, withBranch } from '../fragments/branches'
 import { withKeyLock } from '../async-lock'
 import type { LibrarianStatusResponse } from '@/contracts/librarian'
 
@@ -97,6 +97,7 @@ async function startLibrarianChatRun(args: {
   dataDir: string
   storyId: string
   conversationId: string | null
+  branchId: string
   message: string
   clientRequestId?: string
   maxSteps: number
@@ -106,29 +107,32 @@ async function startLibrarianChatRun(args: {
     dataDir,
     storyId,
     conversationId,
+    branchId,
     message,
     clientRequestId,
     maxSteps,
     logger,
   } = args
 
-  const appendMessage = (entry: ChatHistoryMessage) => conversationId
-    ? appendConversationMessage(dataDir, storyId, conversationId, entry)
-    : appendChatMessage(dataDir, storyId, entry)
+  return withBranch(dataDir, storyId, async () => {
+    const appendMessage = (entry: ChatHistoryMessage) => conversationId
+      ? appendConversationMessage(dataDir, storyId, conversationId, entry)
+      : appendChatMessage(dataDir, storyId, entry)
 
-  // The server owns history. The client sends only the new user turn.
-  const afterUser = await appendMessage({ role: 'user', content: message })
-  const providerMessages = toLibrarianProviderMessages(afterUser.messages)
+    // The server owns history. The client sends only the new user turn.
+    const afterUser = await appendMessage({ role: 'user', content: message })
+    const providerMessages = toLibrarianProviderMessages(afterUser.messages)
 
-  let tracker: TurnTracker | null = null
-  let trackerRunId: string | null = null
+    let tracker: TurnTracker | null = null
+    let trackerRunId: string | null = null
 
-  return startAgentRun({
+    return startAgentRun({
     dataDir,
     storyId,
     kind: 'librarian.chat',
     scopeId: conversationId,
     ...(clientRequestId ? { clientRequestId } : {}),
+    branchId,
     agentName: 'librarian.chat',
     input: {
       messages: providerMessages,
@@ -203,8 +207,7 @@ async function startLibrarianChatRun(args: {
       })
     },
   })
-
-
+  }, branchId)
 }
 
 export function librarianRoutes(dataDir: string) {
@@ -653,6 +656,7 @@ export function librarianRoutes(dataDir: string) {
             dataDir,
             storyId: params.storyId,
             conversationId: null,
+            branchId,
             message: text,
             ...(body.clientRequestId ? { clientRequestId: body.clientRequestId } : {}),
             maxSteps: story.settings.maxSteps ?? 10,
@@ -756,6 +760,7 @@ export function librarianRoutes(dataDir: string) {
             dataDir,
             storyId: params.storyId,
             conversationId: params.conversationId,
+            branchId,
             message: text,
             ...(body.clientRequestId ? { clientRequestId: body.clientRequestId } : {}),
             maxSteps: story.settings.maxSteps ?? 10,
