@@ -73,10 +73,20 @@ export type RunGenerationResult =
  * thrown, so the route can map them to the right HTTP status without this
  * module knowing anything about Elysia.
  */
+export interface RunGenerationOptions {
+  /**
+   * Transport-owned cancellation. The generation engine keeps its own
+   * AbortController because the writer/prewriter activity registry already
+   * shares it; this signal is only bridged into that controller.
+   */
+  abortSignal?: AbortSignal
+}
+
 export async function runGeneration(
   dataDir: string,
   storyId: string,
   body: GenerationInput,
+  options: RunGenerationOptions = {},
 ): Promise<RunGenerationResult> {
   const requestLogger = logger.child({ storyId })
   requestLogger.info('Generation request started', { mode: body.mode ?? 'generate', saveResult: body.saveResult ?? false })
@@ -103,6 +113,18 @@ export async function runGeneration(
 
   return withBranch(dataDir, storyId, async () => {
   const abortController = new AbortController()
+  const forwardExternalAbort = () => {
+    if (!abortController.signal.aborted) {
+      abortController.abort(options.abortSignal?.reason)
+    }
+  }
+  if (options.abortSignal?.aborted) forwardExternalAbort()
+  else options.abortSignal?.addEventListener('abort', forwardExternalAbort, { once: true })
+
+  const detachExternalAbort = () => {
+    options.abortSignal?.removeEventListener('abort', forwardExternalAbort)
+  }
+
   const writerRun = beginAgentRun(storyId, 'generation.writer', undefined, {
     runId: body.runId,
     branchId,
@@ -127,11 +149,13 @@ export async function runGeneration(
   if (mode === 'regenerate' || mode === 'refine') {
     if (!body.fragmentId) {
       requestLogger.warn('Missing fragmentId for regenerate/refine mode')
+      detachExternalAbort()
       return { ok: false, status: 422, error: 'fragmentId is required for regenerate/refine modes' }
     }
     existingFragment = await getFragment(dataDir, storyId, body.fragmentId)
     if (!existingFragment) {
       requestLogger.warn('Fragment not found', { fragmentId: body.fragmentId })
+      detachExternalAbort()
       return { ok: false, status: 404, error: 'Fragment not found' }
     }
   }
@@ -710,6 +734,8 @@ export async function runGeneration(
             },
       )
 
+      detachExternalAbort()
+
       // Close the stream controller after saving completes (or abort concludes)
       if (!runError) {
         try {
@@ -726,6 +752,7 @@ export async function runGeneration(
 
   return { ok: true, eventStream }
   } catch (error) {
+    detachExternalAbort()
     writerRun.finish(
       abortController.signal.aborted ? 'aborted' : 'error',
       { error: error instanceof Error ? error.message : String(error) },
