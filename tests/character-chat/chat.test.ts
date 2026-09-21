@@ -288,7 +288,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
@@ -330,7 +330,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Where should I go?' }],
+            message: 'Where should I go?',
           }),
         }),
       )
@@ -356,7 +356,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
@@ -383,7 +383,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
@@ -412,14 +412,14 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
       expect(res.status).toBe(404)
     })
 
-    it('returns 422 when messages array is empty', async () => {
+    it('returns 422 when message is blank', async () => {
       const story = makeStory()
       await createStory(dataDir, story)
       await createFragment(dataDir, story.id, makeFragment())
@@ -431,7 +431,7 @@ describe('character chat endpoints', () => {
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: [] }),
+          body: JSON.stringify({ message: '   ' }),
         }),
       )
       expect(res.status).toBe(422)
@@ -452,7 +452,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello Kael' }],
+            message: 'Hello Kael',
           }),
         }),
       )
