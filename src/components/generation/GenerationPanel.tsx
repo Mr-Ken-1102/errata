@@ -1,7 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { invalidateStoryContent } from '@/lib/branch-cache'
+import { useActiveBranchId } from '@/lib/query-keys'
+import { useRunStream } from '@/hooks/use-run-stream'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { StreamMarkdown } from '@/components/ui/stream-markdown'
@@ -15,44 +17,172 @@ import {
 import { DebugPanel } from './DebugPanel'
 import { QuestionCard } from './QuestionCard'
 import { Send, Eye, Square, Bug, ArrowLeft } from 'lucide-react'
-import type { ClarifyQuestion, Clarification } from '@/lib/api/types'
-import { generateRunId } from '@/lib/client-ids'
+import type { ChatEvent, ClarifyQuestion, Clarification, RunStatus } from '@/lib/api/types'
 
 interface GenerationPanelProps {
   storyId: string
   onBack?: () => void
 }
 
-// A round number high enough that the server withholds the ask tool and must
-// write — used by "Skip & write" to proceed without answering.
+interface GenerationContext {
+  input: string
+  saveResult: boolean
+  clarifications: Clarification[]
+  round: number
+}
+
 const FORCE_PROCEED_ROUND = 99
+const SURFACE_ID = 'generation-panel'
+
+function readStoredContext(key: string): GenerationContext | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<GenerationContext>
+    if (typeof parsed.input !== 'string' || typeof parsed.saveResult !== 'boolean') return null
+    return {
+      input: parsed.input,
+      saveResult: parsed.saveResult,
+      clarifications: Array.isArray(parsed.clarifications) ? parsed.clarifications : [],
+      round: typeof parsed.round === 'number' ? parsed.round : 0,
+    }
+  } catch {
+    return null
+  }
+}
 
 export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
   const [streamedText, setStreamedText] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [pendingQuestions, setPendingQuestions] = useState<ClarifyQuestion[] | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const runIdRef = useRef<string | null>(null)
   const outputRef = useRef<HTMLDivElement>(null)
-  // In-flight generation context, preserved across the clarify round trip.
-  const genCtxRef = useRef<{ input: string; saveResult: boolean; clarifications: Clarification[]; round: number }>({
+
+  const accumulatedRef = useRef('')
+  const askedRef = useRef<ClarifyQuestion[] | null>(null)
+  const rejectionRef = useRef<string | null>(null)
+  const rafScheduledRef = useRef(false)
+  const genCtxRef = useRef<GenerationContext>({
     input: '',
     saveResult: true,
     clarifications: [],
     round: 0,
   })
 
-  useEffect(() => () => {
-    const controller = abortRef.current
-    const runId = runIdRef.current
-    if (!controller) return
-    if (runId) void api.agents.cancel(storyId, runId).catch(() => controller.abort())
-    else controller.abort()
-  }, [storyId])
+  const contextStorageKey = useMemo(
+    () => `errata:generation:context:${storyId}:${branchId ?? ''}:${SURFACE_ID}`,
+    [branchId, storyId],
+  )
+
+  const persistContext = useCallback((context: GenerationContext | null) => {
+    try {
+      if (context) sessionStorage.setItem(contextStorageKey, JSON.stringify(context))
+      else sessionStorage.removeItem(contextStorageKey)
+    } catch {
+      // Session persistence is recovery-only; never block generation on it.
+    }
+  }, [contextStorageKey])
+
+  // Load the round context before useRunStream's attach effect runs. A retained
+  // run can then replay from seq 0 and still know how to continue clarification.
+  useEffect(() => {
+    const stored = readStoredContext(contextStorageKey)
+    if (!stored) return
+    genCtxRef.current = stored
+    setInput(current => current || stored.input)
+  }, [contextStorageKey])
+
+  const handleEvent = useCallback((event: ChatEvent) => {
+    if (event.type === 'run-start') {
+      accumulatedRef.current = ''
+      askedRef.current = null
+      rejectionRef.current = null
+      setStreamedText('')
+      setPendingQuestions(null)
+      setError(null)
+      return
+    }
+
+    if (event.type === 'text') {
+      accumulatedRef.current += event.text
+      if (!rafScheduledRef.current) {
+        rafScheduledRef.current = true
+        requestAnimationFrame(() => {
+          setStreamedText(accumulatedRef.current)
+          if (outputRef.current) {
+            outputRef.current.scrollTop = outputRef.current.scrollHeight
+          }
+          rafScheduledRef.current = false
+        })
+      }
+      return
+    }
+
+    if (event.type === 'clarify-questions') {
+      askedRef.current = event.questions
+      return
+    }
+
+    if (event.type === 'generation-rejected') {
+      rejectionRef.current = event.reason
+      return
+    }
+
+    if (event.type === 'error') {
+      setError(event.error)
+    }
+  }, [])
+
+  const handleSettled = useCallback(async (status: RunStatus, message?: string) => {
+    setStreamedText(accumulatedRef.current)
+
+    if (askedRef.current) {
+      setPendingQuestions(askedRef.current)
+      if (message) setError(message)
+      return
+    }
+
+    if (rejectionRef.current) {
+      setError(rejectionRef.current)
+      persistContext(null)
+      return
+    }
+
+    if (status === 'error') {
+      setError(message ?? 'Generation failed')
+      persistContext(null)
+      return
+    }
+
+    if (status === 'cancelled') {
+      setPendingQuestions(null)
+      persistContext(null)
+      return
+    }
+
+    // A completed save may have changed fragments/prose-chain. Invalidating for
+    // previews too is harmless and makes retained-run recovery deterministic.
+    await invalidateStoryContent(queryClient, storyId)
+
+    if (genCtxRef.current.saveResult) {
+      setInput('')
+    }
+    persistContext(null)
+  }, [persistContext, queryClient, storyId])
+
+  const run = useRunStream({
+    storyId,
+    branchId,
+    kind: 'generation',
+    scopeId: SURFACE_ID,
+    onEvent: handleEvent,
+    onSettled: handleSettled,
+    recoverFullRunOnAttach: true,
+  })
+  const isGenerating = run.isStreaming
 
   const runGeneration = useCallback(async (
     genInput: string,
@@ -60,121 +190,67 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
     clarifications: Clarification[],
     round: number,
   ) => {
-    if (!genInput.trim()) return
+    if (!genInput.trim() || isGenerating) return
 
-    setIsGenerating(true)
     setError(null)
     setPendingQuestions(null)
     if (round === 0) setStreamedText('')
-    // Preserve the prompt that started this round so answering/skipping reruns
-    // against it, even if the author edits the textarea while questions show.
-    genCtxRef.current = { input: genInput, saveResult, clarifications, round }
+    accumulatedRef.current = ''
+    askedRef.current = null
+    rejectionRef.current = null
 
-    const ac = new AbortController()
-    abortRef.current = ac
-    const runId = generateRunId()
-    runIdRef.current = runId
-
-    let asked: ClarifyQuestion[] | null = null
-    let rejectionReason: string | null = null
-    let stopped = false
-    try {
-      const opts = clarifications.length || round > 0
-        ? { clarifications, clarifyRound: round, runId }
-        : { runId }
-      const stream = saveResult
-        ? await api.generation.generateAndSave(storyId, genInput, ac.signal, opts)
-        : await api.generation.stream(storyId, genInput, ac.signal, opts)
-
-      const reader = stream.getReader()
-      let accumulated = ''
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-        } else if (value.type === 'clarify-questions') {
-          asked = value.questions
-        } else if (value.type === 'generation-rejected') {
-          rejectionReason = value.reason
-        } else if (value.type === 'finish') {
-          stopped = value.stopped === true
-        }
-
-        if (!rafScheduled && accumulated) {
-          rafScheduled = true
-          const snapshot = accumulated
-          requestAnimationFrame(() => {
-            setStreamedText(snapshot)
-            if (outputRef.current) {
-              outputRef.current.scrollTop = outputRef.current.scrollHeight
-            }
-            rafScheduled = false
-          })
-        }
-      }
-
-      if (asked) {
-        setPendingQuestions(asked)
-        return // wait for the author's answers before finalizing
-      }
-
-      if (rejectionReason) {
-        setError(rejectionReason)
-        return
-      }
-
-      setStreamedText(accumulated)
-      // A stopped run closes its stream as cleanly as a finished one, so the
-      // flag is what distinguishes them. Nothing was committed, so the prompt
-      // stays in the textarea.
-      if (saveResult && !stopped) {
-        await invalidateStoryContent(queryClient, storyId)
-        setInput('')
-      }
-    } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') {
-        setError(err instanceof Error ? err.message : 'Generation failed')
-      }
-    } finally {
-      setIsGenerating(false)
-      abortRef.current = null
-      if (runIdRef.current === runId) runIdRef.current = null
+    const context: GenerationContext = {
+      input: genInput,
+      saveResult,
+      clarifications,
+      round,
     }
-  }, [storyId, queryClient])
+    genCtxRef.current = context
+    persistContext(context)
+
+    try {
+      await run.start((clientRequestId) => {
+        const opts = {
+          clarifications,
+          clarifyRound: round,
+          clientRequestId,
+          scopeId: SURFACE_ID,
+          ...(branchId ? { branchId } : {}),
+        }
+        return saveResult
+          ? api.generation.generateAndSave(storyId, genInput, undefined, opts)
+          : api.generation.stream(storyId, genInput, undefined, opts)
+      })
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : 'Generation failed')
+      persistContext(null)
+    }
+  }, [branchId, isGenerating, persistContext, run.start, storyId])
 
   const handleGenerate = useCallback((saveResult: boolean) => {
     if (isGenerating) return
-    runGeneration(input, saveResult, [], 0)
-  }, [isGenerating, runGeneration, input])
+    void runGeneration(input, saveResult, [], 0)
+  }, [input, isGenerating, runGeneration])
 
   const handleAnswers = useCallback((answers: Clarification[]) => {
-    const { input: gi, saveResult, clarifications, round } = genCtxRef.current
-    runGeneration(gi, saveResult, [...clarifications, ...answers], round + 1)
+    const { input: original, saveResult, clarifications, round } = genCtxRef.current
+    void runGeneration(
+      original,
+      saveResult,
+      [...clarifications, ...answers],
+      round + 1,
+    )
   }, [runGeneration])
 
   const handleSkipQuestions = useCallback(() => {
-    const { input: gi, saveResult, clarifications } = genCtxRef.current
-    runGeneration(gi, saveResult, clarifications, FORCE_PROCEED_ROUND)
+    const { input: original, saveResult, clarifications } = genCtxRef.current
+    void runGeneration(original, saveResult, clarifications, FORCE_PROCEED_ROUND)
   }, [runGeneration])
 
   const handleStop = useCallback(() => {
-    const controller = abortRef.current
-    const runId = runIdRef.current
-    if (controller) {
-      if (runId) {
-        // Keep the transport open so the server's final `stopped` event is the
-        // single completion signal. Abort locally only if cancellation itself
-        // could not be requested.
-        void api.agents.cancel(storyId, runId).catch(() => controller.abort())
-      } else {
-        controller.abort()
-      }
-    }
+    void run.cancel()
     setPendingQuestions(null)
-  }, [storyId])
+  }, [run.cancel])
 
   return (
     <Panel data-component-id="generation-panel-root">
@@ -209,7 +285,6 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
         />
       ) : (
         <>
-          {/* Streaming output area */}
           {streamedText && (
             <>
               <div ref={outputRef} className="flex-1 overflow-auto px-6 py-6" data-component-id="generation-output">
@@ -221,13 +296,18 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
             </>
           )}
 
+          {run.isReconnecting && (
+            <div className="px-6 py-2 text-xs text-muted-foreground bg-muted/20 border-b border-border/30">
+              Reconnecting — generation is still running on the server.
+            </div>
+          )}
+
           {error && (
             <div className="px-6 py-2 text-sm text-destructive bg-destructive/5 border-b border-border/50">
               {error}
             </div>
           )}
 
-          {/* Clarifying questions from the prewriter */}
           {pendingQuestions && (
             <QuestionCard
               questions={pendingQuestions}
@@ -237,17 +317,20 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
             />
           )}
 
-          {/* Input area */}
           <div className="px-6 py-5 space-y-3">
             <Textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(event) => setInput(event.target.value)}
               placeholder="Describe what should happen next in the story..."
               className="min-h-[80px] resize-none text-sm bg-transparent placeholder:italic placeholder:text-muted-foreground"
               disabled={isGenerating}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault()
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter'
+                  && (event.ctrlKey || event.metaKey)
+                  && !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault()
                   handleGenerate(true)
                 }
               }}
