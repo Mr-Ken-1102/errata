@@ -399,6 +399,7 @@ export function toRunSummary(run: Run): RunSummary {
 export interface ListRunsFilter {
   scopeId?: string | null
   kind?: RunKind
+  branchId?: string
   /** Only runs that are still executing. */
   active?: boolean
 }
@@ -409,6 +410,7 @@ export function listRuns(storyId: string, filter: ListRunsFilter = {}): RunSumma
     if (run.storyId !== storyId) continue
     if (filter.active && run.status !== 'running') continue
     if (filter.kind && run.kind !== filter.kind) continue
+    if (filter.branchId && run.branchId !== filter.branchId) continue
     if (filter.scopeId !== undefined && run.scopeId !== filter.scopeId) continue
     result.push(toRunSummary(run))
   }
@@ -419,10 +421,16 @@ export function listRuns(storyId: string, filter: ListRunsFilter = {}): RunSumma
  * Find a still-running run for a UI surface, so a reconnecting or retrying
  * client attaches to it instead of starting a competing generation.
  */
-export function findLiveRun(storyId: string, kind: RunKind, scopeId: string | null): Run | null {
+export function findLiveRun(
+  storyId: string,
+  kind: RunKind,
+  scopeId: string | null,
+  branchId?: string,
+): Run | null {
   for (const run of runs.values()) {
     if (run.status !== 'running') continue
     if (run.storyId !== storyId || run.kind !== kind || run.scopeId !== scopeId) continue
+    if (branchId && run.branchId !== branchId) continue
     return run
   }
   return null
@@ -433,9 +441,15 @@ export function findLiveRun(storyId: string, kind: RunKind, scopeId: string | nu
  * retention window, so a retry that arrives after completion still reads the
  * original result instead of re-running the same edits.
  */
-export function findRunByClientRequestId(storyId: string, clientRequestId: string): Run | null {
+export function findRunByClientRequestId(
+  storyId: string,
+  clientRequestId: string,
+  branchId?: string,
+): Run | null {
   for (const run of runs.values()) {
-    if (run.storyId === storyId && run.clientRequestId === clientRequestId) return run
+    if (run.storyId !== storyId || run.clientRequestId !== clientRequestId) continue
+    if (branchId && run.branchId !== branchId) continue
+    return run
   }
   return null
 }
