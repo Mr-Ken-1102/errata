@@ -85,4 +85,32 @@ describe('startAndConsumeRun', () => {
     expect(seen).toEqual(['existing output'])
     expect(result).toMatchObject({ runId: 'run-existing', status: 'complete' })
   })
+
+  it('re-POSTs with the same key when a 200 stream ends before run-start', async () => {
+    const ids: string[] = []
+    let calls = 0
+
+    const result = await startAndConsumeRun(
+      'story-1',
+      async (clientRequestId) => {
+        ids.push(clientRequestId)
+        calls += 1
+        if (calls === 1) {
+          return new ReadableStream<SequencedChatEvent>({
+            start(controller) { controller.close() },
+          })
+        }
+        return completedStream('run-after-empty-stream')
+      },
+      () => {},
+    )
+
+    expect(calls).toBe(2)
+    expect(ids[0]).toBe(ids[1])
+    expect(result).toMatchObject({
+      runId: 'run-after-empty-stream',
+      status: 'complete',
+    })
+  })
+
 })
