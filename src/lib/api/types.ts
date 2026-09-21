@@ -304,6 +304,29 @@ export interface Clarification {
   answer: string
 }
 
+// --- Server-authoritative runs ---
+
+export type RunKind =
+  | 'librarian.chat'
+  | 'generation'
+  | 'character-chat'
+  | 'librarian.refine'
+  | 'librarian.prose-transform'
+
+export type RunStatus = 'running' | 'complete' | 'error' | 'cancelled'
+
+export interface RunSummary {
+  id: string
+  storyId: string
+  kind: RunKind
+  scopeId: string | null
+  status: RunStatus
+  startedAt: string
+  finishedAt?: string
+  error?: string
+  seq: number
+}
+
 export type ChatEvent =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
@@ -324,6 +347,20 @@ export type ChatEvent =
   | { type: 'generation-rejected'; reason: string; code: 'empty_output' | 'incomplete_finish' | 'reasoning_leak'; finishReason: string }
   | { type: 'prewriter-directions'; directions: SuggestionDirection[] }
   | { type: 'clarify-questions'; questions: ClarifyQuestion[]; round: number }
+  | { type: 'run-start'; runId: string; kind: RunKind; status: RunStatus }
+  | { type: 'run-end'; status: RunStatus }
+  | { type: 'error'; error: string }
+  | { type: 'keepalive' }
+
+export type SequencedChatEvent = ChatEvent & { seq: number }
+
+export type TerminalChatEvent =
+  | Extract<ChatEvent, { type: 'run-end' }>
+  | Extract<ChatEvent, { type: 'error' }>
+
+export function isTerminalChatEvent(event: ChatEvent): event is TerminalChatEvent {
+  return event.type === 'run-end' || event.type === 'error'
+}
 
 // Character Chat types
 export type PersonaMode =
