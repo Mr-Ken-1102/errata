@@ -25,7 +25,9 @@ import {
   isTavernCardPng,
   extractParsedCard,
   parseCardJson,
+  parseSillyTavernLorebook,
   type ParsedCharacterCard,
+  type ParsedLorebook,
 } from '@/lib/importers/tavern-card'
 import {
   Dialog,
@@ -54,6 +56,7 @@ const FragmentExportPanel = lazy(() => import('@/components/fragments/FragmentEx
 const FragmentImportDialog = lazy(() => import('@/components/fragments/FragmentImportDialog').then((module) => ({ default: module.FragmentImportDialog })))
 const TavernCardImportDialog = lazy(() => import('@/components/fragments/TavernCardImportDialog').then((module) => ({ default: module.TavernCardImportDialog })))
 const CharacterCardImportDialog = lazy(() => import('@/components/fragments/CharacterCardImportDialog').then((module) => ({ default: module.CharacterCardImportDialog })))
+const LorebookImportDialog = lazy(() => import('@/components/fragments/LorebookImportDialog').then((module) => ({ default: module.LorebookImportDialog })))
 const CharacterChatView = lazy(() => import('@/components/character-chat/CharacterChatView').then((module) => ({ default: module.CharacterChatView })))
 const ErratanetIntroPrompt = lazy(() => import('@/components/erratanet/ErratanetIntroPrompt').then((module) => ({ default: module.ErratanetIntroPrompt })))
 
@@ -95,6 +98,8 @@ function StoryEditorPage() {
   const [showCardImport, setShowCardImport] = useState(false)
   const [cardImportData, setCardImportData] = useState<ParsedCharacterCard | null>(null)
   const [cardImportImageUrl, setCardImportImageUrl] = useState<string | null>(null)
+  const [showLorebookImport, setShowLorebookImport] = useState(false)
+  const [lorebookImportData, setLorebookImportData] = useState<ParsedLorebook | null>(null)
   const [pluginSidebarVisibility, setPluginSidebarVisibility] = useState<Record<string, boolean>>({})
   const [pluginCloseReturnSection, setPluginCloseReturnSection] = useState<SidebarSection>(null)
   const [askLibrarianFragmentId, setAskLibrarianFragmentId] = useState<string | null>(null)
@@ -343,6 +348,11 @@ function StoryEditorPage() {
     setShowTavernImport(true)
   }, [])
 
+  const handleOpenLorebookImport = useCallback(() => {
+    setLorebookImportData(null)
+    setShowLorebookImport(true)
+  }, [])
+
   const handleJsonCardDetected = useCallback((data: ParsedCharacterCard) => {
     setShowTavernImport(false)
     setCardImportData(data)
@@ -397,6 +407,14 @@ function StoryEditorPage() {
         setCardImportData(cardParsed)
         setCardImportImageUrl(null)
         setShowCardImport(true)
+        return
+      }
+
+      // Try standalone SillyTavern lorebook/world-info JSON.
+      const lorebookParsed = parseSillyTavernLorebook(text)
+      if (lorebookParsed) {
+        setLorebookImportData(lorebookParsed)
+        setShowLorebookImport(true)
         return
       }
 
@@ -534,6 +552,7 @@ function StoryEditorPage() {
         onLaunchWizard={handleLaunchWizard}
         onImportFragment={handleOpenImport}
         onImportCard={handleOpenTavernImport}
+        onImportLorebook={handleOpenLorebookImport}
         onExport={() => {
           transitionWorkspaceSurface({ kind: 'export' })
         }}
@@ -810,6 +829,17 @@ function StoryEditorPage() {
             onOpenChange={setShowCardImport}
             initialCardData={cardImportData}
             imageDataUrl={cardImportImageUrl}
+          />
+        </Suspense>
+      )}
+
+      {showLorebookImport && (
+        <Suspense fallback={null}>
+          <LorebookImportDialog
+            storyId={storyId}
+            open
+            onOpenChange={setShowLorebookImport}
+            initialData={lorebookImportData}
           />
         </Suspense>
       )}
