@@ -211,15 +211,19 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     element.style.height = Math.min(element.scrollHeight, 400) + 'px'
   }, [input])
 
-  const clearActiveConversation = useCallback(() => {
-    try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
+  const resetConversationState = useCallback(() => {
     setConversationId(null)
     conversationIdRef.current = null
     setMessages([])
     setError(null)
     liveRef.current = null
     setPendingFirstMessage(null)
-  }, [activeConversationStorageKey])
+  }, [])
+
+  const clearActiveConversation = useCallback(() => {
+    try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
+    resetConversationState()
+  }, [activeConversationStorageKey, resetConversationState])
 
   // Handle character change — reset conversation.
   const handleCharacterChange = useCallback((id: string) => {
@@ -244,13 +248,13 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     } catch (resumeError) {
       setError(resumeError instanceof Error ? resumeError.message : 'Failed to load conversation')
     }
-  }, [activeConversationStorageKey, installConversation, storyId])
+  }, [activeConversationStorageKey, installConversation, resetConversationState, storyId])
 
   // Restore the conversation that was open in this branch so a page reload can
   // reattach to its server-owned run.
   useEffect(() => {
     let cancelled = false
-    clearActiveConversation()
+    resetConversationState()
 
     let saved: string | null = null
     try { saved = sessionStorage.getItem(activeConversationStorageKey) } catch { /* ignore */ }
