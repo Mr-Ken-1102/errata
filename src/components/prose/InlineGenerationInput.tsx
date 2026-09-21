@@ -69,7 +69,12 @@ export function InlineGenerationInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const composeTextareaRef = useRef<HTMLTextAreaElement>(null)
   // In-flight generation context, preserved across clarify and page reload.
-  const genCtxRef = useRef<{ input: string; clarifications: Clarification[]; round: number }>({
+  const genCtxRef = useRef<{
+    input: string
+    clarifications: Clarification[]
+    round: number
+    pendingQuestions?: ClarifyQuestion[]
+  }>({
     input: '',
     clarifications: [],
     round: 0,
@@ -79,7 +84,12 @@ export function InlineGenerationInput({
     [branchId, storyId],
   )
   const persistGenerationContext = useCallback((
-    context: { input: string; clarifications: Clarification[]; round: number } | null,
+    context: {
+      input: string
+      clarifications: Clarification[]
+      round: number
+      pendingQuestions?: ClarifyQuestion[]
+    } | null,
   ) => {
     try {
       if (context) sessionStorage.setItem(contextStorageKey, JSON.stringify(context))
@@ -97,14 +107,21 @@ export function InlineGenerationInput({
         input?: string
         clarifications?: Clarification[]
         round?: number
+        pendingQuestions?: ClarifyQuestion[]
       }
       if (typeof parsed.input !== 'string') return
       genCtxRef.current = {
         input: parsed.input,
         clarifications: Array.isArray(parsed.clarifications) ? parsed.clarifications : [],
         round: typeof parsed.round === 'number' ? parsed.round : 0,
+        ...(Array.isArray(parsed.pendingQuestions)
+          ? { pendingQuestions: parsed.pendingQuestions }
+          : {}),
       }
       setInput(current => current || parsed.input!)
+      if (parsed.pendingQuestions?.length) {
+        setPendingQuestions(parsed.pendingQuestions)
+      }
     } catch {
       // Ignore stale recovery state.
     }
@@ -348,6 +365,12 @@ export function InlineGenerationInput({
       prewriterDirectionsRef.current = event.directions
     } else if (event.type === 'clarify-questions') {
       askedQuestionsRef.current = event.questions
+      const nextContext = {
+        ...genCtxRef.current,
+        pendingQuestions: event.questions,
+      }
+      genCtxRef.current = nextContext
+      persistGenerationContext(nextContext)
     } else if (event.type === 'generation-rejected') {
       rejectionReasonRef.current = event.reason
     } else if (event.type === 'phase') {
@@ -361,7 +384,7 @@ export function InlineGenerationInput({
     }
 
     scheduleGenerationViewFlush()
-  }, [onGenerationStart, scheduleGenerationViewFlush])
+  }, [onGenerationStart, persistGenerationContext, scheduleGenerationViewFlush])
 
   const handleRunSettled = useCallback(async (status: RunStatus, message?: string) => {
     flushGenerationView(true)
@@ -442,7 +465,12 @@ export function InlineGenerationInput({
     setPendingQuestions(null)
     prewriterDirectionsRef.current = null
 
-    const context = { input: generationInput, clarifications, round }
+    const context = {
+      input: generationInput,
+      clarifications,
+      round,
+      pendingQuestions: undefined,
+    }
     genCtxRef.current = context
     persistGenerationContext(context)
 
