@@ -391,6 +391,7 @@ export async function runGeneration(
               emit({ type: 'clarify-questions', questions: prewriterResult.questions, round: clarifyRound })
               emit({ type: 'finish', finishReason: 'clarify', stepCount: prewriterResult.stepCount, stopped: true })
               writerRun.finish('success', { output: { finishReason: 'clarify', stepCount: prewriterResult.stepCount } })
+              detachExternalAbort()
               controller.close()
               return
             }
