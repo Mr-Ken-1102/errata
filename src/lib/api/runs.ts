@@ -3,8 +3,11 @@ import { isTerminalChatEvent, type ChatEvent, type RunStatus, type RunSummary, t
 
 const API_BASE = '/api'
 
-async function fetchRunEventStream(path: string): Promise<ReadableStream<SequencedChatEvent>> {
-  const res = await fetch(`${API_BASE}${path}`)
+export async function fetchRunEventStream(
+  path: string,
+  init?: RequestInit,
+): Promise<ReadableStream<SequencedChatEvent>> {
+  const res = await fetch(`${API_BASE}${path}`, init)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new ApiError(err.error ?? `API error: ${res.status}`, res.status, err)
