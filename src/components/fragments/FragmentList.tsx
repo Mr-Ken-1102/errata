@@ -18,7 +18,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pin, GripVertical, FileDown, UserPlus, Archive, FolderPlus, ChevronRight, MoreHorizontal, Pencil, Trash2, FolderOpen, ListFilter } from 'lucide-react'
+import { Plus, Pin, GripVertical, FileDown, UserPlus, Archive, FolderPlus, ChevronRight, MoreHorizontal, Pencil, Trash2, FolderOpen, ListFilter, BookOpen } from 'lucide-react'
 import { Caption } from '@/components/ui/prose-text'
 import { FragmentBubbleShape } from './FragmentBubbleShape'
 
@@ -31,6 +31,7 @@ interface FragmentListProps {
   onCreateNew: () => void
   onImport?: () => void
   onImportCard?: () => void
+  onImportLorebook?: () => void
   selectedId?: string
 }
 
@@ -416,6 +417,7 @@ export function FragmentList({
   onCreateNew,
   onImport,
   onImportCard,
+  onImportLorebook,
   selectedId,
 }: FragmentListProps) {
   const [search, setSearch] = useState('')
@@ -1078,6 +1080,16 @@ export function FragmentList({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">Import character card</TooltipContent>
+              </Tooltip>
+            )}
+            {onImportLorebook && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" variant="ghost" className="size-6 text-muted-foreground hover:text-foreground" onClick={onImportLorebook} data-component-id={componentId(listIdBase ?? type ?? 'fragment', 'import-lorebook-button')}>
+                    <BookOpen className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Import standalone lorebook</TooltipContent>
               </Tooltip>
             )}
             {onImport && (
