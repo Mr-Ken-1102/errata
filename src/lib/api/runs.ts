@@ -132,7 +132,25 @@ export async function startAndConsumeRun(
     }
   }
 
-  return consumeRun(storyId, stream, onEvent)
+  let result = await consumeRun(storyId, stream, onEvent)
+  if (
+    result.runId === null
+    && result.status === 'error'
+    && result.error === 'Connection lost'
+  ) {
+    // Same edge as the hook: the response opened but died before run-start, so
+    // there is no run id to GET yet. Re-POST once with the same key.
+    try {
+      stream = await post(clientRequestId)
+    } catch (retryError) {
+      const existing = conflictRunId(retryError)
+      if (!existing) throw retryError
+      stream = await runs.events(storyId, existing, 0)
+    }
+    result = await consumeRun(storyId, stream, onEvent)
+  }
+
+  return result
 }
 
 /**
