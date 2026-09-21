@@ -13,6 +13,7 @@ export interface ToolCallInfo {
   toolName: string
   args: Record<string, unknown>
   result?: unknown
+  error?: string
 }
 
 export interface AssistantMessage {
@@ -20,6 +21,7 @@ export interface AssistantMessage {
   content: string
   reasoning?: string
   toolCalls?: ToolCallInfo[]
+  error?: string
 }
 
 export type ChatMessage =
@@ -37,6 +39,7 @@ export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo
     .join(', ')
 
   const hasResult = tc.result !== undefined
+  const hasError = !!tc.error
 
   return (
     <div className="my-1.5 rounded border border-border/40 bg-muted/20 text-[0.625rem]">
@@ -57,6 +60,11 @@ export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo
             done
           </Badge>
         )}
+        {hasError && (
+          <Badge variant="destructive" className="text-[0.5625rem] px-1 py-0 h-4 ml-auto shrink-0">
+            error
+          </Badge>
+        )}
       </button>
       {expanded && (
         <div className="px-2 pb-2 space-y-1.5 border-t border-border/20">
@@ -71,6 +79,14 @@ export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo
               <div className="text-muted-foreground mb-0.5">Result</div>
               <pre className="bg-muted/30 rounded px-1.5 py-1 font-mono text-[0.625rem] overflow-x-auto whitespace-pre-wrap break-all">
                 {JSON.stringify(tc.result, null, 2)}
+              </pre>
+            </div>
+          )}
+          {hasError && (
+            <div>
+              <div className="text-destructive mb-0.5">Error</div>
+              <pre className="bg-destructive/5 text-destructive rounded px-1.5 py-1 font-mono text-[0.625rem] overflow-x-auto whitespace-pre-wrap break-all">
+                {tc.error}
               </pre>
             </div>
           )}
@@ -136,6 +152,11 @@ export function AssistantMessageView({
           content={msg.content}
           streaming={streaming}
         />
+      )}
+      {msg.error && (
+        <div className="mt-2 rounded bg-destructive/5 px-2 py-1.5 text-[0.625rem] text-destructive">
+          {msg.error}
+        </div>
       )}
       {streaming && !msg.content && !msg.reasoning && (
         <span className="inline-block w-0.5 h-[1em] bg-primary/60 animate-pulse align-text-bottom" />
