@@ -382,13 +382,12 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
   // Reattach on mount: to a stored run for this scope, or to whatever the
   // server says is still running here (covers a reload on a different device).
   useEffect(() => {
-    if (!autoAttach) return
     disposedRef.current = false
     let cancelled = false
 
     // The watched surface (branch/conversation/fragment) changed. Invalidate
-    // any reader/reconnect from the previous key before discovering a run for
-    // the new one, otherwise late events can bleed into the next surface.
+    // any reader/reconnect from the previous key before deciding whether the
+    // new surface is ready to attach.
     epochRef.current += 1
     currentReaderRef.current?.cancel().catch(() => {})
     currentReaderRef.current = null
@@ -401,6 +400,8 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     setPhase('idle')
     setIsReconnecting(false)
     setError(null)
+
+    if (!autoAttach) return
 
     void (async () => {
       const stored = readStored(key)
