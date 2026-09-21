@@ -1,11 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { consumeRun } from '@/lib/api/runs'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Sparkles, Square, X } from 'lucide-react'
 import { StreamMarkdown } from '@/components/ui/stream-markdown'
-import { generateRunId } from '@/lib/client-ids'
 
 interface RefinementPanelProps {
   storyId: string
@@ -30,33 +30,33 @@ export function RefinementPanel({
   const [done, setDone] = useState(false)
   const [cancelled, setCancelled] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
   const runIdRef = useRef<string | null>(null)
+  const activeRef = useRef(false)
+  const cancelRequestedRef = useRef(false)
+  const mountedRef = useRef(true)
 
-  // The panel's lifetime bounds the run: closing it — by its own X or by the
-  // surface that mounted it dropping the target — stops the refinement rather
-  // than leaving it writing to a fragment nobody is watching.
+  // Closing this panel is an explicit user stop, not a network disconnect.
+  // If the run-start event has not arrived yet, remember the intent and send
+  // the cancellation as soon as the server-issued run id is observed.
   useEffect(() => () => {
+    mountedRef.current = false
+    if (!activeRef.current) return
+    cancelRequestedRef.current = true
     const runId = runIdRef.current
-    const controller = abortRef.current
-    if (!controller) return
-    if (runId) void api.agents.cancel(storyId, runId).catch(() => controller.abort())
-    else controller.abort()
+    if (runId) void api.runs.cancel(storyId, runId).catch(() => {})
   }, [storyId])
 
   const handleRefine = useCallback(async () => {
-    if (abortRef.current) return
+    if (activeRef.current) return
 
+    activeRef.current = true
+    cancelRequestedRef.current = false
+    runIdRef.current = null
     setIsRefining(true)
     setStreamedText('')
     setError(null)
     setDone(false)
     setCancelled(false)
-
-    const ac = new AbortController()
-    abortRef.current = ac
-    const runId = generateRunId()
-    runIdRef.current = runId
 
     const refreshFragments = () => Promise.all([
       queryClient.invalidateQueries({ queryKey: ['fragments', storyId] }),
@@ -68,58 +68,60 @@ export function RefinementPanel({
         storyId,
         fragmentId,
         instructions.trim() || undefined,
-        runId,
-        ac.signal,
       )
 
-      const reader = stream.getReader()
       let accumulated = ''
-      let stopped = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-          setStreamedText(accumulated)
-        } else if (value.type === 'finish') {
-          stopped = value.stopped === true
+      const result = await consumeRun(storyId, stream, (event) => {
+        if (event.type === 'run-start') {
+          runIdRef.current = event.runId
+          if (cancelRequestedRef.current) {
+            void api.runs.cancel(storyId, event.runId).catch(() => {})
+          }
+          return
         }
 
-        if (outputRef.current) {
+        if (event.type === 'text') {
+          accumulated += event.text
+          if (mountedRef.current) setStreamedText(accumulated)
+        }
+
+        if (mountedRef.current && outputRef.current) {
           outputRef.current.scrollTop = outputRef.current.scrollHeight
         }
-      }
+      })
 
-      // A stopped write-enabled run may have landed a tool call already. Always
-      // refresh, but do not infer completion from the events that preceded it.
+      // A cancelled write-enabled run may already have landed a tool call.
       await refreshFragments()
-      if (stopped) {
+      if (!mountedRef.current) return
+
+      if (result.status === 'cancelled') {
         setCancelled(true)
         return
       }
+      if (result.status === 'error') {
+        setError(result.error ?? 'Refinement failed')
+        return
+      }
+
       setDone(true)
       onComplete?.()
     } catch (err) {
-      if (!ac.signal.aborted) {
+      if (mountedRef.current) {
         setError(err instanceof Error ? err.message : 'Refinement failed')
-        return
       }
-      await refreshFragments()
-      setCancelled(true)
     } finally {
-      abortRef.current = null
-      if (runIdRef.current === runId) runIdRef.current = null
-      setIsRefining(false)
+      activeRef.current = false
+      runIdRef.current = null
+      cancelRequestedRef.current = false
+      if (mountedRef.current) setIsRefining(false)
     }
   }, [instructions, storyId, fragmentId, queryClient, onComplete])
 
   const handleCancel = useCallback(() => {
-    const controller = abortRef.current
+    if (!activeRef.current) return
+    cancelRequestedRef.current = true
     const runId = runIdRef.current
-    if (!controller) return
-    if (runId) void api.agents.cancel(storyId, runId).catch(() => controller.abort())
-    else controller.abort()
+    if (runId) void api.runs.cancel(storyId, runId).catch(() => {})
   }, [storyId])
 
   return (
