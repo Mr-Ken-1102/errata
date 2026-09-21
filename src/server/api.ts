@@ -141,7 +141,7 @@ export function createApp(dataDir: string = DATA_DIR) {
     .use(erratanetRoutes(dataDir))
     .use(erratanetAgentConfigRoutes(dataDir))
     .use(storySetupRoutes(dataDir))
-    .use(runRoutes())
+    .use(runRoutes(dataDir))
 
   // Mount plugin routes
   for (const plugin of pluginRegistry.listAll()) {
