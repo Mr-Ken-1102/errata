@@ -45,6 +45,12 @@ export type ServerRunEvent =
   | { type: 'prewriter-reset' }
   | { type: 'prewriter-directions'; directions: unknown[] }
   | { type: 'clarify-questions'; questions: unknown[]; round: number }
+  | {
+      type: 'generation-rejected'
+      reason: string
+      code: 'empty_output' | 'incomplete_finish' | 'reasoning_leak'
+      finishReason: string
+    }
 
 /** An event as delivered to a subscriber: the event plus its cursor position. */
 export type SequencedRunEvent = ServerRunEvent & { seq: number }
