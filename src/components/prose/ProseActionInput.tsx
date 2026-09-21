@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { consumeRun, createRunRequestId } from '@/lib/api/runs'
 import { invalidateStoryContent } from '@/lib/branch-cache'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -37,20 +38,32 @@ export function ProseActionInput({
     onStreamStart()
 
     try {
+      const clientRequestId = createRunRequestId()
+      const opts = { clientRequestId }
       const stream = mode === 'regenerate'
-        ? await api.generation.regenerate(storyId, fragmentId, input)
-        : await api.generation.refine(storyId, fragmentId, input)
+        ? await api.generation.regenerate(storyId, fragmentId, input, undefined, opts)
+        : await api.generation.refine(storyId, fragmentId, input, undefined, opts)
 
-      const reader = stream.getReader()
       let accumulated = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
+      let rejection: string | null = null
+      const result = await consumeRun(storyId, stream, (event) => {
+        if (event.type === 'text') {
+          accumulated += event.text
           onStream(accumulated)
+        } else if (event.type === 'generation-rejected') {
+          rejection = event.reason
         }
+      })
+
+      if (rejection) {
+        setError(rejection)
+        return
       }
+      if (result.status === 'error') {
+        setError(result.error ?? 'Operation failed')
+        return
+      }
+      if (result.status === 'cancelled') return
 
       await invalidateStoryContent(queryClient, storyId)
       onComplete()
@@ -78,7 +91,7 @@ export function ProseActionInput({
           if (e.key === 'Escape') {
             onCancel()
           }
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
             e.preventDefault()
             handleSubmit()
           }
