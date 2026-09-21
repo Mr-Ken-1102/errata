@@ -91,6 +91,50 @@ export interface ConsumeRunResult {
   error?: string
 }
 
+function conflictRunId(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+  return typeof error.data.runId === 'string' ? error.data.runId : null
+}
+
+/**
+ * Start an imperative run with the same idempotency guarantee as useRunStream.
+ *
+ * If the initial POST loses its response, retry once with the same request id:
+ * the server either starts exactly one producer or replays the one it already
+ * created. A 409 from a genuinely competing surface is followed via its run id.
+ */
+export async function startAndConsumeRun(
+  storyId: string,
+  post: (clientRequestId: string) => Promise<ReadableStream<SequencedChatEvent>>,
+  onEvent: (event: ChatEvent) => void,
+): Promise<ConsumeRunResult> {
+  const clientRequestId = createRunRequestId()
+  let stream: ReadableStream<SequencedChatEvent>
+
+  try {
+    stream = await post(clientRequestId)
+  } catch (firstError) {
+    const existing = conflictRunId(firstError)
+    if (existing) {
+      stream = await runs.events(storyId, existing, 0)
+    } else if (!(firstError instanceof ApiError)) {
+      // A transport failure may have happened after the server accepted the
+      // request. The same key makes this retry attach rather than duplicate.
+      try {
+        stream = await post(clientRequestId)
+      } catch (retryError) {
+        const retryExisting = conflictRunId(retryError)
+        if (!retryExisting) throw retryError
+        stream = await runs.events(storyId, retryExisting, 0)
+      }
+    } else {
+      throw firstError
+    }
+  }
+
+  return consumeRun(storyId, stream, onEvent)
+}
+
 /**
  * Read a run to completion, reconnecting across dropped connections.
  *
