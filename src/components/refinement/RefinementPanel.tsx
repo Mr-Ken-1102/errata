@@ -147,7 +147,7 @@ export function RefinementPanel({
               placeholder="Optional: describe how to improve this fragment..."
               className="min-h-[60px] resize-none text-xs bg-transparent placeholder:italic placeholder:text-muted-foreground"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   handleRefine()
                 }
