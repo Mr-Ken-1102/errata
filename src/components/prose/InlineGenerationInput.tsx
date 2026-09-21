@@ -100,6 +100,10 @@ export function InlineGenerationInput({
   }, [contextStorageKey])
 
   useEffect(() => {
+    genCtxRef.current = { input: '', clarifications: [], round: 0 }
+    setInput('')
+    setPendingQuestions(null)
+
     try {
       const raw = sessionStorage.getItem(contextStorageKey)
       if (!raw) return
@@ -118,7 +122,7 @@ export function InlineGenerationInput({
           ? { pendingQuestions: parsed.pendingQuestions }
           : {}),
       }
-      setInput(current => current || parsed.input!)
+      setInput(parsed.input)
       if (parsed.pendingQuestions?.length) {
         setPendingQuestions(parsed.pendingQuestions)
       }
