@@ -335,9 +335,24 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     const clientRequestId = makeClientRequestId()
 
     try {
-      const stream = await post(clientRequestId)
-      const terminal = await consume(stream, epoch)
-      if (!terminal && epoch === epochRef.current) scheduleReconnect()
+      let retriedBeforeRunStart = false
+
+      while (epoch === epochRef.current) {
+        const stream = await post(clientRequestId)
+        const terminal = await consume(stream, epoch)
+        if (terminal || epoch !== epochRef.current) return
+
+        if (!runIdRef.current && !retriedBeforeRunStart) {
+          // The HTTP response itself arrived, but the connection died before
+          // the first run-start event. Retry the POST with the same idempotency
+          // key so the server replays the run it may already have created.
+          retriedBeforeRunStart = true
+          continue
+        }
+
+        scheduleReconnect()
+        return
+      }
     } catch (err) {
       // A 409 means a turn is already running for this surface and the server
       // handed back its id precisely so we can watch it instead of racing it
