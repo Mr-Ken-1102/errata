@@ -609,69 +609,68 @@ export function librarianRoutes(dataDir: string) {
 
     .post('/stories/:storyId/librarian/chat', async ({ params, body, set }) => {
       const requestLogger = logger.child({ storyId: params.storyId })
-      requestLogger.info('Librarian chat request', { messageCount: body.messages.length })
-
       const story = await getStory(dataDir, params.storyId)
       if (!story) {
         set.status = 404
         return { error: 'Story not found' }
       }
 
-      if (!body.messages.length) {
+      const text = body.message.trim()
+      if (!text) {
         set.status = 422
-        return { error: 'At least one message is required' }
+        return { error: 'message is required' }
       }
 
-      let agent: ReturnType<typeof createAgentInstance> | undefined
-      try {
-        agent = createAgentInstance('librarian.chat', {
-          dataDir,
-          storyId: params.storyId,
-          runId: body.runId,
-        })
-        const { eventStream, completion } = await agent.execute({
-          messages: body.messages,
-          maxSteps: story.settings.maxSteps ?? 10,
-        })
+      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const lockKey = `librarian-chat-start:${params.storyId}:${branchId}:legacy`
 
-        // Persist chat history after completion (in background)
-        completion.then(async (result) => {
-          requestLogger.info('Librarian chat completed', {
-            stepCount: result.stepCount,
-            finishReason: result.finishReason,
-            toolCallCount: result.toolCalls.length,
+      return withKeyLock(lockKey, async () => {
+        const existing = resolveExistingRun(
+          params.storyId,
+          null,
+          body.clientRequestId,
+          branchId,
+        )
+        if (existing) return existing
+
+        const live = findLiveRun(params.storyId, 'librarian.chat', null, branchId)
+        if (live) {
+          return new Response(JSON.stringify({
+            error: 'A chat turn is already running',
+            runId: live.id,
+          }), {
+            status: 409,
+            headers: { 'Content-Type': 'application/json' },
           })
-          const fullHistory = [
-            ...body.messages,
-            {
-              role: 'assistant' as const,
-              content: result.text,
-              ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-            },
-          ]
-          await saveLibrarianChatHistory(dataDir, params.storyId, fullHistory)
-        }).catch((err) => {
-          requestLogger.error('Librarian chat completion error', { error: err instanceof Error ? err.message : String(err) })
-        })
+        }
 
-        return new Response(encodeStream(eventStream), {
-          headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
-        })
-      } catch (err) {
-        agent?.fail(err)
-        requestLogger.error('Librarian chat failed', { error: err instanceof Error ? err.message : String(err) })
-        set.status = 500
-        return { error: err instanceof Error ? err.message : 'Chat failed' }
-      }
+        try {
+          const run = await startLibrarianChatRun({
+            dataDir,
+            storyId: params.storyId,
+            conversationId: null,
+            message: text,
+            ...(body.clientRequestId ? { clientRequestId: body.clientRequestId } : {}),
+            maxSteps: story.settings.maxSteps ?? 10,
+            logger: requestLogger,
+          })
+          return runStreamResponse(run)
+        } catch (error) {
+          requestLogger.error('Librarian chat failed to start', { error: describeError(error) })
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Chat failed',
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+      })
     }, {
       body: t.Object({
-        runId: t.Optional(t.String()),
-        messages: t.Array(t.Object({
-          role: t.Union([t.Literal('user'), t.Literal('assistant')]),
-          content: t.String(),
-        })),
+        message: t.String({ minLength: 1 }),
+        clientRequestId: t.Optional(t.String()),
       }),
-      detail: { summary: 'Chat with the librarian (streaming NDJSON)' },
+      detail: { summary: 'Chat with the librarian (server-owned run; streaming NDJSON)' },
     })
 
     // --- Conversations ---
@@ -697,61 +696,83 @@ export function librarianRoutes(dataDir: string) {
     }, { detail: { summary: 'Get conversation chat history' } })
 
     .post('/stories/:storyId/librarian/conversations/:conversationId/chat', async ({ params, body, set }) => {
-      const requestLogger = logger.child({ storyId: params.storyId, extra: { conversationId: params.conversationId } })
-      requestLogger.info('Conversation chat request', { messageCount: body.messages.length })
+      const requestLogger = logger.child({
+        storyId: params.storyId,
+        extra: { conversationId: params.conversationId },
+      })
 
       const story = await getStory(dataDir, params.storyId)
-      if (!story) { set.status = 404; return { error: 'Story not found' } }
-      if (!body.messages.length) { set.status = 422; return { error: 'At least one message is required' } }
-
-      let agent: ReturnType<typeof createAgentInstance> | undefined
-      try {
-        agent = createAgentInstance('librarian.chat', {
-          dataDir,
-          storyId: params.storyId,
-          runId: body.runId,
-        })
-        const { eventStream, completion } = await agent.execute({
-          messages: body.messages,
-          maxSteps: story.settings.maxSteps ?? 10,
-        })
-
-        completion.then(async (result) => {
-          requestLogger.info('Conversation chat completed', {
-            stepCount: result.stepCount,
-            finishReason: result.finishReason,
-            toolCallCount: result.toolCalls.length,
-          })
-          const fullHistory = [
-            ...body.messages,
-            {
-              role: 'assistant' as const,
-              content: result.text,
-              ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-            },
-          ]
-          await saveConversationHistory(dataDir, params.storyId, params.conversationId, fullHistory)
-        }).catch((err) => {
-          requestLogger.error('Conversation chat completion error', { error: err instanceof Error ? err.message : String(err) })
-        })
-
-        return new Response(encodeStream(eventStream), {
-          headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
-        })
-      } catch (err) {
-        agent?.fail(err)
-        requestLogger.error('Conversation chat failed', { error: err instanceof Error ? err.message : String(err) })
-        set.status = 500
-        return { error: err instanceof Error ? err.message : 'Chat failed' }
+      if (!story) {
+        set.status = 404
+        return { error: 'Story not found' }
       }
+
+      const conversations = await listConversations(dataDir, params.storyId)
+      if (!conversations.some(item => item.id === params.conversationId)) {
+        set.status = 404
+        return { error: 'Conversation not found' }
+      }
+
+      const text = body.message.trim()
+      if (!text) {
+        set.status = 422
+        return { error: 'message is required' }
+      }
+
+      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const lockKey = `librarian-chat-start:${params.storyId}:${branchId}:${params.conversationId}`
+
+      return withKeyLock(lockKey, async () => {
+        const existing = resolveExistingRun(
+          params.storyId,
+          params.conversationId,
+          body.clientRequestId,
+          branchId,
+        )
+        if (existing) return existing
+
+        const live = findLiveRun(
+          params.storyId,
+          'librarian.chat',
+          params.conversationId,
+          branchId,
+        )
+        if (live) {
+          return new Response(JSON.stringify({
+            error: 'A chat turn is already running',
+            runId: live.id,
+          }), {
+            status: 409,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+
+        try {
+          const run = await startLibrarianChatRun({
+            dataDir,
+            storyId: params.storyId,
+            conversationId: params.conversationId,
+            message: text,
+            ...(body.clientRequestId ? { clientRequestId: body.clientRequestId } : {}),
+            maxSteps: story.settings.maxSteps ?? 10,
+            logger: requestLogger,
+          })
+          return runStreamResponse(run)
+        } catch (error) {
+          requestLogger.error('Conversation chat failed to start', { error: describeError(error) })
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Chat failed',
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+      })
     }, {
       body: t.Object({
-        runId: t.Optional(t.String()),
-        messages: t.Array(t.Object({
-          role: t.Union([t.Literal('user'), t.Literal('assistant')]),
-          content: t.String(),
-        })),
+        message: t.String({ minLength: 1 }),
+        clientRequestId: t.Optional(t.String()),
       }),
-      detail: { summary: 'Chat in a conversation (streaming NDJSON)' },
+      detail: { summary: 'Chat in a conversation (server-owned run; streaming NDJSON)' },
     })
 }
