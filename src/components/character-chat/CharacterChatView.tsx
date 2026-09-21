@@ -51,6 +51,12 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     [branchId, storyId],
   )
 
+  const pendingMessageStorageKey = useCallback(
+    (conversationIdToUse: string) =>
+      `errata:character-chat:pending:${storyId}:${branchId ?? ''}:${conversationIdToUse}`,
+    [branchId, storyId],
+  )
+
   const installConversation = useCallback((conversation: Awaited<ReturnType<typeof api.characterChat.getConversation>>) => {
     setCharacterId(conversation.characterId)
     setPersona(conversation.persona)
@@ -221,9 +227,13 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
   }, [])
 
   const clearActiveConversation = useCallback(() => {
-    try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
+    const currentId = conversationIdRef.current
+    try {
+      sessionStorage.removeItem(activeConversationStorageKey)
+      if (currentId) sessionStorage.removeItem(pendingMessageStorageKey(currentId))
+    } catch { /* ignore */ }
     resetConversationState()
-  }, [activeConversationStorageKey, resetConversationState])
+  }, [activeConversationStorageKey, pendingMessageStorageKey, resetConversationState])
 
   // Handle character change — reset conversation.
   const handleCharacterChange = useCallback((id: string) => {
@@ -248,7 +258,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     } catch (resumeError) {
       setError(resumeError instanceof Error ? resumeError.message : 'Failed to load conversation')
     }
-  }, [activeConversationStorageKey, installConversation, resetConversationState, storyId])
+  }, [activeConversationStorageKey, installConversation, pendingMessageStorageKey, resetConversationState, storyId])
 
   // Restore the conversation that was open in this branch so a page reload can
   // reattach to its server-owned run.
@@ -263,6 +273,26 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     void api.characterChat.getConversation(storyId, saved).then((conversation) => {
       if (cancelled) return
       installConversation(conversation)
+
+      let pending: string | null = null
+      try { pending = sessionStorage.getItem(pendingMessageStorageKey(conversation.id)) } catch { /* ignore */ }
+
+      if (!pending) return
+
+      if (conversation.messages.length === 0) {
+        // The browser reloaded after creating the scope but before the POST
+        // reached the server. Reconstruct the optimistic turn and continue it.
+        setMessages([
+          { role: 'user', content: pending },
+          { role: 'assistant', content: '' },
+        ])
+        liveRef.current = { role: 'assistant', content: '' }
+        setPendingFirstMessage(pending)
+      } else {
+        // The server already accepted the turn (possibly still running).
+        // Let useRunStream reattach; resending would duplicate the user message.
+        try { sessionStorage.removeItem(pendingMessageStorageKey(conversation.id)) } catch { /* ignore */ }
+      }
     }).catch(() => {
       try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
     })
@@ -305,8 +335,11 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
           storyPointFragmentId: storyPointId,
         })
         conversationIdRef.current = conversation.id
+        try {
+          sessionStorage.setItem(activeConversationStorageKey, conversation.id)
+          sessionStorage.setItem(pendingMessageStorageKey(conversation.id), text)
+        } catch { /* ignore */ }
         setConversationId(conversation.id)
-        try { sessionStorage.setItem(activeConversationStorageKey, conversation.id) } catch { /* ignore */ }
       } catch (createError) {
         setPendingFirstMessage(null)
         setMessages(previous => previous.slice(0, Math.max(0, previous.length - 2)))
@@ -350,13 +383,20 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
       await refreshConversation().catch(() => {})
     }).finally(() => {
       if (!cancelled) {
+        try { sessionStorage.removeItem(pendingMessageStorageKey(conversationId)) } catch { /* ignore */ }
         setPendingFirstMessage(null)
         textareaRef.current?.focus()
       }
     })
 
     return () => { cancelled = true }
-  }, [conversationId, pendingFirstMessage, refreshConversation, startExistingConversationTurn])
+  }, [
+    conversationId,
+    pendingFirstMessage,
+    pendingMessageStorageKey,
+    refreshConversation,
+    startExistingConversationTurn,
+  ])
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (
