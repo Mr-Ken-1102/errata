@@ -98,8 +98,6 @@ export interface Run {
   scopeId: string | null
   /** Client-supplied idempotency key, so a retried POST attaches instead of starting a second run. */
   clientRequestId?: string
-  /** Explicit branch captured by the request before any async work can switch timelines. */
-  branchId?: string
   /** Branch pinned at start; the body outlives the request, so it can't rely on ambient ALS. */
   branchId: string
   status: RunStatus
@@ -266,6 +264,8 @@ export interface StartRunOptions {
   kind: RunKind
   scopeId?: string | null
   clientRequestId?: string
+  /** Explicit branch captured by the request before any async work can switch timelines. */
+  branchId?: string
   /**
    * The generation itself. Runs detached from any HTTP request, inside the
    * run's pinned branch scope. Throwing marks the run 'error'; returning marks
