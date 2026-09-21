@@ -93,10 +93,24 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
   // Load the round context before useRunStream's attach effect runs. A retained
   // run can then replay from seq 0 and still know how to continue clarification.
   useEffect(() => {
+    genCtxRef.current = {
+      input: '',
+      saveResult: true,
+      clarifications: [],
+      round: 0,
+    }
+    accumulatedRef.current = ''
+    askedRef.current = null
+    rejectionRef.current = null
+    setInput('')
+    setStreamedText('')
+    setPendingQuestions(null)
+    setError(null)
+
     const stored = readStoredContext(contextStorageKey)
     if (!stored) return
     genCtxRef.current = stored
-    setInput(current => current || stored.input)
+    setInput(stored.input)
     if (stored.pendingQuestions?.length) {
       setPendingQuestions(stored.pendingQuestions)
     }
