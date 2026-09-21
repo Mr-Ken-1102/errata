@@ -34,6 +34,7 @@ interface DetailPanelProps {
   onLaunchWizard?: () => void
   onImportFragment?: () => void
   onImportCard?: () => void
+  onImportLorebook?: () => void
   onExport?: () => void
   onDownloadStory?: () => void
   onExportProse?: () => void
@@ -99,6 +100,7 @@ export function DetailPanel({
   onLaunchWizard,
   onImportFragment,
   onImportCard,
+  onImportLorebook,
   onExport,
   onDownloadStory,
   onExportProse,
@@ -277,6 +279,7 @@ export function DetailPanel({
           onCreateNew={() => onCreateFragment(SECTION_TO_TYPE[activeSection])}
           onImport={onImportFragment}
           onImportCard={activeSection === 'characters' ? onImportCard : undefined}
+          onImportLorebook={activeSection === 'knowledge' ? onImportLorebook : undefined}
           selectedId={selectedFragmentId}
         />
       )}
