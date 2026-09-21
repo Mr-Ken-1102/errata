@@ -3,6 +3,10 @@ import { isTerminalChatEvent, type ChatEvent, type RunStatus, type RunSummary, t
 
 const API_BASE = '/api'
 
+export function createRunRequestId(): string {
+  return `cr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 export async function fetchRunEventStream(
   path: string,
   init?: RequestInit,
