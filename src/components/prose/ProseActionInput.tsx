@@ -58,6 +58,7 @@ export function ProseActionInput({
             rejection = event.reason
           }
         },
+        { branchId },
       )
 
       if (rejection) {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createTempDir, makeTestSettings } from '../setup'
 import { createStory } from '@/server/fragments/storage'
-import { createBranch, switchActiveBranch } from '@/server/fragments/branches'
+import { createBranch } from '@/server/fragments/branches'
 import { clearRuns, startRun } from '@/server/runs'
 import { createApp } from '@/server/api'
 
@@ -33,7 +33,7 @@ describe('run API branch isolation', () => {
     await cleanup()
   })
 
-  it('does not expose or cancel a run from another active branch', async () => {
+  it('keeps a pinned branch reattachable after the global active branch changes', async () => {
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
 
@@ -63,20 +63,37 @@ describe('run API branch isolation', () => {
     expect(eventsAlt.status).toBe(404)
 
     const cancelAlt = await app.fetch(new Request(
-      `http://localhost/api/stories/${storyId}/runs/${run.id}/cancel`,
+      `http://localhost/api/stories/${storyId}/runs/${run.id}/cancel?branchId=${encodeURIComponent(alt.id)}`,
       { method: 'POST' },
     ))
     expect(cancelAlt.status).toBe(404)
     expect(run.status).toBe('running')
 
-    await switchActiveBranch(dataDir, storyId, 'main')
-    const getMain = await app.fetch(new Request(
-      `http://localhost/api/stories/${storyId}/runs/${run.id}`,
+    const listPinnedMain = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/runs?active=1&branchId=main`,
     ))
-    expect(getMain.status).toBe(200)
+    const pinnedRuns = await listPinnedMain.json() as Array<{ id: string }>
+    expect(pinnedRuns.some(item => item.id === run.id)).toBe(true)
 
-    await switchActiveBranch(dataDir, storyId, alt.id)
+    const getPinnedMain = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/runs/${run.id}?branchId=main`,
+    ))
+    expect(getPinnedMain.status).toBe(200)
+
+    const eventsPinnedMain = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/runs/${run.id}/events?cursor=0&branchId=main`,
+    ))
+    expect(eventsPinnedMain.status).toBe(200)
+    await eventsPinnedMain.body?.cancel()
+
+    const cancelPinnedMain = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/runs/${run.id}/cancel?branchId=main`,
+      { method: 'POST' },
+    ))
+    expect(cancelPinnedMain.status).toBe(200)
+
     release()
     await run.done
+    expect(run.status).toBe('cancelled')
   })
 })

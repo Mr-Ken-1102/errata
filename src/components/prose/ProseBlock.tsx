@@ -297,6 +297,7 @@ export const ProseBlock = memo(function ProseBlock({
           })
         }
       },
+      { branchId },
     )
 
     setStreamedActionText(accumulated)
