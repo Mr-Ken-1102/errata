@@ -5,21 +5,24 @@ import {
   listGenerationLogs,
 } from '../llm/generation-logs'
 import { getLibrarianRuntimeStatus, triggerLibrarian } from '../librarian/scheduler'
-import { createAgentInstance, listAgentRuns } from '../agents'
+import { listAgentRuns } from '../agents'
 import {
   getState as getLibrarianState,
   listAnalyses as listLibrarianAnalyses,
   getAnalysis as getLibrarianAnalysis,
   saveAnalysis as saveLibrarianAnalysis,
   getChatHistory as getLibrarianChatHistory,
-  saveChatHistory as saveLibrarianChatHistory,
+  appendChatMessage,
+  updateChatMessageByRunId,
   clearChatHistory as clearLibrarianChatHistory,
   listConversations,
   createConversation,
   deleteConversation,
   getConversationHistory,
-  saveConversationHistory,
+  appendConversationMessage,
   getLatestAnalysisIdsByFragment,
+  type ChatHistoryMessage,
+  type ChatHistoryToolCall,
 } from '../librarian/storage'
 import {
   applyFragmentChangeProposal,
@@ -32,11 +35,180 @@ import {
   refreshPendingFragmentChangeProposals,
   revertFragmentChangeProposal,
 } from '../librarian/suggestions'
-import { createLogger } from '../logging'
-import { encodeStream } from './encode-stream'
+import { createLogger, type Logger } from '../logging'
 import { startAgentRun } from '../runs/agent-run'
-import { runStreamResponse } from '../runs/http'
+import { runStreamResponse, resolveExistingRun } from '../runs/http'
+import { findLiveRun, abortedByTimeout, abortedByUser, type Run } from '../runs'
+import { createTurnTracker, type TurnTracker } from '../runs/turn-tracker'
+import { describeError } from '../error-message'
+import { getActiveBranchId } from '../fragments/branches'
+import { withKeyLock } from '../async-lock'
 import type { LibrarianStatusResponse } from '@/contracts/librarian'
+
+
+/** Keep a replayed edit recognizable without pasting a whole fragment result into context. */
+function summarizeChatToolCall(toolCall: ChatHistoryToolCall): string {
+  const args = JSON.stringify(toolCall.args ?? {})
+  const compactArgs = args.length > 240 ? args.slice(0, 240) + '…' : args
+  return `${toolCall.toolName}(${compactArgs})`
+}
+
+/**
+ * Rebuild provider-visible history from server-owned durable turns.
+ * Tool calls that already landed are explicitly represented so a later turn
+ * does not repeat an edit merely because the previous prose reply was cut off.
+ */
+export function toLibrarianProviderMessages(
+  messages: ChatHistoryMessage[],
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  return messages.map((message) => {
+    if (message.role === 'user') {
+      return { role: 'user' as const, content: message.content.trim() || '(empty message)' }
+    }
+
+    const parts: string[] = []
+    if (message.content.trim()) parts.push(message.content.trim())
+
+    const applied = (message.toolCalls ?? [])
+      .filter(toolCall => toolCall.toolName !== 'planEdits' && toolCall.error === undefined)
+      .map(summarizeChatToolCall)
+    if (applied.length > 0) {
+      parts.push(`[Already applied this turn: ${applied.join('; ')}]`)
+    }
+
+    if (message.status === 'error' || message.status === 'cancelled') {
+      parts.push(
+        `[This turn ended early (${message.status}); work beyond the calls above did not complete.]`,
+      )
+    }
+
+    return {
+      role: 'assistant' as const,
+      content: parts.join('\n\n') || '[No reply was recorded for this turn.]',
+    }
+  })
+}
+
+async function startLibrarianChatRun(args: {
+  dataDir: string
+  storyId: string
+  conversationId: string | null
+  message: string
+  clientRequestId?: string
+  maxSteps: number
+  logger: Logger
+}): Promise<Run> {
+  const {
+    dataDir,
+    storyId,
+    conversationId,
+    message,
+    clientRequestId,
+    maxSteps,
+    logger,
+  } = args
+
+  const priorHistory = conversationId
+    ? await getConversationHistory(dataDir, storyId, conversationId)
+    : await getLibrarianChatHistory(dataDir, storyId)
+
+  const appendMessage = (entry: ChatHistoryMessage) => conversationId
+    ? appendConversationMessage(dataDir, storyId, conversationId, entry)
+    : appendChatMessage(dataDir, storyId, entry)
+
+  // The server owns history. The client sends only the new user turn.
+  const afterUser = await appendMessage({ role: 'user', content: message })
+  const providerMessages = toLibrarianProviderMessages(afterUser.messages)
+
+  let tracker: TurnTracker | null = null
+  let trackerRunId: string | null = null
+
+  return startAgentRun({
+    dataDir,
+    storyId,
+    kind: 'librarian.chat',
+    scopeId: conversationId,
+    ...(clientRequestId ? { clientRequestId } : {}),
+    agentName: 'librarian.chat',
+    input: {
+      messages: providerMessages,
+      maxSteps,
+    },
+    onStart: async (runId) => {
+      trackerRunId = runId
+      // Persist the in-flight assistant turn before the model can apply tools.
+      await appendMessage({
+        role: 'assistant',
+        content: '',
+        runId,
+        status: 'streaming',
+      })
+      tracker = createTurnTracker({
+        write: (snapshot) => updateChatMessageByRunId(
+          dataDir,
+          storyId,
+          conversationId,
+          runId,
+          {
+            content: snapshot.content,
+            ...(snapshot.reasoning ? { reasoning: snapshot.reasoning } : {}),
+            ...(snapshot.toolCalls.length > 0 ? { toolCalls: snapshot.toolCalls } : {}),
+          },
+        ),
+      })
+    },
+    onEvent: (event) => {
+      tracker?.onEvent(event)
+    },
+    onComplete: async (result, signal) => {
+      await tracker?.flush()
+      const snapshot = tracker?.snapshot()
+      const toolCalls = snapshot?.toolCalls ?? []
+      const saidNothing = !result.text.trim() && toolCalls.length === 0 && !signal.aborted
+
+      const status = abortedByTimeout(signal)
+        ? 'error'
+        : abortedByUser(signal)
+          ? 'cancelled'
+          : saidNothing
+            ? 'error'
+            : 'complete'
+
+      await updateChatMessageByRunId(dataDir, storyId, conversationId, resultRunId(), {
+        content: result.text,
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
+        status,
+        ...(abortedByTimeout(signal) ? { error: 'Generation timed out.' } : {}),
+        ...(saidNothing ? { error: 'The model returned an empty response.' } : {}),
+      })
+
+      logger.info('Librarian chat completed', {
+        stepCount: result.stepCount,
+        finishReason: result.finishReason,
+        toolCallCount: result.toolCalls.length,
+        status,
+      })
+    },
+    onError: async (error, signal) => {
+      await tracker?.flush()
+      const status = abortedByUser(signal) ? 'cancelled' : 'error'
+      await updateChatMessageByRunId(dataDir, storyId, conversationId, resultRunId(), {
+        status,
+        ...(status === 'error'
+          ? { error: abortedByTimeout(signal) ? 'Generation timed out.' : describeError(error) }
+          : {}),
+      })
+    },
+  })
+
+  function resultRunId(): string {
+    const current = trackerRunId
+    if (!current) throw new Error('Librarian chat run id was not initialized')
+    return current
+  }
+
+}
 
 export function librarianRoutes(dataDir: string) {
   const logger = createLogger('api:librarian', { dataDir })
