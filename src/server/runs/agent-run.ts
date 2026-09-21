@@ -18,7 +18,10 @@ export interface StartAgentRunOptions {
   clientRequestId?: string
   agentName: string
   input: Record<string, unknown>
-  onComplete?: (result: AgentStreamCompletion) => Promise<void> | void
+  onStart?: (runId: string) => Promise<void> | void
+  onEvent?: (event: AgentStreamEvent) => Promise<void> | void
+  onComplete?: (result: AgentStreamCompletion, signal: AbortSignal) => Promise<void> | void
+  onError?: (error: unknown, signal: AbortSignal) => Promise<void> | void
 }
 
 function emitNdjsonChunk(
@@ -49,6 +52,7 @@ export async function startAgentRun(opts: StartAgentRunOptions): Promise<Run> {
     scopeId: opts.scopeId ?? null,
     ...(opts.clientRequestId ? { clientRequestId: opts.clientRequestId } : {}),
     body: async ({ runId, emit, signal }) => {
+      await opts.onStart?.(runId)
       const agent = createAgentInstance(opts.agentName, {
         dataDir: opts.dataDir,
         storyId: opts.storyId,
@@ -81,17 +85,27 @@ export async function startAgentRun(opts: StartAgentRunOptions): Promise<Run> {
         while (!signal.aborted) {
           const { done, value } = await reader.read()
           if (done) break
-          buffer = emitNdjsonChunk(value, buffer, (event) => emit(event))
+          buffer = emitNdjsonChunk(value, buffer, (event) => {
+            void opts.onEvent?.(event)
+            emit(event)
+          })
         }
 
         // A final event may arrive without a trailing newline.
         const tail = buffer.trim()
         if (tail && !signal.aborted) {
-          try { emit(JSON.parse(tail) as AgentStreamEvent) } catch { /* ignore malformed tail */ }
+          try {
+            const event = JSON.parse(tail) as AgentStreamEvent
+            await opts.onEvent?.(event)
+            emit(event)
+          } catch { /* ignore malformed tail */ }
         }
 
         const result = await streamResult.completion
-        await opts.onComplete?.(result)
+        await opts.onComplete?.(result, signal)
+      } catch (error) {
+        await opts.onError?.(error, signal)
+        throw error
       } finally {
         signal.removeEventListener('abort', cancel)
         try { reader.releaseLock() } catch { /* reader may have been cancelled */ }
