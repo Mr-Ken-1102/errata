@@ -219,4 +219,50 @@ describe('useRunStream surface isolation', () => {
     expect(onSettled).toHaveBeenCalledWith('error', 'provider unavailable')
   })
 
+
+  it('retries the same POST key when the response dies before run-start', async () => {
+    const ids: string[] = []
+    const onSettled = vi.fn()
+    let calls = 0
+
+    const { result } = renderHook(() => useRunStream({
+      storyId: 'story-1',
+      branchId: 'main',
+      kind: 'generation',
+      scopeId: 'generation-panel',
+      autoAttach: false,
+      onSettled,
+    }))
+
+    await act(async () => {
+      await result.current.start(async (clientRequestId) => {
+        ids.push(clientRequestId)
+        calls += 1
+        if (calls === 1) {
+          return new ReadableStream<SequencedChatEvent>({
+            start(controller) { controller.close() },
+          })
+        }
+        return new ReadableStream<SequencedChatEvent>({
+          start(controller) {
+            controller.enqueue({
+              type: 'run-start',
+              runId: 'run-after-retry',
+              kind: 'generation',
+              status: 'running',
+              seq: 0,
+            })
+            controller.enqueue({ type: 'run-end', status: 'complete', seq: 1 })
+            controller.close()
+          },
+        })
+      })
+    })
+
+    expect(calls).toBe(2)
+    expect(ids[0]).toBe(ids[1])
+    expect(result.current.phase).toBe('complete')
+    expect(onSettled).toHaveBeenCalledWith('complete', undefined)
+  })
+
 })
