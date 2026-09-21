@@ -147,8 +147,30 @@ export interface AgentRunTraceRecord {
   trace: AgentTraceEntry[]
 }
 
+export interface ChatHistoryToolCall {
+  toolName: string
+  args: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+
+export type ChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
+
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+  reasoning?: string
+  toolCalls?: ChatHistoryToolCall[]
+  plan?: string[]
+  completedSteps?: string[]
+  incomplete?: boolean
+  runId?: string
+  status?: ChatTurnStatus
+  error?: string
+}
+
 export interface ChatHistory {
-  messages: Array<{ role: 'user' | 'assistant'; content: string; reasoning?: string }>
+  messages: ChatHistoryMessage[]
   updatedAt: string
 }
 
