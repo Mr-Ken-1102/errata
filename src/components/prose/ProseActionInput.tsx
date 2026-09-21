@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { startAndConsumeRun } from '@/lib/api/runs'
 import { invalidateStoryContent } from '@/lib/branch-cache'
+import { useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -26,6 +27,7 @@ export function ProseActionInput({
   onStream,
 }: ProseActionInputProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export function ProseActionInput({
       const result = await startAndConsumeRun(
         storyId,
         (clientRequestId) => {
-          const opts = { clientRequestId }
+          const opts = { clientRequestId, ...(branchId ? { branchId } : {}) }
           return mode === 'regenerate'
             ? api.generation.regenerate(storyId, fragmentId, input, undefined, opts)
             : api.generation.refine(storyId, fragmentId, input, undefined, opts)
@@ -75,7 +77,7 @@ export function ProseActionInput({
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, storyId, fragmentId, mode, queryClient, onComplete, onStreamStart, onStream])
+  }, [input, isLoading, storyId, branchId, fragmentId, mode, queryClient, onComplete, onStreamStart, onStream])
 
   const placeholder = mode === 'regenerate'
     ? 'New direction...'
