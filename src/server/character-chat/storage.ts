@@ -115,10 +115,12 @@ export async function getConversation(
   const conversation = await readConversationFile(dataDir, storyId, conversationId)
   if (!conversation) return null
 
+  const branchId = getScopedBranchId(storyId) ?? await getActiveBranchId(dataDir, storyId)
   let changed = false
   const messages = conversation.messages.map((message) => {
     if (message.status !== 'streaming') return message
-    if (message.runId && getRun(message.runId)?.status === 'running') return message
+    const run = message.runId ? getRun(message.runId) : null
+    if (run?.status === 'running' && run.branchId === branchId) return message
     changed = true
     return {
       ...message,
