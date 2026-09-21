@@ -363,7 +363,8 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       }
 
       // The POST itself failed, so no run exists to reattach to.
-      settledRef.current = true
+      // settle() owns the terminal guard and callback; do not pre-mark settled
+      // or it will intentionally no-op.
       const message = err instanceof Error ? err.message : 'Request failed'
       settle('error', message)
       throw err
