@@ -98,6 +98,8 @@ export interface Run {
   scopeId: string | null
   /** Client-supplied idempotency key, so a retried POST attaches instead of starting a second run. */
   clientRequestId?: string
+  /** Explicit branch captured by the request before any async work can switch timelines. */
+  branchId?: string
   /** Branch pinned at start; the body outlives the request, so it can't rely on ambient ALS. */
   branchId: string
   status: RunStatus
@@ -288,7 +290,7 @@ export async function startRun(opts: StartRunOptions): Promise<Run> {
   // Pin the branch now. The body outlives the request, so it must not rely on
   // the request's AsyncLocalStorage scope, and switching timelines mid-run must
   // not redirect its writes.
-  const branchId = await getActiveBranchId(opts.dataDir, opts.storyId)
+  const branchId = opts.branchId ?? await getActiveBranchId(opts.dataDir, opts.storyId)
 
   let resolveDone!: () => void
   const done = new Promise<void>((resolve) => {
