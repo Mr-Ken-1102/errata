@@ -34,6 +34,8 @@ import {
 } from '../librarian/suggestions'
 import { createLogger } from '../logging'
 import { encodeStream } from './encode-stream'
+import { startAgentRun } from '../runs/agent-run'
+import { runStreamResponse } from '../runs/http'
 import type { LibrarianStatusResponse } from '@/contracts/librarian'
 
 export function librarianRoutes(dataDir: string) {
@@ -319,48 +321,42 @@ export function librarianRoutes(dataDir: string) {
         return { error: 'Cannot refine prose fragments. Use the generation refine mode instead.' }
       }
 
-      let agent: ReturnType<typeof createAgentInstance> | undefined
       try {
-        agent = createAgentInstance('librarian.refine', {
+        const run = await startAgentRun({
           dataDir,
           storyId: params.storyId,
-          runId: body.runId,
-        })
-        const { eventStream, completion } = await agent.execute({
-          fragmentId: body.fragmentId,
-          instructions: body.instructions,
-          maxSteps: story.settings.maxSteps ?? 5,
-        })
-
-        completion.then((result) => {
-          requestLogger.info('Refinement completed', {
+          kind: 'librarian.refine',
+          scopeId: body.fragmentId,
+          agentName: 'librarian.refine',
+          input: {
             fragmentId: body.fragmentId,
-            stepCount: result.stepCount,
-            finishReason: result.finishReason,
-            toolCallCount: result.toolCalls.length,
-          })
-        }).catch((err) => {
-          requestLogger.error('Refinement completion error', { error: err instanceof Error ? err.message : String(err) })
+            instructions: body.instructions,
+            maxSteps: story.settings.maxSteps ?? 5,
+          },
+          onComplete: (result) => {
+            requestLogger.info('Refinement completed', {
+              fragmentId: body.fragmentId,
+              stepCount: result.stepCount,
+              finishReason: result.finishReason,
+              toolCallCount: result.toolCalls.length,
+            })
+          },
         })
-
-        return new Response(encodeStream(eventStream), {
-          headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
-        })
+        return runStreamResponse(run)
       } catch (err) {
-        // Runner threw before producing a stream — record the failure and free
-        // the active-agent registration instead of leaking it.
-        agent?.fail(err)
         requestLogger.error('Refinement failed', { error: err instanceof Error ? err.message : String(err) })
         set.status = 500
         return { error: err instanceof Error ? err.message : 'Refinement failed' }
       }
     }, {
       body: t.Object({
+        // Retained temporarily for old clients; the server-owned run generates
+        // and returns the authoritative run id in its run-start event.
         runId: t.Optional(t.String()),
         fragmentId: t.String(),
         instructions: t.Optional(t.String()),
       }),
-      detail: { summary: 'Refine a non-prose fragment (streaming NDJSON)' },
+      detail: { summary: 'Refine a non-prose fragment (server-owned run; streaming NDJSON)' },
     })
 
     // --- Librarian Prose Transform ---
@@ -388,49 +384,42 @@ export function librarianRoutes(dataDir: string) {
         return { error: 'Only prose fragments support selection transforms.' }
       }
 
-      let agent: ReturnType<typeof createAgentInstance> | undefined
       try {
-        agent = createAgentInstance('librarian.prose-transform', {
+        const run = await startAgentRun({
           dataDir,
           storyId: params.storyId,
-          runId: body.runId,
-        })
-        const { eventStream, completion } = await agent.execute({
-          fragmentId: body.fragmentId,
-          selectedText: body.selectedText,
-          operation: body.operation,
-          instruction: body.instruction,
-          sourceContent: body.sourceContent,
-          contextBefore: body.contextBefore,
-          contextAfter: body.contextAfter,
-        })
-
-        completion.then((result) => {
-          requestLogger.info('Prose transform completed', {
+          kind: 'librarian.prose-transform',
+          scopeId: body.fragmentId,
+          agentName: 'librarian.prose-transform',
+          input: {
             fragmentId: body.fragmentId,
+            selectedText: body.selectedText,
             operation: body.operation,
-            stepCount: result.stepCount,
-            finishReason: result.finishReason,
-            outputLength: result.text.trim().length,
-            reasoningLength: result.reasoning.trim().length,
-          })
-        }).catch((err) => {
-          requestLogger.error('Prose transform completion error', {
-            error: err instanceof Error ? err.message : String(err),
-          })
+            instruction: body.instruction,
+            sourceContent: body.sourceContent,
+            contextBefore: body.contextBefore,
+            contextAfter: body.contextAfter,
+          },
+          onComplete: (result) => {
+            requestLogger.info('Prose transform completed', {
+              fragmentId: body.fragmentId,
+              operation: body.operation,
+              stepCount: result.stepCount,
+              finishReason: result.finishReason,
+              outputLength: result.text.trim().length,
+              reasoningLength: result.reasoning.trim().length,
+            })
+          },
         })
-
-        return new Response(encodeStream(eventStream), {
-          headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
-        })
+        return runStreamResponse(run)
       } catch (err) {
-        agent?.fail(err)
         requestLogger.error('Prose transform failed', { error: err instanceof Error ? err.message : String(err) })
         set.status = 500
         return { error: err instanceof Error ? err.message : 'Prose transform failed' }
       }
     }, {
       body: t.Object({
+        // Backward-compatible input only; ignored by the server-owned run.
         runId: t.Optional(t.String()),
         fragmentId: t.String(),
         selectedText: t.String({ minLength: 1 }),
@@ -440,7 +429,7 @@ export function librarianRoutes(dataDir: string) {
         contextBefore: t.Optional(t.String()),
         contextAfter: t.Optional(t.String()),
       }),
-      detail: { summary: 'Transform a prose selection (streaming NDJSON)' },
+      detail: { summary: 'Transform a prose selection (server-owned run; streaming NDJSON)' },
     })
 
     // --- Librarian Chat ---
