@@ -7,6 +7,7 @@ import { proseContentHash } from './continuity-source'
 import { generateConversationId } from '@/lib/fragment-ids'
 import { writeJsonAtomic } from '../fs-utils'
 import { withKeyLock } from '../async-lock'
+import { getRun } from '../runs'
 import { ContinuityProjectionSchema } from '@/contracts/continuity'
 import type {
   LibrarianAnalysis,
@@ -40,6 +41,22 @@ export type {
 /** Serializes read-modify-write of a story's librarian indexes against concurrent mutations. */
 function withIndexLock<T>(storyId: string, fn: () => Promise<T>): Promise<T> {
   return withKeyLock(`librarian-index:${storyId}`, fn)
+}
+
+/** Serializes mutations of one persisted chat history independently of the analysis/index lock. */
+function withChatLock<T>(
+  storyId: string,
+  conversationId: string | null,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = conversationId
+    ? `librarian-chat:${storyId}:${conversationId}`
+    : `librarian-chat:${storyId}:legacy`
+  return withKeyLock(key, fn)
+}
+
+function isRunLive(runId: string): boolean {
+  return getRun(runId)?.status === 'running'
 }
 
 export function passRecord(params: {
@@ -582,10 +599,27 @@ export async function listBackfillJobs(
 
 // --- Chat history ---
 
+export interface ChatHistoryToolCall {
+  toolName: string
+  args: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+
+export type ChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
+
 export interface ChatHistoryMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
+  toolCalls?: ChatHistoryToolCall[]
+  plan?: string[]
+  completedSteps?: string[]
+  incomplete?: boolean
+  /** Server-owned run producing this assistant turn. */
+  runId?: string
+  status?: ChatTurnStatus
+  error?: string
 }
 
 export interface ChatHistory {
@@ -598,30 +632,132 @@ async function chatHistoryPath(dataDir: string, storyId: string): Promise<string
   return join(dir, 'chat-history.json')
 }
 
-export async function getChatHistory(
+/** Resolve legacy-chat vs named-conversation history to one file path. */
+async function historyPathFor(
   dataDir: string,
   storyId: string,
+  conversationId: string | null,
+): Promise<string> {
+  if (!conversationId) return chatHistoryPath(dataDir, storyId)
+  const dir = await librarianDir(dataDir, storyId)
+  return conversationHistoryPath(dir, conversationId)
+}
+
+async function readHistoryFile(
+  dataDir: string,
+  storyId: string,
+  conversationId: string | null,
 ): Promise<ChatHistory> {
-  const path = await chatHistoryPath(dataDir, storyId)
-  if (!existsSync(path)) {
-    return { messages: [], updatedAt: new Date().toISOString() }
-  }
+  const path = await historyPathFor(dataDir, storyId, conversationId)
+  if (!existsSync(path)) return { messages: [], updatedAt: new Date().toISOString() }
   const raw = await readFile(path, 'utf-8')
   return JSON.parse(raw) as ChatHistory
 }
 
+/**
+ * A persisted "streaming" status is only true while its in-memory run exists.
+ * After a restart/GC, expose it as interrupted without mutating historical tool calls.
+ */
+function reconcileHistory(history: ChatHistory): ChatHistory {
+  let changed = false
+  const messages = history.messages.map((message) => {
+    if (message.status !== 'streaming') return message
+    if (message.runId && isRunLive(message.runId)) return message
+    changed = true
+    return {
+      ...message,
+      status: 'error' as const,
+      error: message.error ?? 'Generation was interrupted',
+    }
+  })
+  return changed ? { ...history, messages } : history
+}
+
+export async function getChatHistory(
+  dataDir: string,
+  storyId: string,
+): Promise<ChatHistory> {
+  return reconcileHistory(await readHistoryFile(dataDir, storyId, null))
+}
+
+/** Legacy full-replacement writer retained for compatibility during migration. */
 export async function saveChatHistory(
   dataDir: string,
   storyId: string,
   messages: ChatHistoryMessage[],
 ): Promise<void> {
-  const dir = await librarianDir(dataDir, storyId)
-  await mkdir(dir, { recursive: true })
-  const history: ChatHistory = {
-    messages,
-    updatedAt: new Date().toISOString(),
-  }
-  await writeJsonAtomic(await chatHistoryPath(dataDir, storyId), history)
+  await withChatLock(storyId, null, async () => {
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+    const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
+    await writeJsonAtomic(await chatHistoryPath(dataDir, storyId), history)
+  })
+}
+
+export async function appendChatMessage(
+  dataDir: string,
+  storyId: string,
+  message: ChatHistoryMessage,
+): Promise<ChatHistory> {
+  return appendMessage(dataDir, storyId, null, message)
+}
+
+/** Patch one assistant turn by server run id; never address "the last message". */
+export async function updateChatMessageByRunId(
+  dataDir: string,
+  storyId: string,
+  conversationId: string | null,
+  runId: string,
+  patch: Partial<ChatHistoryMessage>,
+): Promise<ChatHistory> {
+  return withChatLock(storyId, conversationId, async () => {
+    const current = await readHistoryFile(dataDir, storyId, conversationId)
+    const index = current.messages.findIndex(message => message.runId === runId)
+    if (index === -1) return current
+
+    const messages = [...current.messages]
+    messages[index] = { ...messages[index], ...patch }
+    const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
+
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+    await writeJsonAtomic(await historyPathFor(dataDir, storyId, conversationId), history)
+    return history
+  })
+}
+
+async function appendMessage(
+  dataDir: string,
+  storyId: string,
+  conversationId: string | null,
+  message: ChatHistoryMessage,
+): Promise<ChatHistory> {
+  return withChatLock(storyId, conversationId, async () => {
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+
+    const current = await readHistoryFile(dataDir, storyId, conversationId)
+    const history: ChatHistory = {
+      messages: [...current.messages, message],
+      updatedAt: new Date().toISOString(),
+    }
+    await writeJsonAtomic(await historyPathFor(dataDir, storyId, conversationId), history)
+
+    if (conversationId) {
+      await withIndexLock(storyId, async () => {
+        const index = await readConversationsIndex(dataDir, storyId)
+        const conversation = index.conversations.find(item => item.id === conversationId)
+        if (!conversation) return
+        conversation.updatedAt = history.updatedAt
+        if (conversation.title === 'New chat' && message.role === 'user') {
+          conversation.title = message.content.slice(0, 60).trim() || 'New chat'
+        }
+        await writeConversationsIndex(dataDir, storyId, index)
+      })
+    }
+
+    return history
+  })
 }
 
 export async function clearChatHistory(
@@ -629,9 +765,7 @@ export async function clearChatHistory(
   storyId: string,
 ): Promise<void> {
   const path = await chatHistoryPath(dataDir, storyId)
-  if (existsSync(path)) {
-    await unlink(path)
-  }
+  if (existsSync(path)) await unlink(path)
 }
 
 // --- Conversations ---
@@ -733,11 +867,16 @@ export async function getConversationHistory(
   storyId: string,
   conversationId: string,
 ): Promise<ChatHistory> {
-  const dir = await librarianDir(dataDir, storyId)
-  const path = conversationHistoryPath(dir, conversationId)
-  if (!existsSync(path)) return { messages: [], updatedAt: new Date().toISOString() }
-  const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as ChatHistory
+  return reconcileHistory(await readHistoryFile(dataDir, storyId, conversationId))
+}
+
+export async function appendConversationMessage(
+  dataDir: string,
+  storyId: string,
+  conversationId: string,
+  message: ChatHistoryMessage,
+): Promise<ChatHistory> {
+  return appendMessage(dataDir, storyId, conversationId, message)
 }
 
 export async function saveConversationHistory(
@@ -746,12 +885,14 @@ export async function saveConversationHistory(
   conversationId: string,
   messages: ChatHistoryMessage[],
 ): Promise<void> {
-  const dir = await librarianDir(dataDir, storyId)
-  await mkdir(dir, { recursive: true })
-  const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
-  await writeJsonAtomic(conversationHistoryPath(dir, conversationId), history)
-  // Update conversation timestamp. Index mutations must hold the same lock
-  // as create/rename/delete so stale read-modify-write snapshots cannot win.
+  let history!: ChatHistory
+  await withChatLock(storyId, conversationId, async () => {
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+    history = { messages, updatedAt: new Date().toISOString() }
+    await writeJsonAtomic(conversationHistoryPath(dir, conversationId), history)
+  })
+  // Update conversation timestamp. Index mutations hold the separate index lock.
   await withIndexLock(storyId, async () => {
     const index = await readConversationsIndex(dataDir, storyId)
     const conv = index.conversations.find(c => c.id === conversationId)
