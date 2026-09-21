@@ -29,6 +29,7 @@ interface GenerationContext {
   saveResult: boolean
   clarifications: Clarification[]
   round: number
+  pendingQuestions?: ClarifyQuestion[]
 }
 
 const FORCE_PROCEED_ROUND = 99
@@ -45,6 +46,9 @@ function readStoredContext(key: string): GenerationContext | null {
       saveResult: parsed.saveResult,
       clarifications: Array.isArray(parsed.clarifications) ? parsed.clarifications : [],
       round: typeof parsed.round === 'number' ? parsed.round : 0,
+      ...(Array.isArray(parsed.pendingQuestions)
+        ? { pendingQuestions: parsed.pendingQuestions as ClarifyQuestion[] }
+        : {}),
     }
   } catch {
     return null
@@ -93,6 +97,9 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
     if (!stored) return
     genCtxRef.current = stored
     setInput(current => current || stored.input)
+    if (stored.pendingQuestions?.length) {
+      setPendingQuestions(stored.pendingQuestions)
+    }
   }, [contextStorageKey])
 
   const handleEvent = useCallback((event: ChatEvent) => {
@@ -123,6 +130,12 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
 
     if (event.type === 'clarify-questions') {
       askedRef.current = event.questions
+      const nextContext = {
+        ...genCtxRef.current,
+        pendingQuestions: event.questions,
+      }
+      genCtxRef.current = nextContext
+      persistContext(nextContext)
       return
     }
 
@@ -134,7 +147,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
     if (event.type === 'error') {
       setError(event.error)
     }
-  }, [])
+  }, [persistContext])
 
   const handleSettled = useCallback(async (status: RunStatus, message?: string) => {
     setStreamedText(accumulatedRef.current)
@@ -204,6 +217,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
       saveResult,
       clarifications,
       round,
+      pendingQuestions: undefined,
     }
     genCtxRef.current = context
     persistContext(context)
