@@ -62,7 +62,7 @@ describe('startAndConsumeRun', () => {
     ].join('\n')
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      expect(String(input)).toContain('/stories/story-1/runs/run-existing/events?cursor=0')
+      expect(String(input)).toContain('/stories/story-1/runs/run-existing/events?cursor=0&branchId=main')
       return new Response(body, {
         status: 200,
         headers: { 'Content-Type': 'application/x-ndjson' },
@@ -79,6 +79,7 @@ describe('startAndConsumeRun', () => {
       event => {
         if (event.type === 'text') seen.push(event.text)
       },
+      { branchId: 'main' },
     )
 
     expect(fetchMock).toHaveBeenCalledTimes(1)

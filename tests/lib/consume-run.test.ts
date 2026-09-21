@@ -75,11 +75,11 @@ describe('consumeRun', () => {
       seq(0, { type: 'run-start', runId: 'run-1', kind: 'generation', status: 'running' }),
       seq(1, { type: 'text', text: 'hello ' }),
       // ...and then nothing. The phone went to sleep.
-    ]), e => seen.push(e)))
+    ]), e => seen.push(e), { branchId: 'branch-a' }))
 
     expect(result).toEqual({ runId: 'run-1', status: 'complete' })
-    // Resumed at exactly the next unseen seq.
-    expect(fetchSpy).toHaveBeenCalledWith('/api/stories/story-1/runs/run-1/events?cursor=2')
+    // Resumed at exactly the next unseen seq, on the run's pinned branch.
+    expect(fetchSpy).toHaveBeenCalledWith('/api/stories/story-1/runs/run-1/events?cursor=2&branchId=branch-a')
     // Every event, exactly once, in order.
     expect(seen.map(e => e.type)).toEqual(['run-start', 'text', 'text', 'run-end'])
     expect(seen.filter(e => e.type === 'text').map(e => (e as { text: string }).text).join(''))

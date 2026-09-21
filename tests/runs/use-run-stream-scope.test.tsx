@@ -185,7 +185,8 @@ describe('useRunStream surface isolation', () => {
     }))
 
     await waitFor(() => expect(result.current.phase).toBe('complete'))
-    expect(mocks.events).toHaveBeenCalledWith('story-1', 'run-complete', 0)
+    expect(mocks.get).toHaveBeenCalledWith('story-1', 'run-complete', 'main')
+    expect(mocks.events).toHaveBeenCalledWith('story-1', 'run-complete', 0, 'main')
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
       type: 'text',
       text: 'whole passage',
