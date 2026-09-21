@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 
 type Theme = 'light' | 'dark' | 'high-contrast'
 
@@ -62,15 +62,24 @@ export function useTheme() {
 // --- App preferences (simple localStorage booleans) ---
 
 function useBoolPref(key: string, defaultValue: boolean): [boolean, (v: boolean) => void] {
-  const [value, setValue] = useState(() => {
-    if (typeof window === 'undefined') return defaultValue
-    const stored = localStorage.getItem(key)
-    return stored === null ? defaultValue : stored === 'true'
-  })
+  // localStorage is the source of truth. A small per-key event keeps separate
+  // hook instances in sync immediately inside the same tab.
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      window.addEventListener(`${key}-change`, onStoreChange)
+      return () => window.removeEventListener(`${key}-change`, onStoreChange)
+    },
+    [key],
+  )
+  const value = useSyncExternalStore(
+    subscribe,
+    () => (localStorage.getItem(key) ?? String(defaultValue)) === 'true',
+    () => defaultValue,
+  )
 
   const set = useCallback((v: boolean) => {
-    setValue(v)
     localStorage.setItem(key, String(v))
+    window.dispatchEvent(new Event(`${key}-change`))
   }, [key])
 
   return [value, set]
