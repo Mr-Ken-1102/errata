@@ -124,14 +124,31 @@ export function DetailPanel({
   }
 
   useEffect(() => {
+    let firstFrame: number | null = null
+    let secondFrame: number | null = null
+    let closeFallback: ReturnType<typeof setTimeout> | null = null
+
     if (open) {
       setMounted(true)
-      // Trigger enter animation on next frame
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setVisible(true))
+      // Trigger enter animation on next frame.
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => setVisible(true))
       })
     } else {
       setVisible(false)
+
+      // Correctness must not depend on CSS transitionend. Reduced-motion or an
+      // interrupted transition may legitimately emit no transition event.
+      closeFallback = setTimeout(() => {
+        setMounted(false)
+        setRenderedSection(null)
+      }, 250)
+    }
+
+    return () => {
+      if (firstFrame !== null) cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+      if (closeFallback !== null) clearTimeout(closeFallback)
     }
   }, [open])
 
