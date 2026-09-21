@@ -390,11 +390,16 @@ export type PersonaMode =
   | { type: 'stranger' }
   | { type: 'custom'; prompt: string }
 
+export type CharacterChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
+
 export interface CharacterChatMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
   createdAt: string
+  runId?: string
+  status?: CharacterChatTurnStatus
+  error?: string
 }
 
 export interface CharacterChatConversation {
