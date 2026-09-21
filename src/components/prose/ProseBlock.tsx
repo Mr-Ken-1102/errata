@@ -4,6 +4,7 @@ import { api, type Fragment, type ProseChainResponseEntry } from '@/lib/api'
 import { startAndConsumeRun } from '@/lib/api/runs'
 import { copyText } from '@/lib/clipboard'
 import { invalidateStoryContent } from '@/lib/branch-cache'
+import { useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { StreamMarkdown } from '@/components/ui/stream-markdown'
 import { ChevronRail } from './ChevronRail'
@@ -64,6 +65,7 @@ function ProviderQuickSwitch({
   isStreamingAction: boolean
 }) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const { data: story } = useQuery({
     queryKey: ['story', storyId],
     queryFn: () => api.stories.get(storyId),
@@ -251,7 +253,7 @@ export const ProseBlock = memo(function ProseBlock({
         fragment.id,
         prompt,
         undefined,
-        { clientRequestId },
+        { clientRequestId, ...(branchId ? { branchId } : {}) },
       ),
       (event) => {
         if (event.type === 'text') {
