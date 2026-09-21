@@ -448,7 +448,10 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
             cursor = 0
           }
         }
-      } catch {
+      } catch (error) {
+        if ((error as { status?: number })?.status === 404) {
+          writeStored(key, null)
+        }
         return
       }
 
