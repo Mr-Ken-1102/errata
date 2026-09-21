@@ -230,6 +230,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
     expect(mockAgentStream).toHaveBeenCalledTimes(1)
 
     const callArgs = mockAgentStream.mock.calls[0][0] as any
@@ -361,6 +362,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentStream.mock.calls[0][0] as any
     const systemText = extractMessageText(callArgs.messages, 'system')
@@ -399,6 +401,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentStream.mock.calls[0][0] as any
     const systemText = extractMessageText(callArgs.messages, 'system')
@@ -428,6 +431,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.temperature).toBe(0.42)
@@ -453,6 +457,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.maxOutputTokens).toBe(4096)
@@ -473,6 +478,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.tools).toBeDefined()
@@ -496,6 +502,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.tools).toHaveProperty('listFragmentTypes')
@@ -526,6 +533,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.tools).toHaveProperty('listFragmentTypes')
