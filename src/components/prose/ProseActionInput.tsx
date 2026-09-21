@@ -49,11 +49,12 @@ export function ProseActionInput({
             : api.generation.refine(storyId, fragmentId, input, undefined, opts)
         },
         (event) => {
-        if (event.type === 'text') {
-          accumulated += event.text
-          onStream(accumulated)
-        } else if (event.type === 'generation-rejected') {
-          rejection = event.reason
+          if (event.type === 'text') {
+            accumulated += event.text
+            onStream(accumulated)
+          } else if (event.type === 'generation-rejected') {
+            rejection = event.reason
+          }
         },
       )
 
