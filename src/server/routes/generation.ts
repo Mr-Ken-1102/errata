@@ -4,7 +4,7 @@ import { invokeAgent } from '../agents/runner'
 import { createLogger } from '../logging'
 import type { DirectionProposalResult } from '../directions/suggest'
 import { runGeneration } from '../generation/run-generation'
-import { getBranchesIndex, isBranchDeleting } from '../fragments/branches'
+import { getBranchesIndex, isBranchDeleting, withBranch } from '../fragments/branches'
 import { startRun, findLiveRun } from '../runs'
 import type { ServerRunEvent } from '../runs/types'
 import { resolveExistingRun, runStreamResponse } from '../runs/http'
@@ -107,7 +107,12 @@ export function generationRoutes(dataDir: string) {
           set.status = 422
           return { error: 'fragmentId is required for regenerate/refine modes' }
         }
-        const fragment = await getFragment(dataDir, params.storyId, body.fragmentId)
+        const fragment = await withBranch(
+          dataDir,
+          params.storyId,
+          () => getFragment(dataDir, params.storyId, body.fragmentId!),
+          branchId,
+        )
         if (!fragment) {
           set.status = 404
           return { error: 'Fragment not found' }
