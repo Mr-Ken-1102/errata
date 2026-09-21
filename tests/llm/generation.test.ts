@@ -10,6 +10,7 @@ import {
 import { saveAgentBlockConfig } from '@/server/agents/agent-block-storage'
 import { listAgentRuns, clearAgentRuns } from '@/server/agents/traces'
 import { clearPending, getPendingCount } from '@/server/librarian/scheduler'
+import { clearRuns, getRun } from '@/server/runs'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
 const { mockAgentCtor, mockAgentStream } = vi.hoisted(() => ({
@@ -144,6 +145,35 @@ function createThrowingStreamResult(partialText: string) {
   }
 }
 
+async function readUntilEvent(
+  response: Response,
+  predicate: (event: any) => boolean,
+): Promise<{ event: any; reader: ReadableStreamDefaultReader<Uint8Array>; runId: string }> {
+  if (!response.body) throw new Error('missing response body')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let runId = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) throw new Error('stream ended before expected event')
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+      const event = JSON.parse(line)
+      if (event.type === 'run-start') runId = event.runId
+      if (predicate(event)) {
+        if (!runId) throw new Error('expected run-start before target event')
+        return { event, reader, runId }
+      }
+    }
+  }
+}
+
 describe('generation endpoint', () => {
   let dataDir: string
   let cleanup: () => Promise<void>
@@ -159,6 +189,7 @@ describe('generation endpoint', () => {
 
   beforeEach(async () => {
     clearPending()
+    clearRuns()
     const tmp = await createTempDir()
     dataDir = tmp.path
     cleanup = tmp.cleanup
@@ -170,6 +201,7 @@ describe('generation endpoint', () => {
 
   afterEach(async () => {
     clearPending()
+    clearRuns()
     await cleanup()
   })
 
@@ -575,6 +607,103 @@ describe('generation endpoint', () => {
     await new Promise((r) => setTimeout(r, 100))
 
     expect(getPendingCount()).toBe(0)
+  })
+
+  it('continues and commits the full passage after the HTTP subscriber disconnects', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+
+    mockAgentStream.mockImplementation((args: { abortSignal?: AbortSignal }) => ({
+      fullStream: (async function* () {
+        yield { type: 'text-delta' as const, text: 'The first half. ' }
+        await gate
+        if (args.abortSignal?.aborted) throw new Error('provider aborted')
+        yield { type: 'text-delta' as const, text: 'The second half.' }
+        yield { type: 'finish' as const, finishReason: 'stop' }
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
+    }))
+
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: 'Continue after disconnect',
+        saveResult: true,
+        scopeId: 'disconnect-test',
+        clientRequestId: 'disconnect-test-1',
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const { reader, runId } = await readUntilEvent(
+      res,
+      event => event.type === 'text' && event.text.includes('first half'),
+    )
+
+    // Dropping the subscriber is not a Stop.
+    await reader.cancel()
+    release()
+    await getRun(runId)!.done
+
+    expect(getRun(runId)?.status).toBe('complete')
+    const fragments = await listFragments(dataDir, storyId, 'prose')
+    const generated = fragments.find(
+      fragment => fragment.meta?.generatedFrom === 'Continue after disconnect',
+    )
+    expect(generated?.content).toBe('The first half. The second half.')
+  })
+
+  it('explicit Stop aborts the writer and never commits the partial passage', async () => {
+    mockAgentStream.mockImplementation((args: { abortSignal?: AbortSignal }) => ({
+      fullStream: (async function* () {
+        yield { type: 'text-delta' as const, text: 'Partial prose that must not save.' }
+        await new Promise<void>((_resolve, reject) => {
+          if (args.abortSignal?.aborted) {
+            reject(new Error('aborted'))
+            return
+          }
+          args.abortSignal?.addEventListener(
+            'abort',
+            () => reject(new Error('aborted')),
+            { once: true },
+          )
+        })
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 10 }),
+    }))
+
+    const before = await listFragments(dataDir, storyId, 'prose')
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: 'Stop this generation',
+        saveResult: true,
+        scopeId: 'stop-test',
+        clientRequestId: 'stop-test-1',
+      }),
+    })
+
+    const { reader, runId } = await readUntilEvent(
+      res,
+      event => event.type === 'text' && event.text.includes('Partial prose'),
+    )
+
+    const cancel = await api(`/stories/${storyId}/runs/${runId}/cancel`, {
+      method: 'POST',
+    })
+    expect(cancel.status).toBe(200)
+
+    await getRun(runId)!.done
+    expect(getRun(runId)?.status).toBe('cancelled')
+
+    const after = await listFragments(dataDir, storyId, 'prose')
+    expect(after).toHaveLength(before.length)
+    expect(after.some(fragment => fragment.meta?.generatedFrom === 'Stop this generation')).toBe(false)
+    expect(getPendingCount()).toBe(0)
+
+    await reader.cancel()
   })
 
   it('returns 404 for non-existent story', async () => {
