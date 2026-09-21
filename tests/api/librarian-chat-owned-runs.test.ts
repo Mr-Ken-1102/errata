@@ -1,0 +1,231 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTempDir, makeTestSettings } from '../setup'
+import { createStory } from '@/server/fragments/storage'
+import { clearRuns, getRun } from '@/server/runs'
+import { getChatHistory } from '@/server/librarian/storage'
+import type { AgentStreamCompletion, AgentStreamResult } from '@/server/agents/stream-types'
+
+let nextStreamResult: AgentStreamResult | null = null
+const failMock = vi.fn()
+
+vi.mock('@/server/agents', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/server/agents')>()
+  return {
+    ...actual,
+    listAgentRuns: () => [],
+    createAgentInstance: () => ({
+      agentName: 'librarian.chat',
+      execute: async () => {
+        if (!nextStreamResult) throw new Error('missing mocked stream')
+        return nextStreamResult
+      },
+      fail: (error: unknown) => failMock(error),
+    }),
+  }
+})
+
+import { createApp } from '@/server/api'
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(r => { resolve = r })
+  return { promise, resolve }
+}
+
+function completion(text = 'done'): AgentStreamCompletion {
+  return {
+    text,
+    reasoning: '',
+    toolCalls: [],
+    toolErrors: [],
+    stepCount: 1,
+    finishReason: 'stop',
+  }
+}
+
+function gatedStream(gate: ReturnType<typeof deferred>, opts?: { tool?: boolean; onCancel?: () => void }): AgentStreamResult {
+  let resolveCompletion!: (value: AgentStreamCompletion) => void
+  const completionPromise = new Promise<AgentStreamCompletion>(resolve => { resolveCompletion = resolve })
+  const eventStream = new ReadableStream<string>({
+    start(controller) {
+      controller.enqueue(JSON.stringify({ type: 'text', text: 'partial' }) + '\n')
+      if (opts?.tool) {
+        controller.enqueue(JSON.stringify({
+          type: 'tool-call',
+          id: 'tc-1',
+          toolName: 'editFragments',
+          args: { id: 'ch-1' },
+        }) + '\n')
+        controller.enqueue(JSON.stringify({
+          type: 'tool-result',
+          id: 'tc-1',
+          toolName: 'editFragments',
+          result: { ok: true },
+        }) + '\n')
+      }
+      void gate.promise.then(() => {
+        controller.enqueue(JSON.stringify({ type: 'finish', finishReason: 'stop', stepCount: 1 }) + '\n')
+        controller.close()
+        resolveCompletion(completion('partial'))
+      })
+    },
+    cancel() {
+      opts?.onCancel?.()
+      resolveCompletion(completion('partial'))
+    },
+  })
+  return { eventStream, completion: completionPromise }
+}
+
+async function readRunId(res: Response) {
+  if (!res.body) throw new Error('missing response body')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) throw new Error('ended before run-start')
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      const event = JSON.parse(line)
+      if (event.type === 'run-start') return { runId: event.runId as string, reader }
+    }
+  }
+}
+
+describe('server-owned librarian chat route', () => {
+  let dataDir: string
+  let cleanup: () => Promise<void>
+  let app: ReturnType<typeof createApp>
+  const storyId = 'story-chat-owned'
+
+  beforeEach(async () => {
+    const tmp = await createTempDir()
+    dataDir = tmp.path
+    cleanup = tmp.cleanup
+    clearRuns()
+    nextStreamResult = null
+    failMock.mockReset()
+    await createStory(dataDir, {
+      id: storyId,
+      name: 'Owned chat',
+      description: '',
+      coverImage: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: makeTestSettings(),
+    })
+    app = createApp(dataDir)
+  })
+
+  afterEach(async () => {
+    clearRuns()
+    await cleanup()
+  })
+
+  const post = (message: string, clientRequestId?: string) =>
+    app.fetch(new Request(`http://localhost/api/stories/${storyId}/librarian/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, ...(clientRequestId ? { clientRequestId } : {}) }),
+    }))
+
+  it('replays the same run for an idempotent retry without duplicating the user turn', async () => {
+    const gate = deferred()
+    nextStreamResult = gatedStream(gate)
+
+    const first = await post('hello', 'request-1')
+    const a = await readRunId(first)
+
+    const retry = await post('hello', 'request-1')
+    const b = await readRunId(retry)
+    expect(b.runId).toBe(a.runId)
+
+    const history = await getChatHistory(dataDir, storyId)
+    expect(history.messages.filter(m => m.role === 'user')).toHaveLength(1)
+
+    gate.resolve()
+    await getRun(a.runId)!.done
+    await a.reader.cancel()
+    await b.reader.cancel()
+  })
+
+  it('rejects a competing turn for the same surface and does not append it', async () => {
+    const gate = deferred()
+    nextStreamResult = gatedStream(gate)
+
+    const first = await post('first', 'request-a')
+    const { runId, reader } = await readRunId(first)
+
+    const second = await post('second', 'request-b')
+    expect(second.status).toBe(409)
+    const conflict = await second.json() as { runId: string }
+    expect(conflict.runId).toBe(runId)
+
+    const history = await getChatHistory(dataDir, storyId)
+    expect(history.messages.filter(m => m.role === 'user').map(m => m.content)).toEqual(['first'])
+
+    gate.resolve()
+    await getRun(runId)!.done
+    await reader.cancel()
+  })
+
+  it('keeps working after the HTTP subscriber disconnects', async () => {
+    const gate = deferred()
+    const sourceCancelled = vi.fn()
+    nextStreamResult = gatedStream(gate, { onCancel: sourceCancelled })
+
+    const response = await post('continue', 'request-disconnect')
+    const { runId, reader } = await readRunId(response)
+    await reader.cancel()
+    expect(sourceCancelled).not.toHaveBeenCalled()
+
+    gate.resolve()
+    await getRun(runId)!.done
+    expect(getRun(runId)!.status).toBe('complete')
+    expect(sourceCancelled).not.toHaveBeenCalled()
+
+    const history = await getChatHistory(dataDir, storyId)
+    expect(history.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      content: 'partial',
+      status: 'complete',
+    })
+  })
+
+  it('persists landed tool calls and marks an explicit Stop as cancelled', async () => {
+    const gate = deferred()
+    const sourceCancelled = vi.fn()
+    nextStreamResult = gatedStream(gate, { tool: true, onCancel: sourceCancelled })
+
+    const response = await post('edit it', 'request-cancel')
+    const { runId, reader } = await readRunId(response)
+
+    // Let the tracker consume the initial tool result.
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    const cancel = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/runs/${runId}/cancel`,
+      { method: 'POST' },
+    ))
+    expect(cancel.status).toBe(200)
+
+    await getRun(runId)!.done
+    expect(getRun(runId)!.status).toBe('cancelled')
+    expect(sourceCancelled).toHaveBeenCalledTimes(1)
+
+    const history = await getChatHistory(dataDir, storyId)
+    const assistant = history.messages.at(-1)
+    expect(assistant?.status).toBe('cancelled')
+    expect(assistant?.toolCalls?.[0]).toMatchObject({
+      toolName: 'editFragments',
+      result: { ok: true },
+    })
+
+    await reader.cancel()
+    gate.resolve()
+  })
+})
