@@ -84,6 +84,13 @@ export interface UseRunStreamOptions {
   onSettled?: (status: RunStatus, error?: string) => void
   /** Reattach to an already-running run for this scope on mount. Default true. */
   autoAttach?: boolean
+  /**
+   * Non-durable views (generation previews, inline prose) lose their rendered
+   * text on reload. When true, a stored run is replayed from seq 0 and may be
+   * reattached even if it completed while the page was away, as long as the
+   * server still retains it.
+   */
+  recoverFullRunOnAttach?: boolean
 }
 
 export interface UseRunStreamResult {
@@ -138,7 +145,14 @@ function makeClientRequestId(): string {
 }
 
 export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
-  const { storyId, branchId = null, kind, scopeId = null, autoAttach = true } = options
+  const {
+    storyId,
+    branchId = null,
+    kind,
+    scopeId = null,
+    autoAttach = true,
+    recoverFullRunOnAttach = false,
+  } = options
 
   const [runId, setRunId] = useState<string | null>(null)
   const [phase, setPhase] = useState<RunPhase>('idle')
@@ -411,7 +425,11 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       try {
         if (targetRunId) {
           const summary = await api.runs.get(storyId, targetRunId)
-          if (summary.status !== 'running') {
+          if (recoverFullRunOnAttach) {
+            // Reconstruct non-durable UI state from the authoritative run log.
+            // This also covers a run that finished while the page was away.
+            cursor = 0
+          } else if (summary.status !== 'running') {
             writeStored(key, null)
             targetRunId = null
           }
@@ -457,7 +475,16 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       cancelled = true
     }
     // Re-attach when the surface we're watching changes.
-  }, [autoAttach, consume, kind, key, scheduleReconnect, scopeId, storyId])
+  }, [
+    autoAttach,
+    consume,
+    kind,
+    key,
+    recoverFullRunOnAttach,
+    scheduleReconnect,
+    scopeId,
+    storyId,
+  ])
 
   // Come back from a backgrounded tab or a dropped network and reconnect at
   // once. Without this the user waits out the backoff every time they switch
