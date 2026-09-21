@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTempDir, makeTestSettings } from '../setup'
 import { createStory } from '@/server/fragments/storage'
 import { clearRuns, getRun } from '@/server/runs'
-import { getChatHistory } from '@/server/librarian/storage'
+import { createConversation, getChatHistory, getConversationHistory } from '@/server/librarian/storage'
 import type { AgentStreamCompletion, AgentStreamResult } from '@/server/agents/stream-types'
 
 let nextStreamResult: AgentStreamResult | null = null
@@ -132,6 +132,38 @@ describe('server-owned librarian chat route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, ...(clientRequestId ? { clientRequestId } : {}) }),
     }))
+
+  it('keeps named-conversation retries scoped and idempotent', async () => {
+    const conversation = await createConversation(dataDir, storyId, 'Named chat')
+    const gate = deferred()
+    nextStreamResult = gatedStream(gate)
+
+    const send = (clientRequestId: string) => app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/librarian/conversations/${conversation.id}/chat`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'hello named chat', clientRequestId }),
+      },
+    ))
+
+    const first = await send('named-request')
+    const a = await readRunId(first)
+    const retry = await send('named-request')
+    const b = await readRunId(retry)
+
+    expect(b.runId).toBe(a.runId)
+    expect(getRun(a.runId)?.scopeId).toBe(conversation.id)
+
+    const history = await getConversationHistory(dataDir, storyId, conversation.id)
+    expect(history.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(history.messages[0].content).toBe('hello named chat')
+
+    gate.resolve()
+    await getRun(a.runId)!.done
+    await a.reader.cancel()
+    await b.reader.cancel()
+  })
 
   it('replays the same run for an idempotent retry without duplicating the user turn', async () => {
     const gate = deferred()
