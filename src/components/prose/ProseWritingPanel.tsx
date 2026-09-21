@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { api, type Fragment } from '@/lib/api'
+import { consumeRun } from '@/lib/api/runs'
 import { q, useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -502,18 +503,21 @@ export function ProseWritingPanel({
         },
       )
 
-      const reader = stream.getReader()
       let transformed = ''
       let reasoning = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') transformed += value.text
-        if (value.type === 'reasoning') {
-          reasoning += value.text
+      const result = await consumeRun(storyId, stream, (event) => {
+        if (event.type === 'text') transformed += event.text
+        if (event.type === 'reasoning') {
+          reasoning += event.text
           setSelectionTransformReasoning(reasoning)
         }
+      })
+
+      if (result.status === 'error') {
+        setSelectionTransformReasoning(result.error ?? 'Transform failed')
+        return
       }
+      if (result.status === 'cancelled') return
 
       const compact = transformed.trim()
       if (!compact) return
