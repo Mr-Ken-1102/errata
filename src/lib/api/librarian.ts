@@ -42,8 +42,13 @@ export const librarian = {
     apiFetch<{ analysis: LibrarianAnalysis }>(`/stories/${storyId}/librarian/analyses/${analysisId}/contradictions/${index}/dismiss`, { method: 'POST' }),
   deleteAnalysis: (storyId: string, analysisId: string) =>
     apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/analyses/${analysisId}`, { method: 'DELETE' }),
-  refine: (storyId: string, fragmentId: string, instructions?: string) =>
-    fetchRunEventStream(`/stories/${storyId}/librarian/refine`, {
+  refine: (
+    storyId: string,
+    fragmentId: string,
+    instructions?: string,
+    _legacyRunId?: string,
+    _legacySignal?: AbortSignal,
+  ) => fetchRunEventStream(`/stories/${storyId}/librarian/refine`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fragmentId, instructions }),
