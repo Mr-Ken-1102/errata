@@ -133,4 +133,90 @@ describe('useRunStream surface isolation', () => {
     expect(keys.some(key => key.includes(':main:librarian.chat:conv-a'))).toBe(true)
     expect(keys.some(key => key.includes(':alternate:librarian.chat:conv-a'))).toBe(false)
   })
+
+  it('replays a retained completed generation from seq 0 for a non-durable view', async () => {
+    const onEvent = vi.fn()
+    const onSettled = vi.fn()
+    const key = 'errata:run:story-1:main:generation:generation-panel'
+    sessionStorage.setItem(key, JSON.stringify({ runId: 'run-complete', cursor: 7 }))
+
+    mocks.get.mockResolvedValue({
+      id: 'run-complete',
+      storyId: 'story-1',
+      kind: 'generation',
+      scopeId: 'generation-panel',
+      status: 'complete',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      seq: 4,
+    } satisfies RunSummary)
+    mocks.events.mockImplementation(async (
+      _storyId: string,
+      runId: string,
+      cursor: number,
+    ) => {
+      expect(runId).toBe('run-complete')
+      expect(cursor).toBe(0)
+      return new ReadableStream<SequencedChatEvent>({
+        start(controller) {
+          controller.enqueue({
+            type: 'run-start',
+            runId,
+            kind: 'generation',
+            status: 'running',
+            seq: 0,
+          })
+          controller.enqueue({ type: 'text', text: 'whole passage', seq: 1 })
+          controller.enqueue({ type: 'finish', finishReason: 'stop', stepCount: 1, seq: 2 })
+          controller.enqueue({ type: 'run-end', status: 'complete', seq: 3 })
+          controller.close()
+        },
+      })
+    })
+
+    const { result } = renderHook(() => useRunStream({
+      storyId: 'story-1',
+      branchId: 'main',
+      kind: 'generation',
+      scopeId: 'generation-panel',
+      recoverFullRunOnAttach: true,
+      onEvent,
+      onSettled,
+    }))
+
+    await waitFor(() => expect(result.current.phase).toBe('complete'))
+    expect(mocks.events).toHaveBeenCalledWith('story-1', 'run-complete', 0)
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'text',
+      text: 'whole passage',
+    }))
+    expect(onSettled).toHaveBeenCalledWith('complete', undefined)
+    expect(sessionStorage.getItem(key)).toBeNull()
+  })
+
+  it('settles and reports a POST start failure exactly once', async () => {
+    const onSettled = vi.fn()
+    mocks.list.mockResolvedValue([])
+
+    const { result } = renderHook(() => useRunStream({
+      storyId: 'story-1',
+      branchId: 'main',
+      kind: 'generation',
+      scopeId: 'generation-panel',
+      autoAttach: false,
+      onSettled,
+    }))
+
+    await expect(act(async () => {
+      await result.current.start(async () => {
+        throw new Error('provider unavailable')
+      })
+    })).rejects.toThrow('provider unavailable')
+
+    await waitFor(() => expect(result.current.phase).toBe('error'))
+    expect(result.current.error).toBe('provider unavailable')
+    expect(onSettled).toHaveBeenCalledTimes(1)
+    expect(onSettled).toHaveBeenCalledWith('error', 'provider unavailable')
+  })
+
 })
