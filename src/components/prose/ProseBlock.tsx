@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Fragment, type ProseChainResponseEntry } from '@/lib/api'
-import { consumeRun, startAndConsumeRun, type ConsumeRunResult } from '@/lib/api/runs'
-import type { SequencedChatEvent } from '@/lib/api/types'
+import { startAndConsumeRun } from '@/lib/api/runs'
 import { copyText } from '@/lib/clipboard'
 import { invalidateStoryContent } from '@/lib/branch-cache'
 import { Button } from '@/components/ui/button'
@@ -54,72 +53,6 @@ const TOOLBAR_CLEARANCE = 120
 export function toolbarPlacement(clickY: number): React.CSSProperties {
   if (clickY > TOOLBAR_CLEARANCE) return { top: clickY - TOOLBAR_GAP, transform: 'translateY(-100%)' }
   return { top: clickY + TOOLBAR_GAP }
-}
-
-/**
- * Imperative regenerate/refine consumer for passage-local actions. It reconnects
- * across a dropped HTTP stream and folds the run back into the existing prose
- * preview/thought UI without turning every ProseBlock into a run hook owner.
- */
-async function streamProseAction(
-  storyId: string,
-  stream: ReadableStream<SequencedChatEvent>,
-  onText: (text: string) => void,
-  onSteps: (steps: ThoughtStep[]) => void,
-): Promise<ConsumeRunResult & { rejection?: string }> {
-  let accumulated = ''
-  let accumulatedReasoning = ''
-  let rejection: string | undefined
-  const steps: ThoughtStep[] = []
-  let stepsDirty = false
-  let rafScheduled = false
-
-  const result = await consumeRun(storyId, stream, (event) => {
-    if (event.type === 'text') {
-      accumulated += event.text
-    } else if (event.type === 'reasoning') {
-      accumulatedReasoning += event.text
-      const last = steps[steps.length - 1]
-      if (last && last.type === 'reasoning') last.text = accumulatedReasoning
-      else steps.push({ type: 'reasoning', text: accumulatedReasoning })
-      stepsDirty = true
-    } else if (event.type === 'tool-call') {
-      accumulatedReasoning = ''
-      steps.push({
-        type: 'tool-call',
-        id: event.id,
-        toolName: event.toolName,
-        args: event.args,
-      })
-      stepsDirty = true
-    } else if (event.type === 'tool-result') {
-      steps.push({
-        type: 'tool-result',
-        id: event.id,
-        toolName: event.toolName,
-        result: event.result,
-      })
-      stepsDirty = true
-    } else if (event.type === 'generation-rejected') {
-      rejection = event.reason
-    }
-
-    if (!rafScheduled) {
-      rafScheduled = true
-      const textSnapshot = accumulated
-      const stepsSnapshot = stepsDirty ? [...steps] : null
-      stepsDirty = false
-      requestAnimationFrame(() => {
-        onText(textSnapshot)
-        if (stepsSnapshot) onSteps(stepsSnapshot)
-        rafScheduled = false
-      })
-    }
-  })
-
-  onText(accumulated)
-  if (steps.length > 0) onSteps([...steps])
-  return { ...result, ...(rejection ? { rejection } : {}) }
 }
 
 /** Isolated sub-component so query cache subscriptions don't force ProseBlock re-renders */
@@ -304,6 +237,13 @@ export const ProseBlock = memo(function ProseBlock({
   }
 
   const runRegeneration = async (prompt: string): Promise<boolean> => {
+    let accumulated = ''
+    let accumulatedReasoning = ''
+    let rejection: string | undefined
+    const steps: ThoughtStep[] = []
+    let stepsDirty = false
+    let rafScheduled = false
+
     const result = await startAndConsumeRun(
       storyId,
       (clientRequestId) => api.generation.regenerate(
@@ -313,55 +253,57 @@ export const ProseBlock = memo(function ProseBlock({
         undefined,
         { clientRequestId },
       ),
-      (() => {
-        let accumulated = ''
-        let accumulatedReasoning = ''
-        let rejection: string | undefined
-        const steps: ThoughtStep[] = []
-        let stepsDirty = false
-        let rafScheduled = false
-
-        return (event) => {
-          if (event.type === 'text') {
-            accumulated += event.text
-          } else if (event.type === 'reasoning') {
-            accumulatedReasoning += event.text
-            const last = steps[steps.length - 1]
-            if (last && last.type === 'reasoning') last.text = accumulatedReasoning
-            else steps.push({ type: 'reasoning', text: accumulatedReasoning })
-            stepsDirty = true
-          } else if (event.type === 'tool-call') {
-            accumulatedReasoning = ''
-            steps.push({ type: 'tool-call', id: event.id, toolName: event.toolName, args: event.args })
-            stepsDirty = true
-          } else if (event.type === 'tool-result') {
-            steps.push({ type: 'tool-result', id: event.id, toolName: event.toolName, result: event.result })
-            stepsDirty = true
-          } else if (event.type === 'generation-rejected') {
-            rejection = event.reason
-          }
-
-          if (!rafScheduled) {
-            rafScheduled = true
-            const textSnapshot = accumulated
-            const stepsSnapshot = stepsDirty ? [...steps] : null
-            stepsDirty = false
-            requestAnimationFrame(() => {
-              setStreamedActionText(textSnapshot)
-              if (stepsSnapshot) setActionThoughtSteps(stepsSnapshot)
-              rafScheduled = false
-            })
-          }
-
-          ;(runRegeneration as unknown as { rejection?: string }).rejection = rejection
+      (event) => {
+        if (event.type === 'text') {
+          accumulated += event.text
+        } else if (event.type === 'reasoning') {
+          accumulatedReasoning += event.text
+          const last = steps[steps.length - 1]
+          if (last && last.type === 'reasoning') last.text = accumulatedReasoning
+          else steps.push({ type: 'reasoning', text: accumulatedReasoning })
+          stepsDirty = true
+        } else if (event.type === 'tool-call') {
+          accumulatedReasoning = ''
+          steps.push({
+            type: 'tool-call',
+            id: event.id,
+            toolName: event.toolName,
+            args: event.args,
+          })
+          stepsDirty = true
+        } else if (event.type === 'tool-result') {
+          steps.push({
+            type: 'tool-result',
+            id: event.id,
+            toolName: event.toolName,
+            result: event.result,
+          })
+          stepsDirty = true
+        } else if (event.type === 'generation-rejected') {
+          rejection = event.reason
         }
-      })(),
+
+        if (!rafScheduled) {
+          rafScheduled = true
+          const textSnapshot = accumulated
+          const stepsSnapshot = stepsDirty ? [...steps] : null
+          stepsDirty = false
+          requestAnimationFrame(() => {
+            setStreamedActionText(textSnapshot)
+            if (stepsSnapshot) setActionThoughtSteps(stepsSnapshot)
+            rafScheduled = false
+          })
+        }
+      },
     )
-    const rejection = (runRegeneration as unknown as { rejection?: string }).rejection
-    delete (runRegeneration as unknown as { rejection?: string }).rejection
+
+    setStreamedActionText(accumulated)
+    if (steps.length > 0) setActionThoughtSteps([...steps])
+
     if (rejection || result.status === 'error' || result.status === 'cancelled') {
       return false
     }
+
     await invalidateStoryContent(queryClient, storyId)
     return true
   }
