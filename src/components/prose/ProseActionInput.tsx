@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { consumeRun, createRunRequestId } from '@/lib/api/runs'
+import { startAndConsumeRun } from '@/lib/api/runs'
 import { invalidateStoryContent } from '@/lib/branch-cache'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -38,22 +38,24 @@ export function ProseActionInput({
     onStreamStart()
 
     try {
-      const clientRequestId = createRunRequestId()
-      const opts = { clientRequestId }
-      const stream = mode === 'regenerate'
-        ? await api.generation.regenerate(storyId, fragmentId, input, undefined, opts)
-        : await api.generation.refine(storyId, fragmentId, input, undefined, opts)
-
       let accumulated = ''
       let rejection: string | null = null
-      const result = await consumeRun(storyId, stream, (event) => {
+      const result = await startAndConsumeRun(
+        storyId,
+        (clientRequestId) => {
+          const opts = { clientRequestId }
+          return mode === 'regenerate'
+            ? api.generation.regenerate(storyId, fragmentId, input, undefined, opts)
+            : api.generation.refine(storyId, fragmentId, input, undefined, opts)
+        },
+        (event) => {
         if (event.type === 'text') {
           accumulated += event.text
           onStream(accumulated)
         } else if (event.type === 'generation-rejected') {
           rejection = event.reason
-        }
-      })
+        },
+      )
 
       if (rejection) {
         setError(rejection)
