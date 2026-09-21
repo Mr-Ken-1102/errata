@@ -72,8 +72,15 @@ export const librarian = {
       instruction: options?.instruction,
     }),
   }),
-  chat: (storyId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, runId: string, signal?: AbortSignal) =>
-    fetchEventStream(`/stories/${storyId}/librarian/chat`, { messages, runId }, signal),
+  chat: (storyId: string, message: string, clientRequestId?: string) =>
+    fetchRunEventStream(`/stories/${storyId}/librarian/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        ...(clientRequestId ? { clientRequestId } : {}),
+      }),
+    }),
   getChatHistory: (storyId: string) =>
     apiFetch<ChatHistory>(`/stories/${storyId}/librarian/chat`),
   clearChatHistory: (storyId: string) =>
@@ -92,6 +99,17 @@ export const librarian = {
     }),
   getConversationHistory: (storyId: string, conversationId: string) =>
     apiFetch<ChatHistory>(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`),
-  conversationChat: (storyId: string, conversationId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, runId: string, signal?: AbortSignal) =>
-    fetchEventStream(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`, { messages, runId }, signal),
+  conversationChat: (
+    storyId: string,
+    conversationId: string,
+    message: string,
+    clientRequestId?: string,
+  ) => fetchRunEventStream(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      ...(clientRequestId ? { clientRequestId } : {}),
+    }),
+  }),
 }
