@@ -3,6 +3,70 @@
 All notable changes to Errata are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
+## [1.0.0] — Unreleased
+
+**Release identity:** **Errata v1.0** is the first curated release line of
+`Mr-Ken-1102/errata`. It is based on upstream `tealios/errata` v1.12.0 (2026-09-14,
+commit `610c7e7587fe334f0908dd2065f9be7c4761a0dc`) plus selectively integrated and
+adapted work from audited Errata forks. See [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md)
+for the exact source repositories, source authors/maintainers, versions/branch snapshots,
+commit SHAs, dates, integration method, rejected/reverted work, and upgrade-traceability rules.
+
+### Added
+- **Server-owned durable runs** for generation, Librarian refine/transform/chat,
+  and Character Chat, with cursor replay, reconnect support, idempotent retries,
+  and explicit Stop semantics that abort the model without committing partial prose.
+- **Story Presets** for reusable character, guideline, and knowledge bundles with
+  self-contained reference remapping, copy isolation, provenance, and rollback on
+  failed application.
+- **Branch-aware POV and character Voice controls**, including Unicode/Vietnamese
+  voice preservation and POV propagation through generation, refinement, and
+  Librarian metadata.
+- **Standalone SillyTavern lorebook import** with parser and drag-and-drop UI flows
+  independent of character-card import.
+- **Windows source launcher and Electron desktop packaging**, including an isolated
+  source `DATA_DIR`, packaged server sidecar, GitHub update feed for this fork, and
+  Windows smoke coverage that boots the bundled sidecar and checks `/api/health`.
+- **Curated desktop identity isolation** for v1.0: a dedicated application ID,
+  dedicated user/session data namespace, and a distinct default Windows install path
+  prevent collision with upstream/Viscerous desktop installs while keeping the visible
+  product name `Errata`.
+
+### Changed
+- Generation and chat lifecycle ownership moved to the server while preserving the
+  existing Viscerous context, continuity, output-validation, logging, save, and
+  Librarian-trigger semantics.
+- Runs are pinned to story branch/timeline identity so reconnect, replay, cancel,
+  and lost-POST recovery cannot attach across branches.
+- Selected low-risk performance improvements add active-branch caching, parallel
+  Character Chat summary reads, and lazy font-catalog loading without changing
+  fragment persistence semantics.
+- Release preparation now targets `Mr-Ken-1102/errata`, uses frozen dependency
+  installs, validates release tag/version consistency, and supports non-publishing
+  cross-platform desktop/standalone release dry-runs before a tag is created.
+- Desktop auto-update policy is stable-only by default: prerelease updates and
+  version downgrades are explicitly disabled for the curated v1.x line.
+
+### Fixed
+- Disconnecting a browser/subscriber no longer stops an active model run; explicit
+  Stop remains distinct and never commits partial generated prose.
+- Lost generation POST retries reuse `clientRequestId` and attach to the existing
+  server run instead of starting duplicate model work.
+- Branch-resolution races no longer start or reattach runs before the active
+  timeline is known.
+- Settings overlay lifecycle fallback prevents the post-settings non-interactive
+  "ghost overlay" state.
+- Vietnamese IME composition is guarded across generation, refinement, inline
+  editing, Story Wizard, Librarian/Character Chat, and Fragment tag/ref Enter paths.
+- README and one-click Windows setup no longer redirect users to another Errata fork.
+
+### Validation
+- The integrated source tree passed the full Vitest suite, app + desktop typecheck,
+  architecture boundaries, production build, and Windows desktop smoke before release-prep.
+- The final v1.0 release-prep HEAD must additionally pass the same standard CI, Windows
+  desktop smoke, and the cross-platform desktop/standalone dry-run workflows before PR #4
+  may leave Draft or be merged.
+
 ## [1.12.0] — 2026-09-14
 
 ### Added

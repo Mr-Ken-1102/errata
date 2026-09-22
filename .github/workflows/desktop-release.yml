@@ -1,25 +1,29 @@
 name: Desktop release
 
-# Builds the Electron desktop app for Windows, macOS, and Linux and uploads the installers +
-# update metadata (latest*.yml) to the GitHub Release that triggered the run. electron-updater
-# reads those to deliver auto-updates. Fires on the same event as release-binary.yml, so
-# publishing a release builds both the standalone binaries and the desktop installers.
-#
-# The release tag must match the package.json version (electron-builder targets v<version>).
-# macOS auto-update only works once the build is signed + notarized: provide the APPLE_* /
-# CSC_* secrets below. Without them the macOS build is produced unsigned and auto-update on
-# macOS stays inert.
-
+# Release events publish installers + update metadata. Pull requests and manual dispatches run
+# the same cross-platform installer build without publishing, so release packaging can be
+# validated before a tag/release exists.
 on:
   release:
     types: [published]
   workflow_dispatch:
-
-permissions:
-  contents: write
+  pull_request:
+    branches: [main, master]
+    paths:
+      - package.json
+      - bun.lock
+      - desktop/**
+      - scripts/build-electron.mjs
+      - scripts/build-binary.mjs
+      - electron-builder.yml
+      - build/installer.nsh
+      - .github/workflows/desktop-release.yml
 
 jobs:
-  build:
+  dry-run:
+    if: github.event_name != 'release'
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +37,39 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop installers without publishing
+        run: bun run electron:dist
+
+  publish:
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Verify release tag matches package version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Release tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build and upload desktop installers
         run: bun run electron:release

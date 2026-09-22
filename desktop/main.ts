@@ -5,9 +5,30 @@
  */
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { startSidecar, type SidecarHandle } from './sidecar'
 import { setupUpdater } from './updater'
+
+// Stable identity for the curated Mr-Ken-1102 distribution. Keep this unchanged after v1.0.
+const CURATED_APP_ID = 'io.github.mrken1102.errata'
+
+/**
+ * Isolate this curated distribution from upstream/fork desktop installs that also use the
+ * human-facing product name "Errata". Configure these paths before Electron creates sessions
+ * or windows so stories, Chromium state and updater preferences cannot collide with another
+ * distribution's userData directory.
+ */
+function configureCuratedDesktopIdentity() {
+  const userData = join(app.getPath('appData'), 'Mr-Ken-1102', 'Errata')
+  const sessionData = join(userData, 'session')
+  mkdirSync(userData, { recursive: true })
+  mkdirSync(sessionData, { recursive: true })
+  app.setPath('userData', userData)
+  app.setPath('sessionData', sessionData)
+  if (process.platform === 'win32') app.setAppUserModelId(CURATED_APP_ID)
+}
+
+configureCuratedDesktopIdentity()
 
 // Warm parchment so the first paint is not a white flash. Matches the bookish palette.
 const BACKGROUND_COLOR = '#efe7d6'

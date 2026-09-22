@@ -47,7 +47,7 @@ Switch from prose view to Character Chat to run in-world conversations with your
 ## Quick Start
 
 ```bash
-git clone https://github.com/Viscerous/errata.git
+git clone https://github.com/Mr-Ken-1102/errata.git
 cd errata
 bun install
 bun run dev
@@ -78,12 +78,12 @@ powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
 Or run it directly from the web without cloning first:
 
 ```powershell
-irm https://raw.githubusercontent.com/Viscerous/errata/main/scripts/setup.ps1 | iex
+irm https://raw.githubusercontent.com/Mr-Ken-1102/errata/master/scripts/setup.ps1 | iex
 ```
 
 ## Download
 
-Pre-built binaries are available on the [Releases](https://github.com/Viscerous/errata/releases) page for Windows, Linux, and macOS. Extract the zip and run — no runtime dependencies required.
+Pre-built binaries are available on the [Releases](https://github.com/Mr-Ken-1102/errata/releases) page for Windows, Linux, and macOS. Extract the zip and run — no runtime dependencies required.
 
 ```bash
 # Windows
@@ -100,6 +100,12 @@ chmod +x errata
 ```
 
 Set `DATA_DIR` to control where story data is stored (default: `./data`).
+
+## Release lineage
+
+The curated `Mr-Ken-1102/errata` release line starts at **Errata v1.0** (`1.0.0`, planned tag `v1.0.0`). This version number identifies the first curated release of this repository; it does **not** erase the older upstream Errata version history.
+
+For exact source repositories, upstream/fork versions, branch snapshots, commit SHAs, dates, source authors/maintainers, what was selectively ported, what was only used as architectural input, and what was explicitly rejected or reverted, see [RELEASE_PROVENANCE.md](RELEASE_PROVENANCE.md).
 
 ## Environment Variables
 
