@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { ThemeProvider } from '@/lib/theme'
+import { LanguageProvider } from '@/lib/i18n'
 import { HelpProvider } from '@/hooks/use-help'
 import { HelpPanel } from '@/components/help/HelpPanel'
 import { TtsPlayerBar } from '@/components/tts/TtsPlayerBar'
@@ -45,6 +46,7 @@ export const Route = createRootRoute({
 })
 
 const themeScript = `(function(){var t=localStorage.getItem('errata-theme');var r=document.documentElement;r.classList.toggle('dark',t==='dark');r.classList.toggle('high-contrast',t==='high-contrast')})()`;
+const languageScript = `(function(){try{var l=localStorage.getItem('errata-language');document.documentElement.lang=l==='vi'?'vi':'en'}catch(e){document.documentElement.lang='en'}})()`;
 const fontScript = `(function(){var f=localStorage.getItem('errata-fonts');if(!f)return;try{var p=JSON.parse(f),s=document.documentElement.style,fb={display:', Georgia, serif',prose:', Georgia, serif',sans:', -apple-system, BlinkMacSystemFont, sans-serif',mono:', "Fira Code", Menlo, monospace'};for(var k in p){if(p[k]&&fb[k])s.setProperty('--font-'+k,'"'+p[k]+'"'+fb[k])}}catch(e){}})()`;
 
 const fontLoaderScript = `(function(){
@@ -86,12 +88,13 @@ window.__errata_loaded_fonts=active;
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    // The theme/font boot scripts mutate <html> (class, style) before React
-    // hydrates, which is an intentional, expected hydration difference.
+    // The theme/font/language boot scripts mutate <html> before React hydrates,
+    // which is an intentional, expected hydration difference.
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: languageScript }} />
         <script dangerouslySetInnerHTML={{ __html: fontScript }} />
         <script dangerouslySetInnerHTML={{ __html: fontLoaderScript }} />
       </head>
@@ -110,21 +113,23 @@ function CustomCssProvider() {
 
 function RootComponent() {
   return (
-    <ThemeProvider>
-      <InteractionSoundsController />
-      <CustomCssProvider />
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <ConfirmProvider>
-            <HelpProvider>
-              <Outlet />
-              <HelpPanel />
-              <TtsPlayerBar />
-              <DesktopUpdateBanner />
-            </HelpProvider>
-          </ConfirmProvider>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <LanguageProvider>
+      <ThemeProvider>
+        <InteractionSoundsController />
+        <CustomCssProvider />
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <ConfirmProvider>
+              <HelpProvider>
+                <Outlet />
+                <HelpPanel />
+                <TtsPlayerBar />
+                <DesktopUpdateBanner />
+              </HelpProvider>
+            </ConfirmProvider>
+          </TooltipProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </LanguageProvider>
   )
 }
