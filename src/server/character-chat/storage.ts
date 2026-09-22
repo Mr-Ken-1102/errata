@@ -186,14 +186,18 @@ export async function listConversations(
   const dir = await conversationsDir(dataDir, storyId)
   if (!existsSync(dir)) return []
 
-  const entries = await readdir(dir)
-  const summaries: CharacterChatConversationSummary[] = []
+  const entries = (await readdir(dir)).filter(entry => entry.endsWith('.json'))
 
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
+  // Conversation files are independent. Reading them concurrently removes an
+  // avoidable N-file waterfall while preserving fail-fast behavior for corrupt
+  // JSON instead of silently hiding damaged conversations.
+  const conversations = await Promise.all(entries.map(async (entry) => {
     const raw = await readFile(join(dir, entry), 'utf-8')
-    const conv = JSON.parse(raw) as CharacterChatConversation
+    return JSON.parse(raw) as CharacterChatConversation
+  }))
 
+  const summaries: CharacterChatConversationSummary[] = []
+  for (const conv of conversations) {
     if (characterId && conv.characterId !== characterId) continue
 
     summaries.push({
