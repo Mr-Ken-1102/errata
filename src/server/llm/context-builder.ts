@@ -76,6 +76,12 @@ export interface CustomFragmentGroup {
   fragments: Fragment[]
 }
 
+/** Resolved author-controlled voice notes for the selected POV character. */
+export interface PovVoice {
+  characterName: string
+  content?: string
+}
+
 export interface ContextBuildState {
   story: StoryMeta
   /** The single active-fragment snapshot this state was derived from. */
@@ -102,6 +108,8 @@ export interface ContextBuildState {
   /** Source-current chronological memory older than the raw prose window. */
   summaryProjection?: SummaryProjection
   authorInput?: string
+  /** Selected character perspective for this generation; undefined = narrator. */
+  povVoice?: PovVoice
   modelId?: string
   /**
    * Tool names the model will actually be offered, for blocks whose wording
@@ -178,6 +186,50 @@ export interface BuildContextOptions {
   proseBeforeFragmentId?: string
   /** Exclude story summary from context */
   excludeStorySummary?: boolean
+  /** Character whose perspective/voice should drive the generated prose. */
+  povCharacterId?: string
+}
+
+export function getFragmentVoice(fragment: Fragment): string | undefined {
+  const raw = fragment.meta?.voice
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return trimmed ? trimmed : undefined
+}
+
+/** Add the editable POV template as the last ordinary user instruction. */
+export function pushPovVoice(
+  blocks: ContextBlock[],
+  povVoice: PovVoice | undefined,
+  order = 650,
+): void {
+  if (!povVoice) return
+  blocks.push({
+    id: 'pov-voice',
+    role: 'user',
+    content: "Point of View: Write from {{characterName}}'s point of view, fully using {{characterName}}'s unique voice: {{voice}}",
+    order,
+    source: 'builtin',
+  })
+}
+
+/** Resolve POV tokens only after author block overrides have been applied. */
+export function resolvePovVoicePlaceholders(
+  blocks: ContextBlock[],
+  povVoice?: PovVoice,
+): ContextBlock[] {
+  if (!povVoice || !blocks.some(block => block.id === 'pov-voice')) return blocks
+  const voice = povVoice.content?.trim()
+    ? povVoice.content
+    : `match how ${povVoice.characterName} naturally speaks elsewhere in the story`
+  return blocks.map(block => block.id !== 'pov-voice'
+    ? block
+    : {
+        ...block,
+        content: block.content
+          .replace(/\{\{characterName\}\}/g, () => povVoice.characterName)
+          .replace(/\{\{voice\}\}/g, () => voice),
+      })
 }
 
 /**
@@ -245,6 +297,7 @@ export async function buildContextState(
     excludeFragmentId,
     proseBeforeFragmentId,
     excludeStorySummary,
+    povCharacterId,
   } = opts
   const requestLogger = logger.child({ storyId })
   requestLogger.info('Building context state...')
@@ -421,6 +474,19 @@ export async function buildContextState(
     if (catalog.length > 0) customFragmentCatalogs.push({ ...group, fragments: catalog })
   }
 
+  let povVoice: PovVoice | undefined
+  if (povCharacterId) {
+    const povCharacter = allCharacters.find(fragment => fragment.id === povCharacterId && !fragment.archived)
+    if (povCharacter) {
+      povVoice = {
+        characterName: povCharacter.name,
+        content: getFragmentVoice(povCharacter),
+      }
+    } else {
+      requestLogger.warn('POV character not found on active timeline; using narrator', { povCharacterId })
+    }
+  }
+
   const state = {
     story: { ...story, summary: effectiveSummary },
     allFragments,
@@ -440,6 +506,7 @@ export async function buildContextState(
     characterCatalog,
     customFragmentCatalogs,
     authorInput,
+    povVoice,
   }
 
   requestLogger.info('Context state built', {
@@ -674,6 +741,8 @@ export function createDefaultBlocks(state: ContextBuildState): ContextBlock[] {
       source: 'builtin',
     })
   }
+
+  pushPovVoice(blocks, state.povVoice, 650)
 
   return blocks
 }
