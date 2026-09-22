@@ -164,7 +164,8 @@ export function fragmentRoutes(dataDir: string) {
       detail: { summary: 'Get a fragment by ID' },
     })
 
-    .put('/stories/:storyId/fragments/:fragmentId', async ({ params, body, set }) => {
+    .put('/stories/:storyId/fragments/:fragmentId', async ({ params, body, query, set }) => {
+      return withBranch(dataDir, params.storyId, async () => {
       const existing = await getFragment(
         dataDir,
         params.storyId,
@@ -213,8 +214,10 @@ export function fragmentRoutes(dataDir: string) {
       await reanalyzeAfterProseChange(dataDir, params.storyId, existing, updated)
 
       return { ...updated, idChanged }
+      }, query.branch)
     }, {
       detail: { summary: 'Update a fragment (full replace, versioned)' },
+      query: t.Object({ branch: t.Optional(t.String()) }),
       body: t.Object({
         type: t.Optional(t.String()),
         name: t.String(),
