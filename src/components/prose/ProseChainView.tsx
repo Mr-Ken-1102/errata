@@ -27,7 +27,7 @@ interface ProseChainViewProps {
   onEditProse?: (fragmentId: string, selectedText?: string) => void
   onDebugLog?: (logId: string) => void
   onLaunchWizard?: () => void
-  onAskLibrarian?: (fragmentId: string, prefill?: string) => void
+  onAskLibrarian?: (fragmentId: string, prefill?: string, options?: { capturePov?: boolean }) => void
 }
 
 const GENERATION_HANDOFF_ANCHOR = 'generation-handoff'
