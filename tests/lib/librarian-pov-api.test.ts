@@ -69,7 +69,7 @@ describe('branch-aware librarian POV client contract', () => {
   })
 
   it('sends POV only when a conversation is explicitly created with one', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(
+    const fetchSpy = vi.fn().mockImplementation(async () => new Response(
       JSON.stringify({
         id: 'conv-1',
         title: 'New chat',
