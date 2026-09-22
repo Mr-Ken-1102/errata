@@ -351,7 +351,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
               onChange={(event) => setInput(event.target.value)}
               placeholder="Describe what should happen next in the story..."
               className="min-h-[80px] resize-none text-sm bg-transparent placeholder:italic placeholder:text-muted-foreground"
-              disabled={isGenerating}
+              disabled={isGenerating || branchId === undefined}
               onKeyDown={(event) => {
                 if (
                   event.key === 'Enter'
