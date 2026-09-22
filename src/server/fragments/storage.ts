@@ -42,6 +42,30 @@ async function writeJson(path: string, data: unknown): Promise<void> {
   await writeJsonAtomic(path, data)
 }
 
+const STORAGE_READ_CONCURRENCY = 32
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const runners = Array.from(
+    { length: Math.min(Math.max(1, limit), items.length) },
+    async () => {
+      while (true) {
+        const index = cursor++
+        if (index >= items.length) return
+        results[index] = await worker(items[index], index)
+      }
+    },
+  )
+  await Promise.all(runners)
+  return results
+}
+
 function normalizeFragment(fragment: Fragment | null): Fragment | null {
   if (!fragment) return null
   const version = fragment.version ?? 1
@@ -98,17 +122,15 @@ export async function listStories(dataDir: string): Promise<StoryMeta[]> {
   const dir = storiesDir(dataDir)
   if (!existsSync(dir)) return []
 
-  const entries = await readdir(dir, { withFileTypes: true })
-  const stories: StoryMeta[] = []
+  const entries = (await readdir(dir, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory())
+  const stories = await mapWithConcurrency(
+    entries,
+    STORAGE_READ_CONCURRENCY,
+    entry => getStory(dataDir, entry.name),
+  )
 
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const meta = await getStory(dataDir, entry.name)
-      if (meta) stories.push(meta)
-    }
-  }
-
-  return stories
+  return stories.filter((story): story is StoryMeta => story !== null)
 }
 
 export async function updateStory(
@@ -190,23 +212,19 @@ export async function listFragments(
   if (!existsSync(dir)) return []
 
   const includeArchived = opts?.includeArchived ?? false
-  const entries = await readdir(dir)
-  const fragments: Fragment[] = []
+  const entries = (await readdir(dir)).filter(entry => entry.endsWith('.json'))
+  const fragments = await mapWithConcurrency(
+    entries,
+    STORAGE_READ_CONCURRENCY,
+    async (entry) => normalizeFragment(await readJson<Fragment>(join(dir, entry))),
+  )
 
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-
-    const rawFragment = await readJson<Fragment>(join(dir, entry))
-    const fragment = normalizeFragment(rawFragment)
-    if (fragment) {
-      if (type && fragment.type !== type) continue
-      // Skip archived fragments unless caller opts in
-      if (!includeArchived && fragment.archived) continue
-      fragments.push(fragment)
-    }
-  }
-
-  return fragments
+  return fragments.filter((fragment): fragment is Fragment => {
+    if (!fragment) return false
+    if (type && fragment.type !== type) return false
+    if (!includeArchived && fragment.archived) return false
+    return true
+  })
 }
 
 export async function archiveFragment(
