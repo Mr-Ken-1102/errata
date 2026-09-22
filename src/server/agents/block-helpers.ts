@@ -5,7 +5,7 @@
  * so each agent can compose its context from reusable pieces.
  */
 
-import type { ContextBlock } from '../llm/context-builder'
+import { getFragmentVoice, type ContextBlock } from '../llm/context-builder'
 import { type AgentBlockContext, baseBlockContext } from './agent-block-context'
 import type { Fragment } from '../fragments/schema'
 import { buildContextState } from '../llm/context-builder'
@@ -108,6 +108,9 @@ export function targetFragmentBlock(
   defaultGuidance: string,
 ): ContextBlock | null {
   if (!ctx.targetFragment) return null
+  const voice = ctx.targetFragment.type === 'character'
+    ? getFragmentVoice(ctx.targetFragment)
+    : undefined
   const fragmentSnapshot = [
     `ID: ${ctx.targetFragment.id}`,
     `Type: ${ctx.targetFragment.type}`,
@@ -116,6 +119,7 @@ export function targetFragmentBlock(
     `Version: ${ctx.targetFragment.version ?? 1}`,
     `Base hash: ${fragmentBaseHash(ctx.targetFragment)}`,
     markdownSection(3, 'Current Content', ctx.targetFragment.content || '(empty)'),
+    ...(voice ? [markdownSection(3, 'POV Voice Notes', voice)] : []),
   ].join('\n')
   const guidance = ctx.instructions
     ? markdownSection(3, 'User Instructions', ctx.instructions)
