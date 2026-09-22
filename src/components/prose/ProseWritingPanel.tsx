@@ -472,7 +472,7 @@ export function ProseWritingPanel({
 
   // Selection transform
   const applySelectionTransform = async (mode: SelectionTransformMode, instruction?: string, label?: string) => {
-    if (!editor || isTransformingSelection) return
+    if (!editor || isTransformingSelection || !branchId) return
     const { from, to, empty } = editor.state.selection
     if (empty || to <= from) return
 
@@ -500,6 +500,7 @@ export function ProseWritingPanel({
           contextBefore,
           contextAfter,
           instruction,
+          branchId,
         },
       )
 
@@ -511,7 +512,7 @@ export function ProseWritingPanel({
           reasoning += event.text
           setSelectionTransformReasoning(reasoning)
         }
-      })
+      }, { branchId })
 
       if (result.status === 'error') {
         setSelectionTransformReasoning(result.error ?? 'Transform failed')
