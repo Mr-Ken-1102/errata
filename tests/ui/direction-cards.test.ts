@@ -84,8 +84,12 @@ describe('direction card activation', () => {
     ))
     // Generous windows: the cards arrive behind mocked queries, and the default
     // 1s is tight enough to flake when the whole suite runs in parallel.
-    fireEvent.click(await screen.findByText('Suggest directions', {}, { timeout: 10_000 }))
-    await waitFor(() => expect(screen.getByText(DIRECTION.title)).toBeTruthy(), { timeout: 10_000 })
+    const suggest = await screen.findByText('Suggest directions', {}, { timeout: 10_000 })
+    await waitFor(() => {
+      expect((suggest as HTMLButtonElement).disabled).toBe(false)
+    })
+    fireEvent.click(suggest)
+    await waitFor(() => expect(screen.getByText(DIRECTION.title)).toBeTruthy())
     return view
   }
 
