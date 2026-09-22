@@ -60,7 +60,7 @@ export function VoiceField({
         description: fragment.description,
         content: fragment.content,
         meta,
-      })
+      }, branchId)
     },
     onSuccess: (updated) => {
       if (!fragment) return
