@@ -101,6 +101,7 @@ export function sanitizePresetBundle(bundle: unknown): FragmentBundleData {
   }
 
   const disallowed = new Set<string>()
+  const bundledIds = new Set<string>()
   for (const entry of data.fragments) {
     if (
       !entry
@@ -111,6 +112,21 @@ export function sanitizePresetBundle(bundle: unknown): FragmentBundleData {
     ) {
       throw new InvalidPresetBundleError('Invalid fragment bundle entry')
     }
+    if (entry.id !== undefined) {
+      if (typeof entry.id !== 'string' || !entry.id) {
+        throw new InvalidPresetBundleError('Invalid preset fragment id')
+      }
+      if (bundledIds.has(entry.id)) {
+        throw new InvalidPresetBundleError(`Duplicate preset fragment id: ${entry.id}`)
+      }
+      bundledIds.add(entry.id)
+    }
+    if (
+      entry.refs !== undefined
+      && (!Array.isArray(entry.refs) || entry.refs.some(ref => typeof ref !== 'string'))
+    ) {
+      throw new InvalidPresetBundleError('Invalid preset fragment refs')
+    }
     if (!isAllowedType(entry.type)) disallowed.add(entry.type)
   }
   if (disallowed.size > 0) {
@@ -119,9 +135,31 @@ export function sanitizePresetBundle(bundle: unknown): FragmentBundleData {
     )
   }
 
+  const fragments = data.fragments.map((entry) => {
+    const stripped = stripTransportProvenance(entry)
+    const refs = stripped.refs?.filter(ref => bundledIds.has(ref)) ?? []
+    const meta = { ...(stripped.meta ?? {}) }
+
+    // A reusable preset must be self-contained. These fields are meaningful
+    // only when their target ships in the same preset; keeping source-story ids
+    // would create dangling references in a newly seeded story.
+    if (typeof meta.previousFragmentId === 'string' && !bundledIds.has(meta.previousFragmentId)) {
+      delete meta.previousFragmentId
+    }
+    if (typeof meta.variationOf === 'string' && !bundledIds.has(meta.variationOf)) {
+      delete meta.variationOf
+    }
+
+    return {
+      ...stripped,
+      ...(refs.length > 0 ? { refs } : { refs: undefined }),
+      ...(Object.keys(meta).length > 0 ? { meta } : { meta: {} }),
+    }
+  })
+
   return {
     ...(data as FragmentBundleData),
-    fragments: data.fragments.map(stripTransportProvenance),
+    fragments,
   }
 }
 
