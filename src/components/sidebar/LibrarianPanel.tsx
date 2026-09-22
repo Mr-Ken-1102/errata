@@ -11,6 +11,7 @@ import {
   type LibrarianStatusResponse,
 } from '@/lib/api'
 import { qk, q, useActiveBranchId } from '@/lib/query-keys'
+import { readPovCharacterId } from '@/lib/api/generation'
 import { cn } from '@/lib/utils'
 import { diffRows } from '@/lib/diff'
 import { toolResultOutcome } from '@/lib/librarian-outcome'
@@ -66,6 +67,7 @@ interface LibrarianPanelProps {
   storyId: string
   askFragmentId?: string | null
   askPrefill?: string | null
+  askCapturePov?: boolean
   onAskFragmentConsumed?: () => void
 }
 
@@ -83,7 +85,13 @@ function readSavedTab(storyId: string): TabValue {
   return 'chat'
 }
 
-export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragmentConsumed }: LibrarianPanelProps) {
+export function LibrarianPanel({
+  storyId,
+  askFragmentId,
+  askPrefill,
+  askCapturePov = false,
+  onAskFragmentConsumed,
+}: LibrarianPanelProps) {
   const [activeTab, setActiveTab] = useState<TabValue>(() => readSavedTab(storyId))
   const [chatInitialInput, setChatInitialInput] = useState<string>('')
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
@@ -97,7 +105,8 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
   })
 
   const createConversationMutation = useMutation({
-    mutationFn: (title: string | undefined) => api.librarian.createConversation(storyId, title),
+    mutationFn: (input: { title?: string; povCharacterId?: string }) =>
+      api.librarian.createConversation(storyId, input.title, input.povCharacterId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-conversations', storyId] })
     },
@@ -118,16 +127,21 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
   // Handle ask librarian from prose action panel — always create a new conversation
   useEffect(() => {
     if (!askFragmentId) return
+    if (askCapturePov && !branchId) return
+
     setActiveTab('chat')
     const prefill = askPrefill ?? `@${askFragmentId} `
-    createConversationMutation.mutate(undefined, {
+    const povCharacterId = askCapturePov
+      ? readPovCharacterId(storyId, branchId)
+      : undefined
+    createConversationMutation.mutate({ povCharacterId }, {
       onSuccess: (conversation) => {
         setActiveConversationId(conversation.id)
         setChatInitialInput(prefill)
       },
     })
     onAskFragmentConsumed?.()
-  }, [askFragmentId, askPrefill, onAskFragmentConsumed])
+  }, [askFragmentId, askPrefill, askCapturePov, branchId, storyId, onAskFragmentConsumed])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -202,7 +216,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
             conversations={conversations ?? []}
             onSelect={(id) => { setActiveConversationId(id); setChatInitialInput('') }}
             onNew={async () => {
-              const conv = await createConversationMutation.mutateAsync(undefined)
+              const conv = await createConversationMutation.mutateAsync({})
               setActiveConversationId(conv.id)
               setChatInitialInput('')
             }}
@@ -216,7 +230,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
           storyId={storyId}
           status={status}
           onOpenChat={(message) => {
-            createConversationMutation.mutate(undefined, {
+            createConversationMutation.mutate({}, {
               onSuccess: (conversation) => {
                 setActiveConversationId(conversation.id)
                 setChatInitialInput(message)
