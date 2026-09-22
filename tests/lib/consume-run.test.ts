@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { consumeRun, fetchRunEventStream } from '@/lib/api/runs'
+import { consumeRun, fetchRunEventStream, startAndConsumeRun } from '@/lib/api/runs'
 import type { ChatEvent, SequencedChatEvent } from '@/lib/api/types'
 
 /**
@@ -161,6 +161,42 @@ describe('consumeRun', () => {
     ]), () => {})
 
     expect(result).toEqual({ runId: 'run-1', status: 'cancelled' })
+  })
+
+  it('keeps the pinned timeline when a lost POST retry attaches to an existing run', async () => {
+    const { ApiError } = await import('@/lib/api/client')
+    const body = [
+      seq(0, { type: 'run-start', runId: 'run-existing', kind: 'generation', status: 'running' }),
+      seq(1, { type: 'run-end', status: 'complete' }),
+    ].map(event => JSON.stringify(event)).join('\n') + '\n'
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(body, { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const requestIds: string[] = []
+    let calls = 0
+    const result = await startAndConsumeRun(
+      'story-1',
+      async (clientRequestId) => {
+        requestIds.push(clientRequestId)
+        calls += 1
+        if (calls === 1) throw new Error('response lost after accept')
+        throw new ApiError(
+          'A generation is already running',
+          409,
+          { error: 'A generation is already running', runId: 'run-existing' },
+        )
+      },
+      () => {},
+      { branchId: 'branch-a' },
+    )
+
+    expect(requestIds).toHaveLength(2)
+    expect(requestIds[0]).toBe(requestIds[1])
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/stories/story-1/runs/run-existing/events?cursor=0&branchId=branch-a',
+      undefined,
+    )
+    expect(result).toEqual({ runId: 'run-existing', status: 'complete' })
   })
 
   it('carries the status through so a 409 conflict is distinguishable', async () => {
