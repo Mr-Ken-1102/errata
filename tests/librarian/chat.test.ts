@@ -6,7 +6,7 @@ import {
   createFragment,
 } from '@/server/fragments/storage'
 import { initProseChain } from '@/server/fragments/prose-chain'
-import { appendChatMessage } from '@/server/librarian/storage'
+import { appendChatMessage, createConversation } from '@/server/librarian/storage'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
 // Mock the AI SDK ToolLoopAgent
@@ -172,6 +172,60 @@ describe('librarian chat endpoint', () => {
     const finishEvent = events.find((e) => e.type === 'finish')
     expect(finishEvent).toBeDefined()
     expect(finishEvent!.finishReason).toBe('stop')
+  })
+
+  it('injects a captured conversation POV into chat context and exposes the chat-only voice tool', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'ch-maya',
+      name: 'Maya',
+      meta: { voice: 'Tôi quan sát kỹ, nói ít, tránh phô trương.' },
+    }))
+    const conversation = await createConversation(
+      dataDir,
+      story.id,
+      'Refine in Maya POV',
+      'ch-maya',
+    )
+
+    mockAgentStream.mockResolvedValue({
+      fullStream: createMockFullStream([
+        { type: 'text-delta', text: 'Understood.' },
+        { type: 'finish', finishReason: 'stop' },
+      ]),
+      text: Promise.resolve('Understood.'),
+      reasoning: Promise.resolve(''),
+      toolCalls: Promise.resolve([]),
+      finishReason: Promise.resolve('stop'),
+      steps: Promise.resolve([]),
+    })
+
+    const res = await app.fetch(
+      new Request(
+        `http://localhost/api/stories/${story.id}/librarian/conversations/${conversation.id}/chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'Refine the passage.' }),
+        },
+      ),
+    )
+    expect(res.status).toBe(200)
+    await consumeStream(res)
+
+    const streamArgs = mockAgentStream.mock.calls.at(-1)?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const context = streamArgs.messages.map(message => message.content).join('\n')
+    expect(context).toContain("Maya's point of view")
+    expect(context).toContain('Tôi quan sát kỹ, nói ít, tránh phô trương.')
+    expect(context).not.toContain('{{voice}}')
+
+    const constructorConfig = mockAgentCtor.mock.calls.at(-1)?.[0] as {
+      tools?: Record<string, unknown>
+    }
+    expect(constructorConfig.tools).toHaveProperty('setCharacterVoice')
   })
 
   it('streams tool-call and tool-result events', async () => {
