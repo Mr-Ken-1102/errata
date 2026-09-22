@@ -65,7 +65,6 @@ function ProviderQuickSwitch({
   isStreamingAction: boolean
 }) {
   const queryClient = useQueryClient()
-  const branchId = useActiveBranchId(storyId)
   const { data: story } = useQuery({
     queryKey: ['story', storyId],
     queryFn: () => api.stories.get(storyId),
