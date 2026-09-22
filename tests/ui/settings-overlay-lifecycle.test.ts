@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { act, render, waitFor } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '@/components/sidebar/SettingsView'
 import { DetailPanel } from '@/components/sidebar/DetailPanel'
@@ -77,16 +77,14 @@ describe('Settings overlay close lifecycle', () => {
       expect(document.querySelector('[data-component-id="settings-view-root"]')).not.toBeNull()
     })
 
-    // The fallback is the behavior under test. Turn on fake timers only after
-    // the lazy SettingsView has resolved so Suspense itself is not timer-bound.
-    vi.useFakeTimers()
     view.rerender(createElement(DetailPanel, detailProps(null)))
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(251)
-    })
-
-    expect(document.querySelector('[data-component-id="settings-view-root"]')).toBeNull()
-    expect(document.querySelector('button[aria-label="Close settings"]')).toBeNull()
+    // Correctness must not depend on transitionend. Use the real 250 ms
+    // fallback here; mixing fake timers with React.lazy and RAF obscures the
+    // lifecycle this test is meant to verify.
+    await waitFor(() => {
+      expect(document.querySelector('[data-component-id="settings-view-root"]')).toBeNull()
+      expect(document.querySelector('button[aria-label="Close settings"]')).toBeNull()
+    }, { timeout: 1_000 })
   })
 })
