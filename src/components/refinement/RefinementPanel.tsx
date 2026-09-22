@@ -33,6 +33,10 @@ export function RefinementPanel({
   const [cancelled, setCancelled] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
   const runIdRef = useRef<string | null>(null)
+  const storyIdRef = useRef(storyId)
+  const branchIdRef = useRef(branchId)
+  storyIdRef.current = storyId
+  branchIdRef.current = branchId
   const activeRef = useRef(false)
   const cancelRequestedRef = useRef(false)
   const mountedRef = useRef(true)
@@ -45,8 +49,10 @@ export function RefinementPanel({
     if (!activeRef.current) return
     cancelRequestedRef.current = true
     const runId = runIdRef.current
-    if (runId) void api.runs.cancel(storyId, runId, branchId).catch(() => {})
-  }, [storyId, branchId])
+    if (runId) {
+      void api.runs.cancel(storyIdRef.current, runId, branchIdRef.current).catch(() => {})
+    }
+  }, [])
 
   const handleRefine = useCallback(async () => {
     if (activeRef.current || !branchId) return
@@ -125,7 +131,7 @@ export function RefinementPanel({
     cancelRequestedRef.current = true
     const runId = runIdRef.current
     if (runId) void api.runs.cancel(storyId, runId, branchId).catch(() => {})
-  }, [storyId])
+  }, [storyId, branchId])
 
   return (
     <div className="border border-border/40 rounded-lg bg-card/30" data-component-id="refinement-root">
