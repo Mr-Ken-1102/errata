@@ -4,23 +4,37 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { proposeDirections } = vi.hoisted(() => ({ proposeDirections: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  proposeDirections: vi.fn(),
+  branchesList: vi.fn(),
+  getStatus: vi.fn(),
+  listAnalyses: vi.fn(),
+  storiesGet: vi.fn(),
+  getProviders: vi.fn(),
+  generateAndSave: vi.fn(),
+  listRuns: vi.fn(),
+}))
 
 vi.mock('@/lib/api', () => ({
   api: {
     generation: {
-      proposeDirections,
-      cancel: vi.fn(),
-      generateAndSave: vi.fn().mockResolvedValue({ text: '', fragmentId: 'pr-new' }),
+      proposeDirections: mocks.proposeDirections,
+      generateAndSave: mocks.generateAndSave,
     },
     librarian: {
-      getStatus: vi.fn().mockResolvedValue({ runStatus: 'idle' }),
-      listAnalyses: vi.fn().mockResolvedValue([]),
+      getStatus: mocks.getStatus,
+      listAnalyses: mocks.listAnalyses,
       getAnalysis: vi.fn(),
     },
-    branches: { list: vi.fn().mockResolvedValue({ activeBranchId: 'br-test' }) },
-    stories: { get: vi.fn().mockResolvedValue(null) },
-    config: { getProviders: vi.fn().mockResolvedValue(null) },
+    branches: { list: mocks.branchesList },
+    stories: { get: mocks.storiesGet },
+    config: { getProviders: mocks.getProviders },
+    runs: {
+      list: mocks.listRuns,
+      get: vi.fn(),
+      events: vi.fn(),
+      cancel: vi.fn(),
+    },
     fragments: { create: vi.fn() },
     proseChain: { addSection: vi.fn() },
     settings: { update: vi.fn() },
@@ -99,7 +113,36 @@ describe('direction card activation', () => {
 
   beforeEach(() => {
     onGenerationStart = vi.fn()
-    proposeDirections.mockResolvedValue({ suggestions: [DIRECTION] })
+    mocks.proposeDirections.mockReset()
+    mocks.branchesList.mockReset()
+    mocks.getStatus.mockReset()
+    mocks.listAnalyses.mockReset()
+    mocks.storiesGet.mockReset()
+    mocks.getProviders.mockReset()
+    mocks.generateAndSave.mockReset()
+    mocks.listRuns.mockReset()
+
+    mocks.proposeDirections.mockResolvedValue({ suggestions: [DIRECTION] })
+    mocks.branchesList.mockResolvedValue({ activeBranchId: 'br-test', branches: [] })
+    mocks.getStatus.mockResolvedValue({ runStatus: 'idle' })
+    mocks.listAnalyses.mockResolvedValue([])
+    mocks.storiesGet.mockResolvedValue(null)
+    mocks.getProviders.mockResolvedValue(null)
+    mocks.listRuns.mockResolvedValue([])
+    mocks.generateAndSave.mockImplementation(async () => new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          type: 'run-start',
+          runId: 'run-direction',
+          kind: 'generation',
+          status: 'running',
+          seq: 0,
+        })
+        controller.enqueue({ type: 'run-end', status: 'complete', seq: 1 })
+        controller.close()
+      },
+    }))
+
     localStorage.setItem('errata:generation-mode', 'guided')
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: false,
