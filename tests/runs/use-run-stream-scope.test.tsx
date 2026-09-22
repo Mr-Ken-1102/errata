@@ -25,7 +25,7 @@ import { useRunStream } from '@/hooks/use-run-stream'
 
 function liveStream(
   runId: string,
-  scopeId: string | null,
+  _scopeId: string | null,
   onCancel: () => void,
 ): ReadableStream<SequencedChatEvent> {
   return new ReadableStream<SequencedChatEvent>({
