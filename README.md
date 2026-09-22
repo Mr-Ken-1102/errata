@@ -55,6 +55,18 @@ bun run dev
 
 Open `http://localhost:7739`. Configure an LLM provider in the onboarding wizard or Settings > Providers.
 
+### Windows source launcher
+
+From an unpacked source checkout on Windows, you can double-click `start.bat` or run:
+
+```bat
+start.bat          rem Electron desktop development mode
+start.bat web      rem Browser development server
+start.bat check    rem Validate Bun and required desktop files only
+```
+
+The launcher changes into the repository directory before starting and defaults `DATA_DIR` to `<repo>\data`. That source data is separate from the installed Electron application's OS user-data directory. If you intentionally set `DATA_DIR` yourself, the launcher preserves your value.
+
 ## Development
 
 One-click setup on Windows -- installs Git and Bun if needed, clones/pulls the repo, installs dependencies, and starts the dev server:
