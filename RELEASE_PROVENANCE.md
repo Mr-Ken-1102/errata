@@ -121,6 +121,8 @@ These commits are useful anchors when auditing or upgrading individual subsystem
 | Vietnamese IME production fix | `0eb9d1dcf802d698946e3c45f568c20788361760` | 2026-09-22 | Guarded Fragment tag/ref Enter actions during IME composition |
 | Final integration test HEAD | `58d254a7400f635a530af8912a477ca6780179bb` | 2026-09-22 | Final IME regression coverage; source tree validated before merge |
 | Best-of merge to master | `332d3f25a89fca529dfe6cdae9431860c44a8269` | 2026-09-22 | PR #2 merge commit; canonical post-integration master before release-prep |
+| Final release-prep HEAD | `a66846cfb9dc403f36dff5775d521036636b5a11` | 2026-09-22 | PR #4 final validated head after Windows installer-location hardening |
+| Release-prep merge to master | `d73b1f305a69ada9ec05121e8faccb4251ef8d1c` | 2026-09-22 | PR #4 merge checkpoint; tree exactly matches the validated release-prep HEAD |
 
 ## Architectural decisions that must survive future upgrades
 
@@ -163,17 +165,40 @@ Before release-prep, the integrated source tree passed:
 - Windows desktop packaging smoke, including `start.bat check`, Electron packaging,
   packaged sidecar verification, sidecar boot and HTTP 200 from `/api/health`.
 
-Before PR #4 may leave Draft or merge, the final release-prep HEAD must pass:
+PR #4 release-prep closed all pre-merge release gates on exact HEAD
+`a66846cfb9dc403f36dff5775d521036636b5a11` (tree
+`e8ada2f764d9e178562cf19fd582cec9c29343eb`):
 
-1. Standard PR CI: tests, app + desktop typecheck, architecture boundaries and production build.
-2. Windows desktop smoke on that same HEAD.
-3. Cross-platform desktop installer dry-run on Windows, macOS and Linux without publishing.
-4. Cross-platform standalone binary dry-run on Windows x64, Linux x64 and macOS ARM64 without
-   publishing.
+1. **vitest #172** — run ID `35696996552` — **success**. Standard PR CI covered tests,
+   app + desktop typecheck, architecture boundaries and production build.
+2. **Windows desktop smoke #34** — run ID `35696996566` — **success**. It validated
+   `start.bat`, desktop typecheck, unpacked Windows packaging, packaged sidecar presence,
+   sidecar boot and HTTP 200 from `/api/health`.
+3. **Desktop release #3** — run ID `35696996558` — **success**. Non-publishing installer
+   dry-runs passed on `windows-latest`, `ubuntu-latest` and `macos-latest`; the publish job
+   was skipped as intended.
+4. **Release Binary #3** — run ID `35696996573` — **success**. Non-publishing standalone
+   archive dry-runs passed for Windows x64, Linux x64 and macOS ARM64; the publish job was
+   skipped as intended.
 
-The release commit itself is not duplicated as a mutable SHA inside this file. The immutable
-`v1.0.0` Git tag is the canonical pointer to the final release commit; GitHub Actions attached
-to that commit provide the validation evidence.
+PR #4 then merged to `master` as
+`d73b1f305a69ada9ec05121e8faccb4251ef8d1c`. The merge commit has the same tree SHA
+`e8ada2f764d9e178562cf19fd582cec9c29343eb` as the validated PR HEAD, so the merge itself
+introduced no executable-source mutation.
+
+Post-merge validation on that exact `master` merge commit also completed successfully:
+
+- **vitest #173** — run ID `35697656773` — **success**.
+- **Test Results #173** — run ID `35697833469` — **success**.
+
+Windows desktop smoke and the release dry-run workflows do not automatically run on a normal
+`master` push; their validated PR HEAD and the merge commit are tree-identical, so the release
+packaging evidence above applies to the executable source merged by PR #4.
+
+The final documentation-only provenance closeout does not alter application code, packaging,
+workflows or release binaries. The immutable `v1.0.0` Git tag remains the canonical pointer to
+the final reviewed release commit once created; GitHub Actions attached to the relevant commits
+provide the validation evidence above.
 
 ## How to audit a future upgrade
 
@@ -190,6 +215,7 @@ When importing a newer upstream/fork version:
 
 ## Release-prep note
 
-At the time this document was prepared, **no `v1.0.0` tag or GitHub Release had yet been
-created**. The release must only be tagged from the final, reviewed master commit after
-release-prep is merged and post-merge validation succeeds.
+After PR #4 merged and post-merge validation succeeded, **no `v1.0.0` tag or GitHub Release had
+yet been created**. This documentation-only provenance closeout records the completed evidence
+without changing executable source. The release must only be tagged from the final reviewed
+`master` commit after this closeout is merged and its CI is green.
