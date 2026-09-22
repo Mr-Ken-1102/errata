@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { isTerminalChatEvent, type ChatEvent, type RunKind, type RunStatus, type SequencedChatEvent } from '@/lib/api/types'
 
@@ -413,9 +413,10 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     setError(null)
   }, [clearReconnectTimer])
 
-  // Reattach on mount: to a stored run for this scope, or to whatever the
-  // server says is still running here (covers a reload on a different device).
-  useEffect(() => {
+  // Reattach/reset in the layout phase. When a branch id resolves, this must
+  // invalidate the old surface before the newly-enabled UI can start a run;
+  // a passive effect can otherwise run after the click and detach that run.
+  useLayoutEffect(() => {
     disposedRef.current = false
     let cancelled = false
 
