@@ -22,6 +22,31 @@ line can be numbered and audited independently.
 The machine-readable version is `1.0.0` and the Git tag must be `v1.0.0`; the human-facing
 release name may be displayed as **Errata v1.0**.
 
+## Curated distribution identity and isolation
+
+The curated v1.x line is intentionally a separate desktop distribution even though the visible
+product name remains `Errata`.
+
+- Stable desktop application ID: `io.github.mrken1102.errata`
+- Previous inherited Viscerous ID: `com.viscerous.errata` — **not used by curated v1.0**
+- Desktop user-data root: `<OS appData>/Mr-Ken-1102/Errata`
+- Desktop session-data root: `<OS appData>/Mr-Ken-1102/Errata/session`
+- Story data under desktop: `<userData>/data`
+- Windows default install directory: `%LOCALAPPDATA%\Programs\Mr-Ken-1102\Errata`
+- Update provider: GitHub `Mr-Ken-1102/errata`
+- Stable update metadata channel: `latest`
+- Prerelease auto-update policy: **disabled by default**
+- Downgrade policy: **disabled**
+
+The application ID and data namespace are release invariants from v1.0 onward. They must not be
+changed casually because doing so would break desktop upgrade identity or move users to another
+data namespace.
+
+There is intentionally **no automatic migration or move** from upstream/Viscerous desktop data
+in v1.0. Import/migration, if added later, must be explicit, copy-safe, reversible and separately
+tested. This prevents the first curated release from silently taking ownership of another
+Errata distribution's data.
+
 ## Direct Git ancestry
 
 ### 1. Upstream base — tealios/errata
@@ -32,9 +57,9 @@ release name may be displayed as **Errata v1.0**.
 - Commit: `610c7e7587fe334f0908dd2065f9be7c4761a0dc`
 - Relationship: **direct ancestry / base commit**
 
-The curated integration branch started from exactly this upstream commit. This is important:
-`v1.0.0` does not erase or replace the upstream `v1.12.0` history; it starts a new downstream
-numbering line on top of it.
+The curated integration branch started from exactly this upstream commit. `v1.0.0` does not
+erase or replace the upstream `v1.12.0` history; it starts a new downstream numbering line on
+top of it.
 
 ### 2. Best-of integration — Mr-Ken-1102/errata PR #2
 
@@ -70,17 +95,18 @@ stated.
 
 ### Sources audited but not directly merged
 
-The integration audit also examined Didact, Tointer, St5mesh and other Errata forks/branches.
-They are **not claimed as direct code ancestry for v1.0 unless a concrete commit is already in
-this repository's Git history**. In particular:
+These sources are recorded separately so future audits can distinguish "examined" from "code
+ancestry".
 
-- Didact lifecycle/transport ideas informed the durable-run design, but Didact generation
-  semantics were not made authoritative and no wholesale Didact branch/PR was merged.
-- Tointer and St5mesh were audit/comparison inputs; no release component is attributed to
-  them here without a concrete imported commit.
+| Source | Release-readiness baseline | Package version | Result |
+| --- | --- | --- | --- |
+| `Tointer/errata-md` | `master` `82aca32c12643232f8af5f6458526f207c1ff712`, 2026-09-21 | `1.12.0` | Audit/comparison input; no component is claimed as direct v1.0 ancestry without a concrete imported commit |
+| `St5mesh/errata` | `master` `e050ddfbccf397b5dd4f2342e0518a05ab80aae1`, 2026-05-09 | `1.7.0` | Audit/comparison input; no component is claimed as direct v1.0 ancestry without a concrete imported commit |
+| Didact source used during architecture comparison | **Historical source coordinates were not preserved with enough evidence to assert a repository/SHA/version here** | unknown | Durable lifecycle/transport ideas informed design; no wholesale branch/PR was merged and Didact generation semantics are not authoritative |
 
-This distinction is deliberate: future maintainers should be able to separate inspiration or
-comparative audit from actual source-code provenance.
+The Didact row is deliberately explicit about missing coordinates rather than inventing a SHA.
+Before any future Didact-derived upgrade, the source repository/branch must be re-identified and
+a fresh baseline SHA recorded first.
 
 ## Major integration checkpoints in this repository
 
@@ -109,6 +135,9 @@ migration is separately designed, reviewed and tested:
 6. Chat persistence is keyed by server run identity, not a last-message heuristic.
 7. Vietnamese IME composition must not trigger Enter/Ctrl+Enter actions prematurely.
 8. Story Presets remain copy-isolated and self-contained with safe reference remapping.
+9. Curated desktop identity remains `io.github.mrken1102.errata` and the curated user-data
+   namespace remains isolated from other Errata distributions.
+10. Stable users are not opted into prerelease updates or version downgrades by default.
 
 ## Deliberately rejected or reverted integrations
 
@@ -123,7 +152,7 @@ risk or complexity:
 - Client-authoritative run IDs: rejected.
 - Mapping network disconnect to model cancel: rejected.
 
-## Validation lineage for the integrated source tree
+## Validation lineage and release gates
 
 Before release-prep, the integrated source tree passed:
 
@@ -134,8 +163,17 @@ Before release-prep, the integrated source tree passed:
 - Windows desktop packaging smoke, including `start.bat check`, Electron packaging,
   packaged sidecar verification, sidecar boot and HTTP 200 from `/api/health`.
 
-Release-prep changes are intentionally isolated in a separate PR and must pass CI again before
-merge and before tag creation.
+Before PR #4 may leave Draft or merge, the final release-prep HEAD must pass:
+
+1. Standard PR CI: tests, app + desktop typecheck, architecture boundaries and production build.
+2. Windows desktop smoke on that same HEAD.
+3. Cross-platform desktop installer dry-run on Windows, macOS and Linux without publishing.
+4. Cross-platform standalone binary dry-run on Windows x64, Linux x64 and macOS ARM64 without
+   publishing.
+
+The release commit itself is not duplicated as a mutable SHA inside this file. The immutable
+`v1.0.0` Git tag is the canonical pointer to the final release commit; GitHub Actions attached
+to that commit provide the validation evidence.
 
 ## How to audit a future upgrade
 
@@ -145,13 +183,13 @@ When importing a newer upstream/fork version:
 2. Compare against the SHA recorded in this document, not only against a version label.
 3. Classify each incoming area as direct merge, selective port, conceptual influence, rejected,
    or reverted.
-4. Preserve the architectural invariants above.
-5. Add new subsystem checkpoint commits and CI evidence here before publishing the next release.
+4. Preserve the architectural and desktop identity invariants above.
+5. Add new subsystem checkpoint commits and CI evidence before publishing the next release.
 6. Never overwrite this v1.0 provenance section; append a new release provenance section or a
    new versioned provenance document so historical traceability remains intact.
 
 ## Release-prep note
 
-At the time this document was added, **no `v1.0.0` tag or GitHub Release had yet been created**.
-The release must only be tagged from the final, reviewed master commit after release-prep is
-merged and post-merge validation succeeds.
+At the time this document was prepared, **no `v1.0.0` tag or GitHub Release had yet been
+created**. The release must only be tagged from the final, reviewed master commit after
+release-prep is merged and post-merge validation succeeds.

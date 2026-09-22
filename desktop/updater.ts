@@ -110,10 +110,13 @@ function wireUpdaterEvents() {
   // We drive download + install ourselves so we can gate on confirmation and back up first.
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
-  // Fork releases carry a -vis.N prerelease tag (see package.json); allow the updater to
-  // offer them, and pin the channel so it reads the same latest.yml the publish writes.
-  autoUpdater.allowPrerelease = true
-  autoUpdater.channel = 'latest'
+
+  // The curated v1.x line is stable-only by default. Do not opt stable users into prerelease
+  // builds, and never treat a lower version as an update. The generated publish config already
+  // points at the stable `latest` feed, so setting `channel` here is intentionally avoided:
+  // electron-updater's channel setter enables downgrade behavior.
+  autoUpdater.allowPrerelease = false
+  autoUpdater.allowDowngrade = false
 
   autoUpdater.on('checking-for-update', () => {
     setState({

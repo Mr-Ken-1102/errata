@@ -10,6 +10,7 @@ on:
       - scripts/build-electron.mjs
       - scripts/build-binary.mjs
       - electron-builder.yml
+      - build/installer.nsh
       - package.json
       - .github/workflows/windows-desktop-smoke.yml
   workflow_dispatch:

@@ -1,11 +1,24 @@
 name: Release Binary
 
+# Published releases upload standalone archives. Pull requests and manual dispatches build the
+# same archives as downloadable Actions artifacts without touching a GitHub Release.
 on:
   release:
     types: [published]
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - package.json
+      - bun.lock
+      - scripts/build-binary.mjs
+      - .github/workflows/release-binary.yml
 
 jobs:
-  build:
+  dry-run:
+    if: github.event_name != 'release'
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -19,11 +32,58 @@ jobs:
           - os: macos-latest
             name: macos-arm64
             binary: errata
-
     runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Read package version
+        id: version
+        shell: bash
+        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        run: bun run build:binary
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: 7z a "dist/errata-${{ steps.version.outputs.value }}-${{ matrix.name }}.zip" ./dist/${{ matrix.binary }} ./dist/public/
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: cd dist && zip -r "errata-${{ steps.version.outputs.value }}-${{ matrix.name }}.zip" ${{ matrix.binary }} public/
+
+      - name: Upload dry-run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: errata-${{ steps.version.outputs.value }}-${{ matrix.name }}
+          path: dist/errata-${{ steps.version.outputs.value }}-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release'
     permissions:
       contents: write
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            binary: errata.exe
+          - os: ubuntu-latest
+            name: linux-x64
+            binary: errata
+          - os: macos-latest
+            name: macos-arm64
+            binary: errata
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,10 +104,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Read version
+      - name: Read package version
         id: version
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
         shell: bash
+        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
         run: bun run build:binary

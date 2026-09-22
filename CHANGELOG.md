@@ -27,6 +27,10 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
 - **Windows source launcher and Electron desktop packaging**, including an isolated
   source `DATA_DIR`, packaged server sidecar, GitHub update feed for this fork, and
   Windows smoke coverage that boots the bundled sidecar and checks `/api/health`.
+- **Curated desktop identity isolation** for v1.0: a dedicated application ID,
+  dedicated user/session data namespace, and a distinct default Windows install path
+  prevent collision with upstream/Viscerous desktop installs while keeping the visible
+  product name `Errata`.
 
 ### Changed
 - Generation and chat lifecycle ownership moved to the server while preserving the
@@ -38,8 +42,10 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
   Character Chat summary reads, and lazy font-catalog loading without changing
   fragment persistence semantics.
 - Release preparation now targets `Mr-Ken-1102/errata`, uses frozen dependency
-  installs, validates release tag/version consistency, and keeps manual desktop
-  workflow dispatches from publishing assets.
+  installs, validates release tag/version consistency, and supports non-publishing
+  cross-platform desktop/standalone release dry-runs before a tag is created.
+- Desktop auto-update policy is stable-only by default: prerelease updates and
+  version downgrades are explicitly disabled for the curated v1.x line.
 
 ### Fixed
 - Disconnecting a browser/subscriber no longer stops an active model run; explicit
@@ -55,11 +61,11 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
 - README and one-click Windows setup no longer redirect users to another Errata fork.
 
 ### Validation
-- Standard CI: full Vitest suite, app + desktop typecheck, architecture boundaries,
-  and production build passed on the validated integration tree and post-merge master.
-- Windows desktop smoke passed twice on the same source tree as master, including
-  `start.bat check`, Electron packaging, packaged sidecar verification, sidecar boot,
-  and HTTP 200 from `/api/health`.
+- The integrated source tree passed the full Vitest suite, app + desktop typecheck,
+  architecture boundaries, production build, and Windows desktop smoke before release-prep.
+- The final v1.0 release-prep HEAD must additionally pass the same standard CI, Windows
+  desktop smoke, and the cross-platform desktop/standalone dry-run workflows before PR #4
+  may leave Draft or be merged.
 
 ## [1.12.0] — 2026-09-14
 

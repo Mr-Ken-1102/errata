@@ -1,4 +1,4 @@
-appId: com.viscerous.errata
+appId: io.github.mrken1102.errata
 productName: Errata
 copyright: Copyright © Tealios
 
@@ -30,6 +30,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # Keep the human-facing name "Errata" while using a curated-distribution default
+  # install location so an existing Viscerous/upstream install is not overwritten.
+  include: build/installer.nsh
 
 mac:
   # No Apple Developer cert is configured yet, so skip code signing entirely (identity: null).
@@ -58,8 +61,8 @@ publish:
   provider: github
   owner: Mr-Ken-1102
   repo: errata
-  # Fork builds carry a -vis.N prerelease tag; pin the channel so they publish to
-  # latest.yml (the channel the updater reads) rather than a separate prerelease feed.
+  # Stable curated releases publish update metadata to latest.yml. Runtime update policy
+  # explicitly rejects prereleases and downgrades unless a future opt-in channel is designed.
   channel: latest
   # Upload to the already-published GitHub Release that triggers the workflow. The default
   # publishingType is "draft", which electron-builder refuses to apply to an existing
