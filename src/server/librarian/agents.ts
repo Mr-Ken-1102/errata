@@ -62,6 +62,7 @@ const ProseTransformInputSchema = z.object({
   sourceContent: z.string().optional(),
   contextBefore: z.string().optional(),
   contextAfter: z.string().optional(),
+  povCharacterId: z.string().optional(),
 })
 
 declare module '../agents/agent-instance' {
