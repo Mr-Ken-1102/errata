@@ -66,6 +66,41 @@ describe('useRunStream surface isolation', () => {
     mocks.cancel.mockReset()
   })
 
+  it('does not attach or start a run before the timeline resolves', async () => {
+    mocks.list.mockResolvedValue([])
+
+    const { result, rerender } = renderHook(
+      ({ branchId }) => useRunStream({
+        storyId: 'story-1',
+        branchId,
+        kind: 'generation',
+        scopeId: 'generation-panel',
+      }),
+      { initialProps: { branchId: undefined as string | undefined } },
+    )
+
+    await act(async () => {})
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(sessionStorage.length).toBe(0)
+
+    await expect(act(async () => {
+      await result.current.start(async () => {
+        throw new Error('must not post before branch resolves')
+      })
+    })).rejects.toThrow('Timeline is still loading')
+    expect(result.current.phase).toBe('idle')
+    expect(sessionStorage.length).toBe(0)
+
+    rerender({ branchId: 'main' })
+    await waitFor(() => {
+      expect(mocks.list).toHaveBeenCalledWith('story-1', {
+        active: true,
+        scopeId: 'generation-panel',
+        branchId: 'main',
+      })
+    })
+  })
+
   it('cancels the old reader immediately when conversation scope changes', async () => {
     const cancelled = vi.fn()
 
