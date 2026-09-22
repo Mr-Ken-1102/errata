@@ -179,6 +179,7 @@ export interface ConversationMeta {
   title: string
   createdAt: string
   updatedAt: string
+  povCharacterId?: string
 }
 
 /** Story-independent reusable context bundle for seeding a new story. */
