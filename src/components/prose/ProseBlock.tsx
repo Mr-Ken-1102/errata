@@ -144,6 +144,7 @@ export const ProseBlock = memo(function ProseBlock({
   void isFirst
   void isLast
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const confirm = useConfirm()
   const [actionMode, setActionMode] = useState<'regenerate' | null>(null)
   const [showUndo, setShowUndo] = useState(false)
