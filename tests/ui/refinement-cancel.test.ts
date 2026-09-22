@@ -184,6 +184,7 @@ describe('cancelling a refinement', () => {
     mockRefine()
     const { byId } = renderPanel(vi.fn(), vi.fn())
     const input = byId<HTMLTextAreaElement>('refinement-input')!
+    await waitFor(() => expect(byId<HTMLButtonElement>('refinement-submit')?.disabled).toBe(false))
     fireEvent.change(input, { target: { value: 'giữ giọng kể nhất quán' } })
 
     fireEvent.keyDown(input, {
