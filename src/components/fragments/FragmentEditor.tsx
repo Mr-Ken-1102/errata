@@ -200,7 +200,7 @@ export function FragmentEditor({
 
   const updateMutation = useMutation({
     mutationFn: (data: { name: string; description: string; content: string; type?: string }) =>
-      api.fragments.update(storyId, fragment!.id, data),
+      api.fragments.update(storyId, fragment!.id, data, branchId),
     onSuccess: (data) => {
       invalidate()
       if (data.idChanged) {
@@ -255,7 +255,7 @@ export function FragmentEditor({
     mutationFn: (data: { name: string; description: string; content: string; type?: string }) =>
       // 'autosave' lets the server coalesce this typing session into a single version
       // instead of appending one per debounced save. Deliberate saves omit the reason.
-      api.fragments.update(storyId, fragment!.id, { ...data, reason: 'autosave' }),
+      api.fragments.update(storyId, fragment!.id, { ...data, reason: 'autosave' }, branchId),
     onSuccess: (saved) => {
       const fType = fragment?.type
       queryClient.invalidateQueries({
@@ -341,7 +341,7 @@ export function FragmentEditor({
         description: fragment.description,
         content: fragment.content,
         meta: newMeta,
-      })
+      }, branchId)
     },
     onSuccess: () => {
       invalidate()
@@ -1112,7 +1112,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
           ...currentFragment.meta,
           visualRefs: nextRefs,
         },
-      })
+      }, branchId)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragmentId) })
@@ -1150,7 +1150,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
         order: currentFragment.order,
         placement: currentFragment.placement,
         meta: { ...currentFragment.meta, visualRefs: nextRefs },
-      })
+      }, branchId)
       queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragmentId) })
       queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
     } catch {
