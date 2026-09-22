@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTempDir, makeTestSettings } from '../setup'
 import { createStory } from '@/server/fragments/storage'
+import { createBranch } from '@/server/fragments/branches'
 import { clearRuns, getRun } from '@/server/runs'
 import { createConversation, getChatHistory, getConversationHistory } from '@/server/librarian/storage'
 import type { AgentStreamCompletion, AgentStreamResult } from '@/server/agents/stream-types'
@@ -156,6 +157,60 @@ describe('server-owned librarian chat route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, ...(clientRequestId ? { clientRequestId } : {}) }),
     }))
+
+  it('starts a named chat on the requested timeline even when another timeline is active', async () => {
+    const alt = await createBranch(dataDir, storyId, 'Alternate', 'main')
+    expect(alt.id).not.toBe('main')
+
+    const createResponse = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/librarian/conversations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Pinned main chat', branchId: 'main' }),
+      },
+    ))
+    expect(createResponse.status).toBe(200)
+    const conversation = await createResponse.json() as { id: string }
+
+    const gate = deferred()
+    nextStreamResult = gatedStream(gate)
+    const response = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/librarian/conversations/${conversation.id}/chat`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'stay on main',
+          clientRequestId: 'main-branch-chat',
+          branchId: 'main',
+        }),
+      },
+    ))
+    const { runId, reader } = await readRunId(response)
+
+    expect(getRun(runId)?.branchId).toBe('main')
+
+    const mainHistoryResponse = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/librarian/conversations/${conversation.id}/chat?branch=main`,
+    ))
+    expect(mainHistoryResponse.status).toBe(200)
+    const mainHistory = await mainHistoryResponse.json() as { messages: Array<{ role: string; content: string }> }
+    expect(mainHistory.messages.some(message => (
+      message.role === 'user' && message.content === 'stay on main'
+    ))).toBe(true)
+
+    const altHistoryResponse = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/librarian/conversations/${conversation.id}/chat?branch=${encodeURIComponent(alt.id)}`,
+    ))
+    expect(altHistoryResponse.status).toBe(200)
+    const altHistory = await altHistoryResponse.json() as { messages: unknown[] }
+    expect(altHistory.messages).toEqual([])
+
+    gate.resolve()
+    await getRun(runId)!.done
+    await reader.cancel()
+  })
 
   it('keeps named-conversation retries scoped and idempotent', async () => {
     const conversation = await createConversation(dataDir, storyId, 'Named chat')
