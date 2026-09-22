@@ -109,6 +109,27 @@ describe('branch-addressed content endpoints', () => {
     expect(altProse2).toHaveLength(2)
   })
 
+  it('PUT /fragments/:id?branch= updates the named branch regardless of active', async () => {
+    const { id, altId, sharedFragmentId } = await setupDivergedTimelines() // active = alt
+
+    const updated = await apiJson(
+      `/stories/${id}/fragments/${sharedFragmentId}?branch=main`,
+      { name: '', description: '', content: 'MAIN-PINNED-UPDATE' },
+      'PUT',
+    )
+    expect(updated.status).toBe(200)
+
+    const main = await (await api(
+      `/stories/${id}/fragments/${sharedFragmentId}?branch=main`,
+    )).json()
+    const alt = await (await api(
+      `/stories/${id}/fragments/${sharedFragmentId}?branch=${altId}`,
+    )).json()
+
+    expect(main.content).toBe('MAIN-PINNED-UPDATE')
+    expect(alt.content).toBe('MAIN-ONLY')
+  })
+
   it('GET /fragments/:id/versions?branch= is branch-addressed', async () => {
     const { id, altId, sharedFragmentId } = await setupDivergedTimelines() // active = alt
 
