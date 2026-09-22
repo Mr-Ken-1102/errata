@@ -24,6 +24,7 @@ export { sharing } from './sharing'
 export { erratanet } from './erratanet'
 export { storySetup } from './story-setup'
 export { runs } from './runs'
+export { presets } from './presets'
 export type {
   StorySetupChecklistItem,
   StorySetupChecklistKey,
@@ -56,6 +57,7 @@ import { sharing } from './sharing'
 import { erratanet } from './erratanet'
 import { storySetup } from './story-setup'
 import { runs } from './runs'
+import { presets } from './presets'
 
 export const api = {
   stories,
@@ -78,4 +80,5 @@ export const api = {
   erratanet,
   storySetup,
   runs,
+  presets,
 }
