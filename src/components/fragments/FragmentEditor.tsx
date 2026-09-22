@@ -1341,7 +1341,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
 
 // --- Tags sub-component ---
 
-function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+export function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [newTag, setNewTag] = useState('')
@@ -1402,7 +1402,7 @@ function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
           placeholder="Add tag..."
           className="h-7 text-xs bg-transparent"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               handleAddTag()
             }
@@ -1425,7 +1425,7 @@ function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
 
 // --- Refs sub-component ---
 
-function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+export function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [newRefId, setNewRefId] = useState('')
@@ -1494,7 +1494,7 @@ function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
           placeholder="Fragment ID (e.g. ch-bokura)"
           className="h-7 text-xs bg-transparent"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               handleAddRef()
             }
