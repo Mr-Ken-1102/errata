@@ -208,6 +208,37 @@ describe('server-owned generation route', () => {
     expect(engineBody).toMatchObject({ runId: started.runId })
   })
 
+  it('forwards the requested POV into the server-owned engine body', async () => {
+    let engineBody: Record<string, unknown> | undefined
+    mocks.runGeneration.mockImplementation(async (
+      _dataDir: string,
+      _storyId: string,
+      body: Record<string, unknown>,
+    ) => {
+      engineBody = body
+      return {
+        ok: true as const,
+        eventStream: engineStream([
+          { type: 'finish', finishReason: 'stop', stepCount: 1 },
+        ]),
+      }
+    })
+
+    const response = await post({
+      input: 'Continue',
+      clientRequestId: 'pov-request-1',
+      povCharacterId: 'ch-maya',
+    })
+    const events = await readAllEvents(response)
+    const started = events.find(event => event.type === 'run-start')
+
+    expect(started?.runId).toBeTruthy()
+    expect(engineBody).toMatchObject({
+      runId: started.runId,
+      povCharacterId: 'ch-maya',
+    })
+  })
+
   it('replays the same producer for an idempotent POST retry', async () => {
     const gate = deferred()
     mocks.runGeneration.mockImplementation(async (
