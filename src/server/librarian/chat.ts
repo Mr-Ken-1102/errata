@@ -21,6 +21,7 @@ import type { ChatStreamEvent, ChatResult } from '../agents/stream-types'
 import { type AgentBlockContext, baseBlockContext } from '../agents/agent-block-context'
 import { loadSystemPromptFragments } from '../agents/block-helpers'
 import { renderContinuity } from './continuity-view'
+import { createSetCharacterVoiceTool } from './character-voice-tool'
 
 export type { ChatStreamEvent, ChatResult }
 
@@ -34,6 +35,8 @@ export interface ChatMessage {
 export interface ChatOptions {
   messages: ChatMessage[]
   maxSteps?: number
+  /** POV captured when a prose-refine conversation is created. */
+  povCharacterId?: string
 }
 
 /**
@@ -120,7 +123,9 @@ export function createLibrarianChatBespokeTools(
     },
   })
 
-  return { invokeAgent, inspectRun, readContinuity }
+  const setCharacterVoice = createSetCharacterVoiceTool(dataDir, storyId)
+
+  return { invokeAgent, inspectRun, readContinuity, setCharacterVoice }
 }
 
 export async function librarianChat(
@@ -148,7 +153,12 @@ async function librarianChatInner(
   }
 
   // Build context
-  const ctxState = await buildContextState(dataDir, storyId, '')
+  const ctxState = await buildContextState(
+    dataDir,
+    storyId,
+    '',
+    opts.povCharacterId ? { povCharacterId: opts.povCharacterId } : {},
+  )
 
   // Load system prompt fragments
   const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
