@@ -147,7 +147,7 @@ function makeClientRequestId(): string {
 export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
   const {
     storyId,
-    branchId = null,
+    branchId,
     kind,
     scopeId = null,
     autoAttach = true,
@@ -181,7 +181,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
   /** The reader currently parked on the live stream, so a stale wake can free it. */
   const currentReaderRef = useRef<ReadableStreamDefaultReader<SequencedChatEvent> | null>(null)
 
-  const key = storageKey(storyId, branchId, kind, scopeId)
+  const key = storageKey(storyId, branchId ?? null, kind, scopeId)
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -320,6 +320,10 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
   const start = useCallback(async (
     post: (clientRequestId: string) => Promise<ReadableStream<SequencedChatEvent>>,
   ) => {
+    if (branchId === undefined) {
+      throw new Error('Timeline is still loading')
+    }
+
     clearReconnectTimer()
     epochRef.current += 1
     const epoch = epochRef.current
@@ -431,7 +435,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     setIsReconnecting(false)
     setError(null)
 
-    if (!autoAttach) return
+    if (!autoAttach || branchId === undefined) return
 
     void (async () => {
       const stored = readStored(key)
