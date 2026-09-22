@@ -101,19 +101,19 @@ export function LibrarianPanel({
   // Fetch conversation list
   const { data: conversations } = useQuery({
     queryKey: qk.librarianConversations(storyId, branchId),
-    queryFn: () => api.librarian.listConversations(storyId),
+    queryFn: () => api.librarian.listConversations(storyId, branchId),
   })
 
   const createConversationMutation = useMutation({
     mutationFn: (input: { title?: string; povCharacterId?: string }) =>
-      api.librarian.createConversation(storyId, input.title, input.povCharacterId),
+      api.librarian.createConversation(storyId, input.title, input.povCharacterId, branchId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-conversations', storyId] })
     },
   })
 
   const deleteConversationMutation = useMutation({
-    mutationFn: (conversationId: string) => api.librarian.deleteConversation(storyId, conversationId),
+    mutationFn: (conversationId: string) => api.librarian.deleteConversation(storyId, conversationId, branchId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-conversations', storyId] })
     },
