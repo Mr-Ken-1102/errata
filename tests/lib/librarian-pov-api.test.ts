@@ -89,6 +89,35 @@ describe('branch-aware librarian POV client contract', () => {
     expect(JSON.parse(String(init.body))).not.toHaveProperty('povCharacterId')
   })
 
+  it('branch-addresses librarian conversation reads and starts', async () => {
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(runResponse())
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await librarian.listConversations('story-1', 'branch-b')
+    expect(String(fetchSpy.mock.calls[0][0])).toContain(
+      '/stories/story-1/librarian/conversations?branch=branch-b',
+    )
+
+    await librarian.conversationChat(
+      'story-1',
+      'conv-1',
+      'continue',
+      'request-branch',
+      'branch-b',
+    )
+    const init = fetchSpy.mock.calls[1][1] as RequestInit
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      message: 'continue',
+      clientRequestId: 'request-branch',
+      branchId: 'branch-b',
+    })
+  })
+
   it('allows an explicit narrator transform without reusing stored POV', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(runResponse())
     vi.stubGlobal('fetch', fetchSpy)
