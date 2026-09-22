@@ -131,7 +131,7 @@ export async function startAndConsumeRun(
       } catch (retryError) {
         const retryExisting = conflictRunId(retryError)
         if (!retryExisting) throw retryError
-        stream = await runs.events(storyId, retryExisting, 0)
+        stream = await runs.events(storyId, retryExisting, 0, options.branchId)
       }
     } else {
       throw firstError
