@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { render, waitFor } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '@/components/sidebar/SettingsView'
 import { DetailPanel } from '@/components/sidebar/DetailPanel'
@@ -44,6 +44,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
