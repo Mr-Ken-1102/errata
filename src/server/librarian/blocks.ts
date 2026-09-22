@@ -379,6 +379,7 @@ Edits apply immediately, so make them only when the author asked for the change.
 - Prose edits: **editProse** — it scans active prose automatically, applies exact diffs, and returns them.
 - Character, guideline, knowledge, summary, or custom fragments: **editFragments**. ${OPERATION_GUIDANCE} A whole-field rewrite must contain the complete final field text from the fragment you read.
 - New fragments: **editFragments** with create_fragment operations and plain fragment names; the system assigns IDs.
+- Character POV voice notes: **setCharacterVoice** only when the author explicitly asks to define, change, or clear that voice. Never change voice as an incidental part of another edit.
 - Keep fragment descriptions within the 250 character limit.
 
 ## Conduct
