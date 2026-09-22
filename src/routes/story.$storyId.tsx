@@ -104,6 +104,7 @@ function StoryEditorPage() {
   const [pluginCloseReturnSection, setPluginCloseReturnSection] = useState<SidebarSection>(null)
   const [askLibrarianFragmentId, setAskLibrarianFragmentId] = useState<string | null>(null)
   const [askLibrarianPrefill, setAskLibrarianPrefill] = useState<string | null>(null)
+  const [askLibrarianCapturePov, setAskLibrarianCapturePov] = useState(false)
   const [pendingAgentConfigImport, setPendingAgentConfigImport] = useState<{ agentName: string; displayName?: string; config: AgentBlockConfig } | null>(null)
   const [agentConfigImportError, setAgentConfigImportError] = useState<string | null>(null)
   const [timelineBarVisible, setTimelineBarVisible] = useTimelineBar()
@@ -561,7 +562,12 @@ function StoryEditorPage() {
         enabledPanelPlugins={enabledPanelPlugins}
         askLibrarianFragmentId={askLibrarianFragmentId}
         askLibrarianPrefill={askLibrarianPrefill}
-        onAskLibrarianConsumed={() => { setAskLibrarianFragmentId(null); setAskLibrarianPrefill(null) }}
+        askLibrarianCapturePov={askLibrarianCapturePov}
+        onAskLibrarianConsumed={() => {
+          setAskLibrarianFragmentId(null)
+          setAskLibrarianPrefill(null)
+          setAskLibrarianCapturePov(false)
+        }}
       />
 
       {/* Main Content */}
@@ -703,10 +709,11 @@ function StoryEditorPage() {
             }}
             onDebugLog={handleDebugLog}
             onLaunchWizard={handleLaunchWizard}
-            onAskLibrarian={(fragmentId, prefill) => {
+            onAskLibrarian={(fragmentId, prefill, options) => {
               setActiveSection('agent-activity')
               setAskLibrarianFragmentId(fragmentId)
               setAskLibrarianPrefill(prefill ?? null)
+              setAskLibrarianCapturePov(options?.capturePov === true)
             }}
           />
         ) : (
