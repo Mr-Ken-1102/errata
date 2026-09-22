@@ -102,9 +102,9 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
 
   const fetchHistory = useCallback(() => (
     conversationId
-      ? api.librarian.getConversationHistory(storyId, conversationId)
-      : api.librarian.getChatHistory(storyId)
-  ), [conversationId, storyId])
+      ? api.librarian.getConversationHistory(storyId, conversationId, branchId)
+      : api.librarian.getChatHistory(storyId, branchId)
+  ), [branchId, conversationId, storyId])
 
   const installHistory = useCallback((history: ChatHistory) => {
     const local = history.messages.map(toLocalChatMessage)
@@ -226,6 +226,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
   const { data: chatHistory } = useQuery({
     queryKey: historyQueryKey,
     queryFn: fetchHistory,
+    enabled: branchId !== undefined,
     staleTime: Infinity,
   })
 
@@ -290,8 +291,9 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
               conversationId,
               text,
               clientRequestId,
+              branchId,
             )
-          : api.librarian.chat(storyId, text, clientRequestId)
+          : api.librarian.chat(storyId, text, clientRequestId, branchId)
       ))
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Chat failed')
