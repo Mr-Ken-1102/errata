@@ -206,6 +206,7 @@ export function generationRoutes(dataDir: string) {
         saveResult: t.Optional(t.Boolean()),
         mode: t.Optional(t.Union([t.Literal('generate'), t.Literal('regenerate'), t.Literal('refine')])),
         fragmentId: t.Optional(t.String()),
+        povCharacterId: t.Optional(t.String()),
         clarifications: t.Optional(t.Array(t.Object({ question: t.String(), answer: t.String() }))),
         clarifyRound: t.Optional(t.Number()),
       }),
