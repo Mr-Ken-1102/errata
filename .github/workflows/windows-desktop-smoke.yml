@@ -50,3 +50,50 @@ jobs:
           if (-not (Test-Path $app)) { throw "Packaged Electron executable missing: $app" }
           if (-not (Test-Path $sidecar)) { throw "Bundled Errata sidecar missing: $sidecar" }
           if (-not (Test-Path $public -PathType Container)) { throw "Bundled public assets missing: $public" }
+
+      - name: Boot bundled server sidecar
+        shell: pwsh
+        run: |
+          $sidecar = (Resolve-Path 'release\win-unpacked\resources\server\errata.exe').Path
+          $serverDir = Split-Path $sidecar
+          $dataDir = Join-Path $env:RUNNER_TEMP 'errata-sidecar-smoke-data'
+          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = ($listener.LocalEndpoint).Port
+          $listener.Stop()
+
+          $env:PORT = [string]$port
+          $env:NITRO_PORT = [string]$port
+          $env:HOST = '127.0.0.1'
+          $env:NITRO_HOST = '127.0.0.1'
+          $env:DATA_DIR = $dataDir
+
+          $proc = Start-Process -FilePath $sidecar -WorkingDirectory $serverDir -PassThru -WindowStyle Hidden
+          try {
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 80; $attempt++) {
+              Start-Sleep -Milliseconds 250
+              if ($proc.HasExited) {
+                throw "Bundled sidecar exited before becoming healthy (code $($proc.ExitCode))."
+              }
+              try {
+                $response = Invoke-WebRequest "http://127.0.0.1:$port/api/health" -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $healthy = $true
+                  break
+                }
+              } catch {
+                # Server is still starting.
+              }
+            }
+            if (-not $healthy) {
+              throw "Bundled sidecar did not become healthy on port $port."
+            }
+          } finally {
+            if (-not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force
+              $proc.WaitForExit()
+            }
+          }
