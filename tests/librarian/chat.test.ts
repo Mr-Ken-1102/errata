@@ -165,8 +165,9 @@ describe('librarian chat endpoint', () => {
     // Should have text events and a finish event
     const textEvents = events.filter((e) => e.type === 'text')
     expect(textEvents.length).toBeGreaterThan(0)
-    expect(textEvents[0].text).toBe('Hello')
-    expect(textEvents[1].text).toBe(' world')
+    // The server-owned run registry deliberately batches adjacent text deltas
+    // before assigning sequence numbers; event boundaries are not semantic.
+    expect(textEvents.map((event) => event.text).join('')).toBe('Hello world')
 
     const finishEvent = events.find((e) => e.type === 'finish')
     expect(finishEvent).toBeDefined()
