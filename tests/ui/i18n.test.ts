@@ -8,6 +8,7 @@ import {
   persistLanguagePreference,
   readLanguagePreference,
   translate,
+  translateSettingsNavigation,
 } from '../../src/lib/i18n'
 
 describe('interface language preference', () => {
@@ -50,10 +51,17 @@ describe('interface language preference', () => {
 describe('translation fallback', () => {
   it('returns Vietnamese text when the key has a Vietnamese translation', () => {
     expect(translate('vi', 'settings.language.heading')).toBe('Ngôn ngữ')
+    expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
     expect(translate('vi', 'app.name')).toBe('Errata')
+  })
+
+  it('localizes settings navigation while leaving unknown extension labels intact', () => {
+    expect(translateSettingsNavigation('vi', 'Appearance')).toBe('Giao diện')
+    expect(translateSettingsNavigation('vi', 'Writing')).toBe('Viết')
+    expect(translateSettingsNavigation('vi', 'Plugin-defined section')).toBe('Plugin-defined section')
   })
 })
 
@@ -70,5 +78,15 @@ describe('language UI wiring', () => {
     expect(aboutSource).toContain('<SegmentedControl')
     expect(storyLibrarySource).toContain('<AboutSection />')
     expect(storySettingsSource).toContain('<AboutSection />')
+  })
+
+  it('localizes the story-editor settings shell and table of contents', () => {
+    const settingsViewSource = readFileSync('src/components/sidebar/SettingsView.tsx', 'utf8')
+
+    expect(settingsViewSource).toContain('useLanguage()')
+    expect(settingsViewSource).toContain('translateSettingsNavigation(language')
+    expect(settingsViewSource).toContain("t('settings.dialog.title')")
+    expect(settingsViewSource).toContain("t('settings.dialog.closeSettings')")
+    expect(settingsViewSource).toContain("t('settings.dialog.sections')")
   })
 })
