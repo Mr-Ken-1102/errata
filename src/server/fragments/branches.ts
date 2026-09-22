@@ -163,9 +163,7 @@ export async function migrateIfNeeded(dir: string): Promise<void> {
   }
 
   // Create branches.json
-  const index = createDefaultBranchesIndex()
-  await writeJson(branchesIndexPath(dir), index)
-  cacheActiveBranch(dataDir, storyId, index.activeBranchId)
+  await writeJson(branchesIndexPath(dir), createDefaultBranchesIndex())
   migratedStories.add(dir)
 }
 
@@ -379,6 +377,8 @@ export async function initBranches(dataDir: string, storyId: string): Promise<vo
   const mainDir = branchDir(dir, 'main')
   await mkdir(mainDir, { recursive: true })
   await mkdir(join(mainDir, 'fragments'), { recursive: true })
-  await writeJson(branchesIndexPath(dir), createDefaultBranchesIndex())
+  const index = createDefaultBranchesIndex()
+  await writeJson(branchesIndexPath(dir), index)
+  cacheActiveBranch(dataDir, storyId, index.activeBranchId)
   migratedStories.add(dir)
 }
