@@ -213,6 +213,20 @@ async function startLibrarianChatRun(args: {
   }, branchId)
 }
 
+async function resolveLibrarianBranch(
+  dataDir: string,
+  storyId: string,
+  requested?: string,
+): Promise<{ branchId: string; deleting: boolean } | null> {
+  const branches = await getBranchesIndex(dataDir, storyId)
+  const branchId = requested ?? branches.activeBranchId
+  if (!branches.branches.some(branch => branch.id === branchId)) return null
+  return {
+    branchId,
+    deleting: isBranchDeleting(storyId, branchId),
+  }
+}
+
 export function librarianRoutes(dataDir: string) {
   const logger = createLogger('api:librarian', { dataDir })
 
@@ -646,14 +660,44 @@ export function librarianRoutes(dataDir: string) {
     })
 
     // --- Librarian Chat ---
-    .get('/stories/:storyId/librarian/chat', async ({ params }) => {
-      return getLibrarianChatHistory(dataDir, params.storyId)
-    }, { detail: { summary: 'Get chat history' } })
+    .get('/stories/:storyId/librarian/chat', async ({ params, query, set }) => {
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, query.branch)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      return withBranch(
+        dataDir,
+        params.storyId,
+        () => getLibrarianChatHistory(dataDir, params.storyId),
+        branch.branchId,
+      )
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'Get chat history' },
+    })
 
-    .delete('/stories/:storyId/librarian/chat', async ({ params }) => {
-      await clearLibrarianChatHistory(dataDir, params.storyId)
+    .delete('/stories/:storyId/librarian/chat', async ({ params, query, set }) => {
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, query.branch)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      if (branch.deleting) {
+        set.status = 409
+        return { error: `Timeline '${branch.branchId}' is being deleted` }
+      }
+      await withBranch(
+        dataDir,
+        params.storyId,
+        () => clearLibrarianChatHistory(dataDir, params.storyId),
+        branch.branchId,
+      )
       return { ok: true }
-    }, { detail: { summary: 'Clear chat history' } })
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'Clear chat history' },
+    })
 
     .post('/stories/:storyId/librarian/chat', async ({ params, body, set }) => {
       const requestLogger = logger.child({ storyId: params.storyId })
@@ -669,7 +713,16 @@ export function librarianRoutes(dataDir: string) {
         return { error: 'message is required' }
       }
 
-      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, body.branchId)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      if (branch.deleting) {
+        set.status = 409
+        return { error: `Timeline '${branch.branchId}' is being deleted` }
+      }
+      const branchId = branch.branchId
       const lockKey = `librarian-chat-start:${params.storyId}:${branchId}:legacy`
 
       return withKeyLock(lockKey, async () => {
@@ -718,39 +771,103 @@ export function librarianRoutes(dataDir: string) {
       body: t.Object({
         message: t.String({ minLength: 1 }),
         clientRequestId: t.Optional(t.String()),
+        branchId: t.Optional(t.String()),
       }),
       detail: { summary: 'Chat with the librarian (server-owned run; streaming NDJSON)' },
     })
 
     // --- Conversations ---
-    .get('/stories/:storyId/librarian/conversations', async ({ params }) => {
-      return listConversations(dataDir, params.storyId)
-    }, { detail: { summary: 'List chat conversations' } })
-
-    .post('/stories/:storyId/librarian/conversations', async ({ params, body }) => {
-      return createConversation(
+    .get('/stories/:storyId/librarian/conversations', async ({ params, query, set }) => {
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, query.branch)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      return withBranch(
         dataDir,
         params.storyId,
-        body.title ?? 'New chat',
-        body.povCharacterId,
+        () => listConversations(dataDir, params.storyId),
+        branch.branchId,
       )
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'List chat conversations' },
+    })
+
+    .post('/stories/:storyId/librarian/conversations', async ({ params, body, set }) => {
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, body.branchId)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      if (branch.deleting) {
+        set.status = 409
+        return { error: `Timeline '${branch.branchId}' is being deleted` }
+      }
+
+      return withBranch(dataDir, params.storyId, async () => {
+        if (body.povCharacterId) {
+          const povCharacter = await getFragment(dataDir, params.storyId, body.povCharacterId)
+          if (!povCharacter || povCharacter.archived || povCharacter.type !== 'character') {
+            set.status = 422
+            return { error: 'POV character not found on this timeline' }
+          }
+        }
+        return createConversation(
+          dataDir,
+          params.storyId,
+          body.title ?? 'New chat',
+          body.povCharacterId,
+        )
+      }, branch.branchId)
     }, {
       body: t.Object({
         title: t.Optional(t.String()),
         povCharacterId: t.Optional(t.String()),
+        branchId: t.Optional(t.String()),
       }),
       detail: { summary: 'Create a chat conversation' },
     })
 
-    .delete('/stories/:storyId/librarian/conversations/:conversationId', async ({ params, set }) => {
-      const ok = await deleteConversation(dataDir, params.storyId, params.conversationId)
+    .delete('/stories/:storyId/librarian/conversations/:conversationId', async ({ params, query, set }) => {
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, query.branch)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      if (branch.deleting) {
+        set.status = 409
+        return { error: `Timeline '${branch.branchId}' is being deleted` }
+      }
+      const ok = await withBranch(
+        dataDir,
+        params.storyId,
+        () => deleteConversation(dataDir, params.storyId, params.conversationId),
+        branch.branchId,
+      )
       if (!ok) { set.status = 404; return { error: 'Conversation not found' } }
       return { ok: true }
-    }, { detail: { summary: 'Delete a conversation' } })
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'Delete a conversation' },
+    })
 
-    .get('/stories/:storyId/librarian/conversations/:conversationId/chat', async ({ params }) => {
-      return getConversationHistory(dataDir, params.storyId, params.conversationId)
-    }, { detail: { summary: 'Get conversation chat history' } })
+    .get('/stories/:storyId/librarian/conversations/:conversationId/chat', async ({ params, query, set }) => {
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, query.branch)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      return withBranch(
+        dataDir,
+        params.storyId,
+        () => getConversationHistory(dataDir, params.storyId, params.conversationId),
+        branch.branchId,
+      )
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'Get conversation chat history' },
+    })
 
     .post('/stories/:storyId/librarian/conversations/:conversationId/chat', async ({ params, body, set }) => {
       const requestLogger = logger.child({
@@ -764,20 +881,36 @@ export function librarianRoutes(dataDir: string) {
         return { error: 'Story not found' }
       }
 
-      const conversations = await listConversations(dataDir, params.storyId)
-      const conversation = conversations.find(item => item.id === params.conversationId)
-      if (!conversation) {
-        set.status = 404
-        return { error: 'Conversation not found' }
-      }
-
       const text = body.message.trim()
       if (!text) {
         set.status = 422
         return { error: 'message is required' }
       }
 
-      const branchId = await getActiveBranchId(dataDir, params.storyId)
+      const branch = await resolveLibrarianBranch(dataDir, params.storyId, body.branchId)
+      if (!branch) {
+        set.status = 404
+        return { error: 'Timeline not found' }
+      }
+      if (branch.deleting) {
+        set.status = 409
+        return { error: `Timeline '${branch.branchId}' is being deleted` }
+      }
+      const branchId = branch.branchId
+      const conversation = await withBranch(
+        dataDir,
+        params.storyId,
+        async () => {
+          const conversations = await listConversations(dataDir, params.storyId)
+          return conversations.find(item => item.id === params.conversationId) ?? null
+        },
+        branchId,
+      )
+      if (!conversation) {
+        set.status = 404
+        return { error: 'Conversation not found' }
+      }
+
       const lockKey = `librarian-chat-start:${params.storyId}:${branchId}:${params.conversationId}`
 
       return withKeyLock(lockKey, async () => {
@@ -834,6 +967,7 @@ export function librarianRoutes(dataDir: string) {
       body: t.Object({
         message: t.String({ minLength: 1 }),
         clientRequestId: t.Optional(t.String()),
+        branchId: t.Optional(t.String()),
       }),
       detail: { summary: 'Chat in a conversation (server-owned run; streaming NDJSON)' },
     })
