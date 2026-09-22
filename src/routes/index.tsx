@@ -40,6 +40,7 @@ import { useInteractionSounds } from '@/lib/interaction-sounds'
 import { ProviderList, ProviderPanel } from '@/components/settings/ProviderManager'
 import { AboutSection } from '@/components/settings/AboutPanel'
 import { DesktopUpdatesControls } from '@/components/settings/DesktopUpdatesPanel'
+import { PresetManager } from '@/components/presets/PresetManager'
 import { SectionHeading, SettingRow, SettingsCard, Toggle } from '@/components/settings/primitives'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { getStoryDisplayName } from '@/lib/story-display'
@@ -70,6 +71,7 @@ function StoryListPage() {
 
   // Options section state
   const [showOptions, setShowOptions] = useState(false)
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [autoApplyLibrarian, setAutoApplyLibrarian] = useState(false)
   const [parsed, setParsed] = useState<ErrataExportData | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
@@ -80,6 +82,12 @@ function StoryListPage() {
     queryKey: ['stories'],
     queryFn: api.stories.list,
   })
+
+  const { data: presetsData } = useQuery({
+    queryKey: ['presets'],
+    queryFn: api.presets.list,
+  })
+  const availablePresets = presetsData?.presets ?? []
 
   const sortedStories = useMemo(() => {
     if (!stories) return []
@@ -120,6 +128,7 @@ function StoryListPage() {
     if (result) {
       setParsed(result)
       setParseError(null)
+      setSelectedPresetId(null)
       if (result._errata === 'fragment-bundle') {
         setSelectedIndices(new Set(result.fragments.map((_, i) => i)))
       }
@@ -187,6 +196,7 @@ function StoryListPage() {
     setDescription('')
     setCoverImage(null)
     setShowOptions(false)
+    setSelectedPresetId(null)
     setAutoApplyLibrarian(false)
     setParsed(null)
     setParseError(null)
@@ -204,8 +214,16 @@ function StoryListPage() {
         await api.settings.update(newStory.id, { autoApplyLibrarianSuggestions: true })
       }
 
-      // 3. Import fragments if any are selected
-      if (parsed) {
+      // 3. Seed from a reusable preset or import a one-off bundle.
+      if (selectedPresetId) {
+        try {
+          await api.presets.apply(selectedPresetId, newStory.id)
+        } catch (error) {
+          // Avoid leaving an empty duplicate behind if the author retries.
+          await api.stories.delete(newStory.id).catch(() => {})
+          throw error
+        }
+      } else if (parsed) {
         const entries: FragmentExportEntry[] = parsed._errata === 'fragment'
           ? [{ ...(parsed as FragmentClipboardData).fragment, attachments: (parsed as FragmentClipboardData).attachments }]
           : (parsed as FragmentBundleData).fragments.filter((_, i) => selectedIndices.has(i))
@@ -474,6 +492,51 @@ function StoryListPage() {
                   />
                 </div>
 
+                {availablePresets.length > 0 && (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">
+                      Start from
+                    </label>
+                    <div className="max-h-40 overflow-y-auto overflow-hidden rounded-lg border border-border/40 divide-y divide-border/20">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPresetId(null)}
+                        className={`w-full px-3 py-2 text-left text-xs transition-colors ${
+                          selectedPresetId === null
+                            ? 'bg-primary/10 text-foreground'
+                            : 'text-muted-foreground hover:bg-accent/40'
+                        }`}
+                        data-component-id="story-create-preset-none"
+                      >
+                        No preset
+                      </button>
+                      {availablePresets.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPresetId(preset.id)
+                            setParsed(null)
+                            setParseError(null)
+                            setSelectedIndices(new Set())
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                            selectedPresetId === preset.id
+                              ? 'bg-primary/10 text-foreground'
+                              : 'text-muted-foreground hover:bg-accent/40'
+                          }`}
+                          data-component-id={`story-create-preset-${preset.id}`}
+                        >
+                          <span className="truncate">{preset.name}</span>
+                          <span className="shrink-0 text-[0.625rem] text-muted-foreground">
+                            {preset.fragmentCount} fragment{preset.fragmentCount === 1 ? '' : 's'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Cover Image Upload */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Cover Image</label>
@@ -526,7 +589,13 @@ function StoryListPage() {
                           Import Fragments
                         </label>
 
-                        {!parsed && (
+                        {selectedPresetId && (
+                          <p className="text-[0.6875rem] italic text-muted-foreground">
+                            A story preset is selected above. Choose “No preset” to import a one-off fragment bundle instead.
+                          </p>
+                        )}
+
+                        {!selectedPresetId && !parsed && (
                           <>
                             <div className="flex gap-1.5">
                               <Button
@@ -747,6 +816,13 @@ function StoryListPage() {
               <SectionHeading label="LLM providers" />
               <div className="mt-2">
                 <ProviderList onManage={() => { setShowSettings(false); setShowProviders(true) }} />
+              </div>
+            </section>
+
+            <section>
+              <SectionHeading label="Story presets" />
+              <div className="mt-2">
+                <PresetManager />
               </div>
             </section>
 
