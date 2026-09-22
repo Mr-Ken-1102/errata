@@ -11,6 +11,7 @@ import { invalidateStoryContent } from '@/lib/branch-cache'
 import { qk, useActiveBranchId } from '@/lib/query-keys'
 import type { ChatEvent, RunStatus, SuggestionDirection, ClarifyQuestion, Clarification } from '@/lib/api/types'
 import { QuestionCard } from '@/components/generation/QuestionCard'
+import { PovSelect } from '@/components/generation/PovSelect'
 import { mergeDirectionSuggestions } from './direction-suggestions'
 
 // A round high enough that the server withholds the ask tool and must write —
@@ -982,6 +983,13 @@ export function InlineGenerationInput({
                   })()}
                 </select>
               </div>
+            )}
+            {mode !== 'compose' && (
+              <PovSelect
+                storyId={storyId}
+                branchId={branchId}
+                disabled={isGenerating}
+              />
             )}
           </div>
 
