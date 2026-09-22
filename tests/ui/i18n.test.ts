@@ -53,6 +53,7 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.language.heading')).toBe('Ngôn ngữ')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
+    expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -99,5 +100,17 @@ describe('language UI wiring', () => {
     expect(ttsSource).toContain("t('settings.tts.testVoice')")
     expect(ttsSource).toContain("value: 'browser'")
     expect(ttsSource).toContain("value: 'supertonic'")
+  })
+
+  it('localizes desktop update presentation text without changing updater commands or release notes', () => {
+    const updatesSource = readFileSync('src/components/settings/DesktopUpdatesPanel.tsx', 'utf8')
+
+    expect(updatesSource).toContain('useLanguage()')
+    expect(updatesSource).toContain("t('settings.updates.checkForUpdates')")
+    expect(updatesSource).toContain('if (state.releaseNotes) return state.releaseNotes')
+    expect(updatesSource).toContain('bridge.checkForUpdates()')
+    expect(updatesSource).toContain('bridge.downloadUpdate()')
+    expect(updatesSource).toContain('bridge.installUpdate()')
+    expect(updatesSource).toContain("bridge.skipUpdate(state.version ?? '')")
   })
 })
