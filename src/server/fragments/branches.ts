@@ -66,6 +66,19 @@ async function writeJson(path: string, data: unknown): Promise<void> {
   await writeJsonAtomic(path, data)
 }
 
+// --- Active branch cache ---
+// Unscoped storage reads otherwise re-parse branches.json on every content-root
+// lookup. Scoped runs still bypass this cache and use their pinned branch.
+const activeBranchCache = new Map<string, string>()
+
+function branchCacheKey(dataDir: string, storyId: string): string {
+  return `${dataDir}\0${storyId}`
+}
+
+function cacheActiveBranch(dataDir: string, storyId: string, branchId: string): void {
+  activeBranchCache.set(branchCacheKey(dataDir, storyId), branchId)
+}
+
 // --- Default branches index ---
 
 function createDefaultBranchesIndex(): BranchesIndex {
@@ -150,13 +163,16 @@ export async function migrateIfNeeded(dir: string): Promise<void> {
   }
 
   // Create branches.json
-  await writeJson(branchesIndexPath(dir), createDefaultBranchesIndex())
+  const index = createDefaultBranchesIndex()
+  await writeJson(branchesIndexPath(dir), index)
+  cacheActiveBranch(dataDir, storyId, index.activeBranchId)
   migratedStories.add(dir)
 }
 
 // For tests: clear the migration cache
 export function clearMigrationCache(): void {
   migratedStories.clear()
+  activeBranchCache.clear()
 }
 
 // --- Branches Index CRUD ---
@@ -169,18 +185,21 @@ export async function getBranchesIndex(dataDir: string, storyId: string): Promis
   if (!index) {
     const defaultIndex = createDefaultBranchesIndex()
     await writeJson(branchesIndexPath(dir), defaultIndex)
+    cacheActiveBranch(dataDir, storyId, defaultIndex.activeBranchId)
     return defaultIndex
   }
   const normalized = normalizeBranchesIndex(index)
   if (normalized.rootBranchId !== index.rootBranchId || normalized.activeBranchId !== index.activeBranchId) {
     await writeJson(branchesIndexPath(dir), normalized)
   }
+  cacheActiveBranch(dataDir, storyId, normalized.activeBranchId)
   return normalized
 }
 
 export async function saveBranchesIndex(dataDir: string, storyId: string, index: BranchesIndex): Promise<void> {
   const dir = storyDir(dataDir, storyId)
   await writeJson(branchesIndexPath(dir), index)
+  cacheActiveBranch(dataDir, storyId, index.activeBranchId)
 }
 
 async function mutateBranchesIndex<T>(
@@ -194,6 +213,7 @@ async function mutateBranchesIndex<T>(
     const index = await getBranchesIndex(dataDir, storyId)
     const result = await mutate(index, dir)
     await writeJson(path, index)
+    cacheActiveBranch(dataDir, storyId, index.activeBranchId)
     return result
   })
 }
@@ -238,7 +258,12 @@ export async function getContentRoot(dataDir: string, storyId: string): Promise<
     return branchDir(dir, scope.branchId)
   }
 
+  const key = branchCacheKey(dataDir, storyId)
+  const cachedBranchId = activeBranchCache.get(key)
+  if (cachedBranchId) return branchDir(dir, cachedBranchId)
+
   const index = await getBranchesIndex(dataDir, storyId)
+  cacheActiveBranch(dataDir, storyId, index.activeBranchId)
   return branchDir(dir, index.activeBranchId)
 }
 
@@ -251,7 +276,10 @@ export async function getContentRootForBranch(dataDir: string, storyId: string, 
 // --- Active branch ---
 
 export async function getActiveBranchId(dataDir: string, storyId: string): Promise<string> {
+  const cached = activeBranchCache.get(branchCacheKey(dataDir, storyId))
+  if (cached) return cached
   const index = await getBranchesIndex(dataDir, storyId)
+  cacheActiveBranch(dataDir, storyId, index.activeBranchId)
   return index.activeBranchId
 }
 
