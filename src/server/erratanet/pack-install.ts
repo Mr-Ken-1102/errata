@@ -23,10 +23,14 @@ import type { Fragment, StoryMeta } from '../fragments/schema'
  */
 
 export interface PackProvenance {
-  /** Global pack id, e.g. `@handle/slug`. */
+  /** Global pack id, e.g. `@handle/slug`; preset id when kind is 'preset'. */
   pack: string
-  /** Pack version (semver). */
+  /** Pack version (semver). Ignored for local preset provenance. */
   version: string
+  /** Existing callers are ErrataNet installs unless stated otherwise. */
+  kind?: 'erratanet' | 'preset'
+  /** Human-readable preset name, used only for local preset provenance. */
+  presetName?: string
 }
 
 export type UnwrappedPack =
@@ -240,6 +244,40 @@ interface VisualRef {
   boundary?: { x: number; y: number; width: number; height: number }
 }
 
+/** Build one exclusive source stamp: local preset copies never masquerade as hub content. */
+function provenanceMeta(
+  provenance: PackProvenance,
+  sourceLocalId?: string,
+): Record<string, unknown> {
+  if (provenance.kind === 'preset') {
+    return {
+      preset: {
+        id: provenance.pack,
+        name: provenance.presetName ?? provenance.pack,
+        appliedAt: new Date().toISOString(),
+      },
+    }
+  }
+  return {
+    erratanet: {
+      pack: provenance.pack,
+      version: provenance.version,
+      ...(sourceLocalId ? { sourceLocalId } : {}),
+    },
+  }
+}
+
+function replaceTransportProvenance(
+  meta: Record<string, unknown>,
+  provenance: PackProvenance,
+  sourceLocalId?: string,
+): Record<string, unknown> {
+  const next = { ...meta }
+  delete next.erratanet
+  delete next.preset
+  return { ...next, ...provenanceMeta(provenance, sourceLocalId) }
+}
+
 /**
  * Ref-aware batch importer for a fragment bundle. Unlike the per-entry client
  * importer, this pre-allocates every fragment id up front — keeping `entry.id`
@@ -349,15 +387,8 @@ export async function installFragmentBundle(
     // The visualRefs we just minted already point at the new media ids; the
     // remap helper would leave them unchanged (no idMap entry), which is correct.
 
-    // (d) Stamp provenance.
-    const meta: Record<string, unknown> = {
-      ...remapped.meta,
-      erratanet: {
-        pack: provenance.pack,
-        version: provenance.version,
-        sourceLocalId: entry.id,
-      },
-    }
+    // (d) Stamp exactly one transport provenance source.
+    const meta = replaceTransportProvenance(remapped.meta, provenance, entry.id)
 
     // (e) Create with the pre-assigned id and original placement/sticky/order.
     const fragment: Fragment = {
@@ -400,13 +431,7 @@ function buildFragment(args: BuildFragmentArgs): Fragment {
     createdAt: args.now,
     updatedAt: args.now,
     order: 0,
-    meta: {
-      erratanet: {
-        pack: args.provenance.pack,
-        version: args.provenance.version,
-        ...(args.sourceLocalId ? { sourceLocalId: args.sourceLocalId } : {}),
-      },
-    },
+    meta: provenanceMeta(args.provenance, args.sourceLocalId),
     archived: false,
     version: 1,
     versions: [],
