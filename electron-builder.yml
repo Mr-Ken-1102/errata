@@ -56,7 +56,7 @@ linux:
 
 publish:
   provider: github
-  owner: Viscerous
+  owner: Mr-Ken-1102
   repo: errata
   # Fork builds carry a -vis.N prerelease tag; pin the channel so they publish to
   # latest.yml (the channel the updater reads) rather than a separate prerelease feed.
