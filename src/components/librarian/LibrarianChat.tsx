@@ -267,7 +267,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || !historyReady) return
+    if (!text || !historyReady || branchId === undefined) return
     if (isStreaming) {
       setError('Wait for the current reply to finish before sending another.')
       return
@@ -301,7 +301,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
     } finally {
       textareaRef.current?.focus()
     }
-  }, [conversationId, historyReady, input, isStreaming, refreshHistory, run, storyId])
+  }, [branchId, conversationId, historyReady, input, isStreaming, refreshHistory, run, storyId])
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (
@@ -382,14 +382,14 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask the librarian..."
-            disabled={isStreaming || !historyReady}
+            disabled={isStreaming || !historyReady || branchId === undefined}
             className="min-h-[40px] max-h-[400px] resize-none text-xs bg-transparent placeholder:italic placeholder:text-muted-foreground flex-1"
             rows={1}
             data-component-id="librarian-chat-input"
           />
           <ChatSendButton
             isStreaming={isStreaming}
-            canSend={historyReady && !!input.trim()}
+            canSend={historyReady && branchId !== undefined && !!input.trim()}
             onSend={() => { void handleSend() }}
             onStop={() => { void run.cancel() }}
             stopLabel="Stop the librarian"
