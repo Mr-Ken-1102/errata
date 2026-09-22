@@ -1,6 +1,7 @@
 import {
   STORY_SUMMARY_PLACEHOLDER,
   buildContextState,
+  pushPovVoice,
   type ContextBlock,
   type CustomFragmentGroup,
 } from '../llm/context-builder'
@@ -538,6 +539,8 @@ export function createProseTransformBlocks(ctx: AgentBlockContext): ContextBlock
     })
   }
 
+  pushPovVoice(blocks, ctx.povVoice, 450)
+
   return blocks
 }
 
@@ -573,6 +576,10 @@ export async function buildProseTransformPreviewContext(dataDir: string, storyId
     sourceContent: '(the surrounding fragment content will appear here)',
     contextBefore: '',
     contextAfter: '',
+    povVoice: {
+      characterName: 'POV Character',
+      content: '(voice notes will appear here)',
+    },
   }
 }
 
