@@ -217,7 +217,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
     clarifications: Clarification[],
     round: number,
   ) => {
-    if (!genInput.trim() || isGenerating) return
+    if (!genInput.trim() || isGenerating || branchId === undefined) return
 
     setError(null)
     setPendingQuestions(null)
@@ -377,7 +377,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
                       size="sm"
                       className="h-7 text-xs gap-1.5"
                       onClick={() => handleGenerate(true)}
-                      disabled={!input.trim()}
+                      disabled={!input.trim() || branchId === undefined}
                       data-component-id="generation-submit"
                     >
                       <Send className="size-3" />
@@ -388,7 +388,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
                       variant="ghost"
                       className="h-7 text-xs gap-1.5 text-muted-foreground"
                       onClick={() => handleGenerate(false)}
-                      disabled={!input.trim()}
+                      disabled={!input.trim() || branchId === undefined}
                       data-component-id="generation-preview"
                     >
                       <Eye className="size-3" />
