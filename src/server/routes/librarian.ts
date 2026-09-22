@@ -41,7 +41,7 @@ import { runStreamResponse, resolveExistingRun } from '../runs/http'
 import { findLiveRun, abortedByTimeout, abortedByUser, type Run } from '../runs'
 import { createTurnTracker, type TurnTracker } from '../runs/turn-tracker'
 import { describeError } from '../error-message'
-import { getActiveBranchId, getBranchesIndex, isBranchDeleting, withBranch } from '../fragments/branches'
+import { getBranchesIndex, isBranchDeleting, withBranch } from '../fragments/branches'
 import { withKeyLock } from '../async-lock'
 import type { LibrarianStatusResponse } from '@/contracts/librarian'
 
