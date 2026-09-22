@@ -1,8 +1,7 @@
-import { mkdir, readdir, readFile } from 'node:fs/promises'
+import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
 import { getContentRoot } from '../fragments/branches'
-import { writeJsonAtomic } from '../fs-utils'
+import { readJsonFile, writeJsonAtomic, withStorageLock } from '../fs-utils'
 import type { SamplingSettings } from '../fragments/schema'
 
 export interface ToolCallLog {
@@ -59,14 +58,124 @@ export interface GenerationLogSummary {
   stepsExceeded: boolean
 }
 
+const INDEX_FILENAME = '_index.json'
+const INDEX_VERSION = 1
+
+interface GenerationLogIndex {
+  version: typeof INDEX_VERSION
+  summaries: GenerationLogSummary[]
+}
+
 async function logsDir(dataDir: string, storyId: string): Promise<string> {
   const root = await getContentRoot(dataDir, storyId)
   return join(root, 'generation-logs')
 }
 
+function indexPath(dir: string): string {
+  return join(dir, INDEX_FILENAME)
+}
+
+function logPathInDir(dir: string, logId: string): string {
+  return join(dir, `${logId}.json`)
+}
+
 async function logPath(dataDir: string, storyId: string, logId: string): Promise<string> {
   const dir = await logsDir(dataDir, storyId)
-  return join(dir, `${logId}.json`)
+  return logPathInDir(dir, logId)
+}
+
+function toSummary(log: GenerationLog): GenerationLogSummary {
+  return {
+    id: log.id,
+    createdAt: log.createdAt,
+    input: log.input,
+    fragmentId: log.fragmentId,
+    model: log.model,
+    sampling: log.sampling,
+    durationMs: log.durationMs,
+    toolCallCount: log.toolCalls.length,
+    stepCount: log.stepCount ?? 1,
+    stepsExceeded: log.stepsExceeded ?? false,
+  }
+}
+
+function sortSummaries(summaries: GenerationLogSummary[]): GenerationLogSummary[] {
+  return summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+async function listLogIds(dir: string): Promise<string[]> {
+  let entries: string[]
+  try {
+    entries = await readdir(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+
+  return entries
+    .filter(entry => entry.endsWith('.json') && entry !== INDEX_FILENAME)
+    .map(entry => entry.slice(0, -'.json'.length))
+}
+
+function isIndex(value: unknown): value is GenerationLogIndex {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<GenerationLogIndex>
+  return candidate.version === INDEX_VERSION && Array.isArray(candidate.summaries)
+}
+
+/**
+ * Reconcile the derived summary index with the authoritative log files.
+ *
+ * A save writes the full log first and the index second. If the process exits
+ * between those operations, the next list/find notices the extra file and
+ * repairs the index rather than permanently hiding the completed generation.
+ */
+async function reconcileIndexUnlocked(dir: string): Promise<GenerationLogSummary[]> {
+  const ids = await listLogIds(dir)
+  if (ids.length === 0) return []
+
+  let parsed: unknown
+  try {
+    parsed = await readJsonFile<unknown>(indexPath(dir))
+  } catch {
+    // The index is derived data. A corrupt index is rebuilt from authoritative
+    // generation logs instead of blocking access to those logs.
+    parsed = undefined
+  }
+
+  const fileIds = new Set(ids)
+  const indexed = isIndex(parsed)
+    ? parsed.summaries.filter(summary => (
+        typeof summary?.id === 'string' && fileIds.has(summary.id)
+      ))
+    : []
+  const indexedIds = new Set(indexed.map(summary => summary.id))
+  const missingIds = ids.filter(id => !indexedIds.has(id))
+
+  if (missingIds.length === 0 && indexed.length === ids.length && isIndex(parsed)) {
+    return sortSummaries([...indexed])
+  }
+
+  const missingLogs = await Promise.all(
+    missingIds.map(id => readJsonFile<GenerationLog>(logPathInDir(dir, id))),
+  )
+  const summaries = [
+    ...indexed,
+    ...missingLogs
+      .filter((log): log is GenerationLog => log !== undefined)
+      .map(toSummary),
+  ]
+  sortSummaries(summaries)
+
+  await writeJsonAtomic(indexPath(dir), {
+    version: INDEX_VERSION,
+    summaries,
+  } satisfies GenerationLogIndex)
+  return summaries
+}
+
+async function getGenerationLogIndex(dir: string): Promise<GenerationLogSummary[]> {
+  return withStorageLock(indexPath(dir), () => reconcileIndexUnlocked(dir))
 }
 
 export async function saveGenerationLog(
@@ -76,7 +185,22 @@ export async function saveGenerationLog(
 ): Promise<void> {
   const dir = await logsDir(dataDir, storyId)
   await mkdir(dir, { recursive: true })
-  await writeJsonAtomic(await logPath(dataDir, storyId, log.id), log)
+
+  // Full log is authoritative and lands first.
+  await writeJsonAtomic(logPathInDir(dir, log.id), log)
+
+  // Reconcile under one lock so concurrent generations cannot lose each
+  // other's index entries. Reconciliation also covers crash-recovery gaps.
+  await withStorageLock(indexPath(dir), async () => {
+    const current = await reconcileIndexUnlocked(dir)
+    const next = current.filter(summary => summary.id !== log.id)
+    next.push(toSummary(log))
+    sortSummaries(next)
+    await writeJsonAtomic(indexPath(dir), {
+      version: INDEX_VERSION,
+      summaries: next,
+    } satisfies GenerationLogIndex)
+  })
 }
 
 export async function getGenerationLog(
@@ -84,10 +208,7 @@ export async function getGenerationLog(
   storyId: string,
   logId: string,
 ): Promise<GenerationLog | null> {
-  const path = await logPath(dataDir, storyId, logId)
-  if (!existsSync(path)) return null
-  const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as GenerationLog
+  return (await readJsonFile<GenerationLog>(await logPath(dataDir, storyId, logId))) ?? null
 }
 
 export async function listGenerationLogs(
@@ -95,39 +216,14 @@ export async function listGenerationLogs(
   storyId: string,
 ): Promise<GenerationLogSummary[]> {
   const dir = await logsDir(dataDir, storyId)
-  if (!existsSync(dir)) return []
-
-  const entries = await readdir(dir)
-  const summaries: GenerationLogSummary[] = []
-
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-    const raw = await readFile(join(dir, entry), 'utf-8')
-    const log = JSON.parse(raw) as GenerationLog
-    summaries.push({
-      id: log.id,
-      createdAt: log.createdAt,
-      input: log.input,
-      fragmentId: log.fragmentId,
-      model: log.model,
-      sampling: log.sampling,
-      durationMs: log.durationMs,
-      toolCallCount: log.toolCalls.length,
-      stepCount: log.stepCount ?? 1,
-      stepsExceeded: log.stepsExceeded ?? false,
-    })
-  }
-
-  // Sort newest first
-  summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  return summaries
+  return getGenerationLogIndex(dir)
 }
 
 /**
- * Find the most recent generation log produced for a given fragment. Logs link
- * back to their fragment via `fragmentId` (there is no forward pointer on the
- * fragment), so this is a reverse scan. Returns null if the fragment was never
- * generated (e.g. written or imported manually) or its log was pruned.
+ * Find the most recent generation log produced for a given fragment.
+ *
+ * The summary index turns this from an O(number of logs) full-JSON scan into
+ * one lightweight index read plus one full log read.
  */
 export async function findGenerationLogByFragment(
   dataDir: string,
@@ -135,16 +231,8 @@ export async function findGenerationLogByFragment(
   fragmentId: string,
 ): Promise<GenerationLog | null> {
   const dir = await logsDir(dataDir, storyId)
-  if (!existsSync(dir)) return null
-
-  const entries = await readdir(dir)
-  let best: GenerationLog | null = null
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-    const raw = await readFile(join(dir, entry), 'utf-8')
-    const log = JSON.parse(raw) as GenerationLog
-    if (log.fragmentId !== fragmentId) continue
-    if (!best || log.createdAt.localeCompare(best.createdAt) > 0) best = log
-  }
-  return best
+  const summaries = await getGenerationLogIndex(dir)
+  const match = summaries.find(summary => summary.fragmentId === fragmentId)
+  if (!match) return null
+  return (await readJsonFile<GenerationLog>(logPathInDir(dir, match.id))) ?? null
 }
