@@ -21,6 +21,7 @@ import {
 import { Pin, Trash2, X, Monitor, User, Upload, ImagePlus, Link2, Unlink, Crop, Archive, Undo2, Copy, Check, Sparkles, Lock, Unlock, Snowflake } from 'lucide-react'
 import type { FrozenSection } from '@/lib/api/types'
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
+import { VoiceField } from '@/components/fragments/VoiceField'
 import { copyFragmentToClipboard } from '@/lib/fragment-clipboard'
 import { CropDialog } from '@/components/fragments/CropDialog'
 import { useConfirm } from '@/components/ui/confirm-dialog'
@@ -736,6 +737,15 @@ export function FragmentEditor({
               required
             />
           </div>
+
+          {type === 'character' && (
+            <VoiceField
+              storyId={storyId}
+              branchId={branchId}
+              fragment={fragment}
+              disabled={!isEditing}
+            />
+          )}
         </div>
 
         <div className="h-px bg-border/30 mx-6" />
