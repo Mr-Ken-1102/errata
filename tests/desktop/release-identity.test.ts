@@ -14,7 +14,7 @@ describe('curated desktop release identity', () => {
     expect(builder).toContain('include: build/installer.nsh')
   })
 
-  it('isolates curated desktop data and Windows installation paths', () => {
+  it('isolates curated desktop data and preserves Windows install location on upgrades', () => {
     const main = read('desktop/main.ts')
     const installer = read('build/installer.nsh')
 
@@ -23,6 +23,10 @@ describe('curated desktop release identity', () => {
     expect(main).toContain("app.setPath('sessionData', sessionData)")
     expect(main).toContain("app.setAppUserModelId(CURATED_APP_ID)")
     expect(installer).toContain('$LOCALAPPDATA\\Programs\\Mr-Ken-1102\\Errata')
+    expect(installer).toContain('!ifndef BUILD_UNINSTALLER')
+    expect(installer).toContain('ReadRegStr $0 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation')
+    expect(installer).toContain('${If} $0 == ""')
+    expect(installer.match(/WriteRegExpandStr HKCU/g)).toHaveLength(2)
   })
 
   it('keeps the stable updater off prerelease and downgrade channels', () => {
