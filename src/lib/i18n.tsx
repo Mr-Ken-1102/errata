@@ -35,6 +35,24 @@ const EN_MESSAGES = {
   'settings.about.github': 'GitHub repository',
   'settings.about.releases': 'Releases and changelog',
   'settings.about.builtBy': 'Built by',
+  'settings.dialog.title': 'Settings',
+  'settings.dialog.close': 'Close',
+  'settings.dialog.closeSettings': 'Close settings',
+  'settings.dialog.sections': 'Settings sections',
+  'settings.toc.appearance': 'Appearance',
+  'settings.toc.typography': 'Typography',
+  'settings.toc.readAloud': 'Read aloud',
+  'settings.toc.providers': 'Providers',
+  'settings.toc.generation': 'Generation',
+  'settings.toc.authoring': 'Authoring',
+  'settings.toc.remote': 'Remote',
+  'settings.toc.erratanet': 'ErrataNet',
+  'settings.toc.updates': 'Updates',
+  'settings.toc.plugins': 'Plugins',
+  'settings.toc.about': 'About',
+  'settings.group.interface': 'Interface',
+  'settings.group.writing': 'Writing',
+  'settings.group.system': 'System',
 } as const
 
 export type TranslationKey = keyof typeof EN_MESSAGES
@@ -52,6 +70,41 @@ const VI_MESSAGES: Partial<Record<TranslationKey, string>> = {
   'settings.about.github': 'Kho mã GitHub',
   'settings.about.releases': 'Bản phát hành và nhật ký thay đổi',
   'settings.about.builtBy': 'Được xây dựng bởi',
+  'settings.dialog.title': 'Cài đặt',
+  'settings.dialog.close': 'Đóng',
+  'settings.dialog.closeSettings': 'Đóng cài đặt',
+  'settings.dialog.sections': 'Các mục cài đặt',
+  'settings.toc.appearance': 'Giao diện',
+  'settings.toc.typography': 'Kiểu chữ',
+  'settings.toc.readAloud': 'Đọc thành tiếng',
+  'settings.toc.providers': 'Nhà cung cấp',
+  'settings.toc.generation': 'Tạo nội dung',
+  'settings.toc.authoring': 'Soạn thảo',
+  'settings.toc.remote': 'Truy cập từ xa',
+  'settings.toc.erratanet': 'ErrataNet',
+  'settings.toc.updates': 'Cập nhật',
+  'settings.toc.plugins': 'Tiện ích',
+  'settings.toc.about': 'Giới thiệu',
+  'settings.group.interface': 'Giao diện',
+  'settings.group.writing': 'Viết',
+  'settings.group.system': 'Hệ thống',
+}
+
+const SETTINGS_NAV_KEYS: Record<string, TranslationKey> = {
+  Appearance: 'settings.toc.appearance',
+  Typography: 'settings.toc.typography',
+  'Read aloud': 'settings.toc.readAloud',
+  Providers: 'settings.toc.providers',
+  Generation: 'settings.toc.generation',
+  Authoring: 'settings.toc.authoring',
+  Remote: 'settings.toc.remote',
+  ErrataNet: 'settings.toc.erratanet',
+  Updates: 'settings.toc.updates',
+  Plugins: 'settings.toc.plugins',
+  About: 'settings.toc.about',
+  Interface: 'settings.group.interface',
+  Writing: 'settings.group.writing',
+  System: 'settings.group.system',
 }
 
 export function normalizeLanguage(value: string | null | undefined): AppLanguage {
@@ -82,6 +135,11 @@ export function persistLanguagePreference(
 export function translate(language: AppLanguage, key: TranslationKey): string {
   if (language === 'vi') return VI_MESSAGES[key] ?? EN_MESSAGES[key]
   return EN_MESSAGES[key]
+}
+
+export function translateSettingsNavigation(language: AppLanguage, value: string): string {
+  const key = SETTINGS_NAV_KEYS[value]
+  return key ? translate(language, key) : value
 }
 
 interface LanguageContextValue {
