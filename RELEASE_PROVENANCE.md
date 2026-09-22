@@ -7,10 +7,16 @@ This document is the canonical provenance record for the first curated release l
 
 - Product name: **Errata v1.0**
 - SemVer / package version: **1.0.0**
-- Planned Git tag: **v1.0.0**
+- Canonical Git tag: **v1.0.0**
+- Release date: **2026-09-22**
 - Repository / curator: `Mr-Ken-1102/errata`
-- Provenance prepared: **2026-09-22**
+- Provenance prepared and closed: **2026-09-22**
+- Pre-tag reviewed `master` checkpoint before this final metadata closeout: `426eca8551544b12ad8641509a8fab36e327060b`
 - License lineage: GPL-2.0, inherited from Errata upstream.
+
+The `v1.0.0` tag itself is the authoritative pointer to the final release commit once created.
+This document deliberately records the last reviewed pre-tag checkpoint rather than predicting
+its own eventual tagged commit SHA before the tag exists.
 
 ### Why this release is called v1.0
 
@@ -123,6 +129,7 @@ These commits are useful anchors when auditing or upgrading individual subsystem
 | Best-of merge to master | `332d3f25a89fca529dfe6cdae9431860c44a8269` | 2026-09-22 | PR #2 merge commit; canonical post-integration master before release-prep |
 | Final release-prep HEAD | `a66846cfb9dc403f36dff5775d521036636b5a11` | 2026-09-22 | PR #4 final validated head after Windows installer-location hardening |
 | Release-prep merge to master | `d73b1f305a69ada9ec05121e8faccb4251ef8d1c` | 2026-09-22 | PR #4 merge checkpoint; tree exactly matches the validated release-prep HEAD |
+| Provenance closeout merge to master | `426eca8551544b12ad8641509a8fab36e327060b` | 2026-09-22 | PR #5 documentation-only merge; final reviewed pre-tag master checkpoint before release-date closeout |
 
 ## Architectural decisions that must survive future upgrades
 
@@ -191,14 +198,24 @@ Post-merge validation on that exact `master` merge commit also completed success
 - **vitest #173** — run ID `35697656773` — **success**.
 - **Test Results #173** — run ID `35697833469` — **success**.
 
-Windows desktop smoke and the release dry-run workflows do not automatically run on a normal
-`master` push; their validated PR HEAD and the merge commit are tree-identical, so the release
-packaging evidence above applies to the executable source merged by PR #4.
+PR #5 then closed the documentation provenance record and merged to `master` as
+`426eca8551544b12ad8641509a8fab36e327060b`. GitHub comparison confirms the changes from
+PR #4's merge checkpoint to this pre-tag checkpoint are documentation-only
+(`CHANGELOG.md` and `RELEASE_PROVENANCE.md`). Post-merge validation on that exact commit
+completed successfully:
 
-The final documentation-only provenance closeout does not alter application code, packaging,
-workflows or release binaries. The immutable `v1.0.0` Git tag remains the canonical pointer to
-the final reviewed release commit once created; GitHub Actions attached to the relevant commits
-provide the validation evidence above.
+- **vitest #175** — run ID `35704076086` — **success**.
+- **Test Results #176** — run ID `35704262595` — **success**.
+
+Windows desktop smoke and the release dry-run workflows do not automatically run on a normal
+`master` push; their validated PR #4 HEAD and the PR #4 merge commit are tree-identical for
+executable source, and all changes after that checkpoint through PR #5 are documentation-only.
+The release packaging evidence above therefore remains applicable to the executable source.
+
+The immutable `v1.0.0` Git tag is the canonical pointer to the final reviewed release commit once
+created. Tag creation by itself does not publish installers or standalone archives: the current
+release workflows publish assets only on a GitHub `release: published` event, and they reject a
+release whose tag version does not match `package.json` version `1.0.0`.
 
 ## How to audit a future upgrade
 
@@ -213,9 +230,11 @@ When importing a newer upstream/fork version:
 6. Never overwrite this v1.0 provenance section; append a new release provenance section or a
    new versioned provenance document so historical traceability remains intact.
 
-## Release-prep note
+## Final pre-tag note
 
-After PR #4 merged and post-merge validation succeeded, **no `v1.0.0` tag or GitHub Release had
-yet been created**. This documentation-only provenance closeout records the completed evidence
-without changing executable source. The release must only be tagged from the final reviewed
-`master` commit after this closeout is merged and its CI is green.
+Release date metadata is locked to **2026-09-22**. At the start of this final metadata closeout,
+`master` was `426eca8551544b12ad8641509a8fab36e327060b`, and both the `v1.0.0` tag and GitHub
+Release were still absent by design. After this documentation-only closeout is reviewed, merged
+and green on `master`, the next explicit action is to create the immutable `v1.0.0` tag from that
+final reviewed `master` commit. Publishing the GitHub Release remains a separate owner-controlled
+action after the tag is verified.
