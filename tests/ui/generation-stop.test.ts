@@ -98,6 +98,7 @@ function renderInput() {
 }
 
 async function write(textarea: HTMLTextAreaElement, container: HTMLElement, prompt: string) {
+  await waitFor(() => expect(textarea.disabled).toBe(false))
   fireEvent.change(textarea, { target: { value: prompt } })
   const submit = await waitFor(() => {
     const button = container.querySelector<HTMLButtonElement>(
