@@ -8,6 +8,7 @@ import type { ChatEvent, SequencedChatEvent } from '@/lib/api'
 const mocks = vi.hoisted(() => ({
   refine: vi.fn(),
   cancelRun: vi.fn(),
+  listBranches: vi.fn(),
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -18,6 +19,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       ...actual.api,
       librarian: { ...actual.api.librarian, refine: mocks.refine },
       runs: { ...actual.api.runs, cancel: mocks.cancelRun },
+      branches: { ...actual.api.branches, list: mocks.listBranches },
     },
   }
 })
@@ -72,8 +74,9 @@ function controlledRun(runId: string, script: ChatEvent[] = []) {
 function mockRefine(script: ChatEvent[] = []) {
   const run = controlledRun('run-refine-1', script)
   mocks.refine.mockResolvedValue(run.stream)
-  mocks.cancelRun.mockImplementation(async (_storyId: string, runId: string) => {
+  mocks.cancelRun.mockImplementation(async (_storyId: string, runId: string, branchId?: string) => {
     expect(runId).toBe(run.runId)
+    expect(branchId).toBe('main')
     run.finishCancelled()
     return { ok: true, cancelled: true }
   })
@@ -99,6 +102,7 @@ function renderPanel(onComplete: () => void, onClose: () => void) {
 }
 
 async function startRefining(byId: ReturnType<typeof renderPanel>['byId'], instructions: string) {
+  await waitFor(() => expect(byId<HTMLButtonElement>('refinement-submit')?.disabled).toBe(false))
   fireEvent.change(byId<HTMLTextAreaElement>('refinement-input')!, { target: { value: instructions } })
   await act(async () => { fireEvent.click(byId('refinement-submit')!) })
 }
@@ -109,6 +113,12 @@ describe('cancelling a refinement', () => {
   beforeEach(() => {
     mocks.refine.mockReset()
     mocks.cancelRun.mockReset()
+    mocks.listBranches.mockReset()
+    mocks.listBranches.mockResolvedValue({
+      activeBranchId: 'main',
+      rootBranchId: 'main',
+      branches: [{ id: 'main', name: 'Main', order: 0, createdAt: '2026-01-01T00:00:00.000Z' }],
+    })
   })
 
   it('uses the server-owned run id for explicit cancellation', async () => {
@@ -122,7 +132,7 @@ describe('cancelling a refinement', () => {
     await act(async () => { fireEvent.click(byId('refinement-stop')!) })
 
     await waitFor(() => {
-      expect(mocks.cancelRun).toHaveBeenCalledWith('story-1', run.runId)
+      expect(mocks.cancelRun).toHaveBeenCalledWith('story-1', run.runId, 'main')
     })
     expect(onClose).not.toHaveBeenCalled()
     expect(onComplete).not.toHaveBeenCalled()
@@ -167,7 +177,7 @@ describe('cancelling a refinement', () => {
     await waitFor(() => expect(byId('refinement-stop')).toBeTruthy())
     await act(async () => { unmount() })
 
-    expect(mocks.cancelRun).toHaveBeenCalledWith('story-1', run.runId)
+    expect(mocks.cancelRun).toHaveBeenCalledWith('story-1', run.runId, 'main')
   })
 
   it('does not submit Ctrl/Cmd+Enter while Vietnamese IME composition is active', async () => {
