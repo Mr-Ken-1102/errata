@@ -6,6 +6,7 @@ import { createConversation, getChatHistory, getConversationHistory } from '@/se
 import type { AgentStreamCompletion, AgentStreamResult } from '@/server/agents/stream-types'
 
 let nextStreamResult: AgentStreamResult | null = null
+let lastAgentInput: Record<string, unknown> | null = null
 const failMock = vi.fn()
 
 vi.mock('@/server/agents', async (importOriginal) => {
@@ -15,7 +16,8 @@ vi.mock('@/server/agents', async (importOriginal) => {
     listAgentRuns: () => [],
     createAgentInstance: () => ({
       agentName: 'librarian.chat',
-      execute: async () => {
+      execute: async (input: Record<string, unknown>) => {
+        lastAgentInput = input
         if (!nextStreamResult) throw new Error('missing mocked stream')
         return nextStreamResult
       },
@@ -129,6 +131,7 @@ describe('server-owned librarian chat route', () => {
     cleanup = tmp.cleanup
     clearRuns()
     nextStreamResult = null
+    lastAgentInput = null
     failMock.mockReset()
     await createStory(dataDir, {
       id: storyId,
@@ -184,6 +187,55 @@ describe('server-owned librarian chat route', () => {
     await getRun(a.runId)!.done
     await a.reader.cancel()
     await b.reader.cancel()
+  })
+
+  it('passes stored conversation POV to the durable chat agent and not from the turn request', async () => {
+    const conversation = await createConversation(dataDir, storyId, 'POV chat', 'ch-maya')
+    const gate = deferred()
+    nextStreamResult = gatedStream(gate)
+
+    const response = await app.fetch(new Request(
+      `http://localhost/api/stories/${storyId}/librarian/conversations/${conversation.id}/chat`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'refine this passage',
+          clientRequestId: 'pov-conversation-request',
+        }),
+      },
+    ))
+    const { runId, reader } = await readRunId(response)
+
+    for (let attempt = 0; attempt < 50 && !lastAgentInput; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+    expect(lastAgentInput).toMatchObject({
+      povCharacterId: 'ch-maya',
+      maxSteps: expect.any(Number),
+      messages: expect.any(Array),
+    })
+
+    gate.resolve()
+    await getRun(runId)!.done
+    await reader.cancel()
+  })
+
+  it('keeps general librarian chat narrator-scoped by default', async () => {
+    const gate = deferred()
+    nextStreamResult = gatedStream(gate)
+
+    const response = await post('general question', 'general-no-pov')
+    const { runId, reader } = await readRunId(response)
+
+    for (let attempt = 0; attempt < 50 && !lastAgentInput; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+    expect(lastAgentInput).not.toHaveProperty('povCharacterId')
+
+    gate.resolve()
+    await getRun(runId)!.done
+    await reader.cancel()
   })
 
   it('replays the same run for an idempotent retry without duplicating the user turn', async () => {
