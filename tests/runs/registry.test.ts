@@ -190,7 +190,7 @@ describe('run registry', () => {
       body: async ({ emit, signal }) => {
         emit({ type: 'text', text: 'partial' })
         started.resolve()
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((_resolve, reject) => {
           signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
         })
       },
