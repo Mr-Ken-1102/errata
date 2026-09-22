@@ -55,6 +55,65 @@ describe('sanitizePresetBundle', () => {
     expect(bundle.fragments[0].meta?.preset).toBeUndefined()
   })
 
+  it('drops source-story references that are not bundled while preserving internal refs', () => {
+    const bundle = sanitizePresetBundle(makeBundle({
+      fragments: [
+        {
+          id: 'ch-alice',
+          type: 'character',
+          name: 'Alice',
+          description: '',
+          content: 'Alice.',
+          tags: [],
+          sticky: false,
+          refs: ['kn-setting', 'ch-external'],
+          meta: {
+            previousFragmentId: 'ch-external',
+            variationOf: 'kn-setting',
+          },
+        },
+        {
+          id: 'kn-setting',
+          type: 'knowledge',
+          name: 'Setting',
+          description: '',
+          content: 'Rainy city.',
+          tags: [],
+          sticky: false,
+        },
+      ],
+    }))
+
+    expect(bundle.fragments[0].refs).toEqual(['kn-setting'])
+    expect(bundle.fragments[0].meta?.previousFragmentId).toBeUndefined()
+    expect(bundle.fragments[0].meta?.variationOf).toBe('kn-setting')
+  })
+
+  it('rejects duplicate ids because cross-fragment references would be ambiguous', () => {
+    expect(() => sanitizePresetBundle(makeBundle({
+      fragments: [
+        {
+          id: 'ch-shared',
+          type: 'character',
+          name: 'Alice',
+          description: '',
+          content: 'Alice.',
+          tags: [],
+          sticky: false,
+        },
+        {
+          id: 'ch-shared',
+          type: 'character',
+          name: 'Bob',
+          description: '',
+          content: 'Bob.',
+          tags: [],
+          sticky: false,
+        },
+      ],
+    }))).toThrow(/Duplicate preset fragment id/)
+  })
+
   it('rejects context configuration and prose', () => {
     expect(() => sanitizePresetBundle(makeBundle({
       blockConfig: { customBlocks: [], overrides: {}, blockOrder: [] },
