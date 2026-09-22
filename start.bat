@@ -20,7 +20,6 @@ if errorlevel 1 (
 )
 
 if not defined DATA_DIR set "DATA_DIR=%CD%\data"
-if not defined PORT set "PORT=7739"
 
 set "ERRATA_MODE=%~1"
 if "%ERRATA_MODE%"=="" set "ERRATA_MODE=desktop"
@@ -51,7 +50,7 @@ if errorlevel 1 (
 
 echo [Errata] Windows source launcher check passed.
 echo [Errata] Source data directory: "%DATA_DIR%"
-echo [Errata] Dev port: %PORT%
+echo [Errata] Dev URL: http://localhost:7739
 exit /b 0
 
 :desktop
@@ -63,7 +62,7 @@ set "ERRATA_EXIT=%ERRORLEVEL%"
 exit /b %ERRATA_EXIT%
 
 :web
-echo [Errata] Starting browser development mode on port %PORT%...
+echo [Errata] Starting browser development mode on port 7739...
 echo [Errata] Source data directory: "%DATA_DIR%"
 call bun run dev
 set "ERRATA_EXIT=%ERRORLEVEL%"
