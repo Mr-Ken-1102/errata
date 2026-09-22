@@ -426,8 +426,17 @@ export function createLibrarianChatBlocks(ctx: AgentBlockContext): ContextBlock[
   blocks.push(...fragmentSummaryCatalogBlocks(ctx, { includeCustomFragments: true }))
 
   // A POV-aware conversation is created only from the author's explicit prose
-  // refinement action. General librarian chats leave ctx.povVoice undefined.
-  pushPovVoice(blocks, ctx.povVoice, 500)
+  // refinement action. Keep this as an editing constraint so the Librarian does
+  // not start role-playing the selected character in its conversational reply.
+  if (ctx.povVoice) {
+    blocks.push({
+      id: 'pov-voice',
+      role: 'user',
+      content: "Editing Point of View: Keep any prose edits in {{characterName}}'s point of view and preserve {{characterName}}'s voice: {{voice}}",
+      order: 500,
+      source: 'builtin',
+    })
+  }
 
   return blocks
 }
