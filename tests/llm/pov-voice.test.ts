@@ -12,6 +12,7 @@ import {
   resolvePovVoicePlaceholders,
 } from '@/server/llm/context-builder'
 import { createWriterBriefBlocks } from '@/server/llm/prewriter'
+import { targetFragmentBlock } from '@/server/agents/block-helpers'
 
 function makeStory(): StoryMeta {
   const now = new Date().toISOString()
@@ -139,6 +140,26 @@ describe('POV voice generation context', () => {
     expect(user).toContain('Ngôi thứ nhất, tiết chế.')
     expect(user).not.toContain('{{characterName}}')
     expect(user).not.toContain('{{voice}}')
+  })
+
+  it('includes author-owned voice notes in a character refinement target snapshot', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+    const character = fragment({
+      id: 'ch-maya',
+      meta: { voice: 'Giọng điềm tĩnh, quan sát kỹ, không phô trương.' },
+    })
+    await createFragment(dataDir, story.id, character)
+
+    const state = await buildContextState(dataDir, story.id, '')
+    const target = targetFragmentBlock({
+      ...state,
+      systemPromptFragments: [],
+      targetFragment: character,
+    }, 'fragment to refine', 'Improve it.')
+
+    expect(target?.content).toContain('### POV Voice Notes')
+    expect(target?.content).toContain('Giọng điềm tĩnh, quan sát kỹ, không phô trương.')
   })
 
   it('keeps POV after the prewriter strips full context for the writer', () => {
