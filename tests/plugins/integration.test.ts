@@ -51,11 +51,18 @@ function createMockStreamResult(text: string) {
       controller.close()
     },
   })
+  async function* fullStream() {
+    yield { type: 'text-delta' as const, text }
+    yield { type: 'finish-step' as const, response: {} }
+    yield { type: 'finish' as const, finishReason: 'stop' }
+  }
 
   return {
     textStream,
+    fullStream: fullStream(),
     text: Promise.resolve(text),
     usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 }),
+    totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
     finishReason: Promise.resolve('stop'),
     steps: Promise.resolve([]),
   }
@@ -232,11 +239,12 @@ describe('plugin integration', () => {
     mockAgentStream.mockReturnValue(createMockStreamResult('Generated without plugins'))
 
     // Call generate
-    await api(`/stories/${storyId}/generate`, {
+    const res = await api(`/stories/${storyId}/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ input: 'Continue', saveResult: false }),
     })
+    await res.text()
 
     // Verify ToolLoopAgent was created with tools
     expect(mockAgentCtor).toHaveBeenCalled()
