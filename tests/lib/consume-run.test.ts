@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { consumeRun } from '@/lib/api/runs'
+import { consumeRun, fetchRunEventStream } from '@/lib/api/runs'
 import type { ChatEvent, SequencedChatEvent } from '@/lib/api/types'
 
 /**
@@ -79,7 +79,10 @@ describe('consumeRun', () => {
 
     expect(result).toEqual({ runId: 'run-1', status: 'complete' })
     // Resumed at exactly the next unseen seq, on the run's pinned branch.
-    expect(fetchSpy).toHaveBeenCalledWith('/api/stories/story-1/runs/run-1/events?cursor=2&branchId=branch-a')
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/stories/story-1/runs/run-1/events?cursor=2&branchId=branch-a',
+      undefined,
+    )
     // Every event, exactly once, in order.
     expect(seen.map(e => e.type)).toEqual(['run-start', 'text', 'text', 'run-end'])
     expect(seen.filter(e => e.type === 'text').map(e => (e as { text: string }).text).join(''))
@@ -164,7 +167,7 @@ describe('consumeRun', () => {
     // `useRunStream` branches on `status === 409` to attach to the live run
     // instead of erroring, which only works if the stream fetchers throw
     // ApiError rather than a bare Error.
-    const { ApiError, fetchEventStream } = await import('@/lib/api/client')
+    const { ApiError } = await import('@/lib/api/client')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: 'A chat turn is already running', runId: 'run-live' }), {
         status: 409,
@@ -172,8 +175,11 @@ describe('consumeRun', () => {
       }),
     ))
 
-    const err = await fetchEventStream('/stories/s/librarian/chat', { message: 'hi' })
-      .then(() => null, (e: unknown) => e)
+    const err = await fetchRunEventStream('/stories/s/librarian/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'hi' }),
+    }).then(() => null, (e: unknown) => e)
 
     expect(err).toBeInstanceOf(ApiError)
     expect((err as InstanceType<typeof ApiError>).status).toBe(409)
@@ -208,7 +214,10 @@ describe('consumeRun', () => {
 
     expect(result).toEqual({ runId: 'run-1', status: 'complete' })
     // Resumed at exactly the next unseen seq — nothing lost, nothing repeated.
-    expect(fetchSpy).toHaveBeenCalledWith('/api/stories/story-1/runs/run-1/events?cursor=2')
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/stories/story-1/runs/run-1/events?cursor=2',
+      undefined,
+    )
     expect(seen.filter(e => e.type === 'text').map(e => (e as { text: string }).text).join(''))
       .toBe('partial and the rest')
   })
