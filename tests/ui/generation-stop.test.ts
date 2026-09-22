@@ -99,9 +99,14 @@ function renderInput() {
 
 async function write(textarea: HTMLTextAreaElement, container: HTMLElement, prompt: string) {
   fireEvent.change(textarea, { target: { value: prompt } })
-  const submit = container.querySelector<HTMLButtonElement>(
-    '[data-component-id="inline-generation-submit"]',
-  )!
+  const submit = await waitFor(() => {
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-component-id="inline-generation-submit"]',
+    )
+    expect(button).toBeTruthy()
+    expect(button!.disabled).toBe(false)
+    return button!
+  })
   await act(async () => { fireEvent.click(submit) })
 }
 
