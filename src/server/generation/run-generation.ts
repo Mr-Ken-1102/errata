@@ -11,7 +11,7 @@ import {
   findSectionIndex,
 } from '../fragments/prose-chain'
 import { generateFragmentId } from '@/lib/fragment-ids'
-import { buildContextState, createDefaultBlocks, compileBlocks, addCacheBreakpoints, expandMessagesFragmentTags, type ContextBlock } from '../llm/context-builder'
+import { buildContextState, createDefaultBlocks, compileBlocks, addCacheBreakpoints, expandMessagesFragmentTags, resolvePovVoicePlaceholders, type ContextBlock } from '../llm/context-builder'
 import { createContextReceipt } from '../llm/context-receipt'
 import { applyBlockConfig } from '../blocks/apply'
 import { createScriptHelpers } from '../blocks/script-context'
@@ -54,6 +54,8 @@ export interface GenerationInput {
   saveResult?: boolean
   mode?: 'generate' | 'regenerate' | 'refine'
   fragmentId?: string
+  /** Character whose perspective should drive this generation. */
+  povCharacterId?: string
   clarifications?: Array<{ question: string; answer: string }>
   clarifyRound?: number
 }
@@ -177,12 +179,15 @@ export async function runGeneration(
   // Build context with plugin hooks
   // When regenerating/refining, exclude the fragment being replaced from context
   requestLogger.info('Building context...')
-  const buildContextOpts = (mode === 'regenerate' || mode === 'refine') && existingFragment
-    ? {
-        excludeFragmentId: existingFragment.id,
-        proseBeforeFragmentId: existingFragment.id,
-      }
-    : {}
+  const buildContextOpts = {
+    ...((mode === 'regenerate' || mode === 'refine') && existingFragment
+      ? {
+          excludeFragmentId: existingFragment.id,
+          proseBeforeFragmentId: existingFragment.id,
+        }
+      : {}),
+    ...(body.povCharacterId ? { povCharacterId: body.povCharacterId } : {}),
+  }
   let ctxState = await buildContextState(dataDir, storyId, effectiveInput, buildContextOpts)
   abortController.signal.throwIfAborted()
   const contextFragments = {
@@ -251,6 +256,7 @@ export async function runGeneration(
   const scriptContext = { ...ctxState, ...createScriptHelpers(dataDir, storyId) }
   let blocks = createDefaultBlocks(ctxState)
   blocks = await applyBlockConfig(blocks, agentConfig, scriptContext)
+  blocks = resolvePovVoicePlaceholders(blocks, ctxState.povVoice)
   blocks = await runBeforeBlocks(enabledPlugins, blocks)
 
   // In prewriter mode, strip writer-only blocks from the context that gets
@@ -420,8 +426,14 @@ export async function runGeneration(
             // knowledge AND no brief — strictly worse than the full context.
             // Fall back to the full context (writerMessages already === modelMessages).
             if (prewriterResult.brief.trim()) {
-              const writerBlocks = createWriterBriefBlocks(ctxState.proseFragments, prewriterResult.brief, resolvedModelId)
+              const writerBlocks = createWriterBriefBlocks(
+                ctxState.proseFragments,
+                prewriterResult.brief,
+                resolvedModelId,
+                ctxState.povVoice,
+              )
               let finalWriterBlocks = await applyBlockConfig(writerBlocks, agentConfig, scriptContext)
+              finalWriterBlocks = resolvePovVoicePlaceholders(finalWriterBlocks, ctxState.povVoice)
               finalWriterBlocks = await runBeforeBlocks(enabledPlugins, finalWriterBlocks)
               writerContextBlocks = finalWriterBlocks
               let writerCompiled = compileBlocks(finalWriterBlocks)
