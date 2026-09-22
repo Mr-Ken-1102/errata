@@ -98,7 +98,7 @@ describe('Viscerous agent -> server run bridge', () => {
     const events = await drain(subscribeRun(run.id, 0)!)
     expect(events.map(e => e.type)).toEqual(['run-start', 'text', 'finish', 'run-end'])
     expect(events.at(-1)).toMatchObject({ status: 'complete' })
-    expect(onComplete).toHaveBeenCalledWith(completion())
+    expect(onComplete).toHaveBeenCalledWith(completion(), expect.any(AbortSignal))
     expect(failMock).not.toHaveBeenCalled()
   })
 
