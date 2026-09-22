@@ -112,10 +112,13 @@ export const librarian = {
   // Conversations
   listConversations: (storyId: string) =>
     apiFetch<ConversationMeta[]>(`/stories/${storyId}/librarian/conversations`),
-  createConversation: (storyId: string, title?: string) =>
+  createConversation: (storyId: string, title?: string, povCharacterId?: string) =>
     apiFetch<ConversationMeta>(`/stories/${storyId}/librarian/conversations`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({
+        title,
+        ...(povCharacterId ? { povCharacterId } : {}),
+      }),
     }),
   deleteConversation: (storyId: string, conversationId: string) =>
     apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/conversations/${conversationId}`, {
