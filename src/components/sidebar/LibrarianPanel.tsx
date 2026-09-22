@@ -4,11 +4,19 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
   api,
   type ConversationMeta,
+  type CustomFragmentType,
   type Fragment,
   type LibrarianAnalysis,
   type LibrarianAnalysisSummary,
-  type LibrarianState,
+  type LibrarianStatusResponse,
 } from '@/lib/api'
+import { qk, q, useActiveBranchId } from '@/lib/query-keys'
+import { readPovCharacterId } from '@/lib/api/generation'
+import { cn } from '@/lib/utils'
+import { diffRows } from '@/lib/diff'
+import { toolResultOutcome } from '@/lib/librarian-outcome'
+import { continuityKeyLabel } from '@/lib/continuity-keys'
+import { DiffRowsView } from '@/components/DiffRowsView'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -21,7 +29,6 @@ import {
   Brain,
   Lightbulb,
   Clock,
-  Users,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -32,22 +39,41 @@ import {
   BookOpen,
   Bookmark,
   Trash2,
+  Undo2,
   ArrowLeft,
   X,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/async-view'
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
 import { LibrarianChat } from '@/components/librarian/LibrarianChat'
+import {
+  compareFragmentTypeVisuals,
+  FragmentTypeDisplayIcon,
+  getFragmentTypeVisual,
+  inferFragmentTypeFromId,
+  type FragmentTypeVisual,
+} from '@/components/fragments/fragment-type-icons'
+import {
+  clipDiffText,
+  mentionLinkCount,
+  mentionSourceCount,
+  operationActionLabel,
+  proposalOperationDiffItems,
+  proposalOperationTarget,
+  type ProposalDiffItem,
+} from './librarian-panel-helpers'
 
 interface LibrarianPanelProps {
   storyId: string
   askFragmentId?: string | null
   askPrefill?: string | null
+  askCapturePov?: boolean
   onAskFragmentConsumed?: () => void
 }
 
 type TabValue = 'chat' | 'story' | 'summaries'
-
+type MentionEntry = [string, string[]]
+type MentionGroup = { type: string; visual: FragmentTypeVisual; entries: MentionEntry[] }
 function tabStorageKey(storyId: string): string {
   return `errata.librarian.activeTab.${storyId}`
 }
@@ -59,27 +85,35 @@ function readSavedTab(storyId: string): TabValue {
   return 'chat'
 }
 
-export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragmentConsumed }: LibrarianPanelProps) {
+export function LibrarianPanel({
+  storyId,
+  askFragmentId,
+  askPrefill,
+  askCapturePov = false,
+  onAskFragmentConsumed,
+}: LibrarianPanelProps) {
   const [activeTab, setActiveTab] = useState<TabValue>(() => readSavedTab(storyId))
   const [chatInitialInput, setChatInitialInput] = useState<string>('')
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
 
   // Fetch conversation list
   const { data: conversations } = useQuery({
-    queryKey: ['librarian-conversations', storyId],
-    queryFn: () => api.librarian.listConversations(storyId),
+    queryKey: qk.librarianConversations(storyId, branchId),
+    queryFn: () => api.librarian.listConversations(storyId, branchId),
   })
 
   const createConversationMutation = useMutation({
-    mutationFn: (title: string | undefined) => api.librarian.createConversation(storyId, title),
+    mutationFn: (input: { title?: string; povCharacterId?: string }) =>
+      api.librarian.createConversation(storyId, input.title, input.povCharacterId, branchId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-conversations', storyId] })
     },
   })
 
   const deleteConversationMutation = useMutation({
-    mutationFn: (conversationId: string) => api.librarian.deleteConversation(storyId, conversationId),
+    mutationFn: (conversationId: string) => api.librarian.deleteConversation(storyId, conversationId, branchId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-conversations', storyId] })
     },
@@ -93,16 +127,21 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
   // Handle ask librarian from prose action panel — always create a new conversation
   useEffect(() => {
     if (!askFragmentId) return
+    if (askCapturePov && !branchId) return
+
     setActiveTab('chat')
     const prefill = askPrefill ?? `@${askFragmentId} `
-    createConversationMutation.mutate(undefined, {
+    const povCharacterId = askCapturePov
+      ? readPovCharacterId(storyId, branchId)
+      : undefined
+    createConversationMutation.mutate({ povCharacterId }, {
       onSuccess: (conversation) => {
         setActiveConversationId(conversation.id)
         setChatInitialInput(prefill)
       },
     })
     onAskFragmentConsumed?.()
-  }, [askFragmentId, askPrefill, onAskFragmentConsumed])
+  }, [askFragmentId, askPrefill, askCapturePov, branchId, storyId, onAskFragmentConsumed])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -110,7 +149,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
   }, [activeTab, storyId])
 
   const { data: status } = useQuery({
-    queryKey: ['librarian-status', storyId],
+    queryKey: qk.librarianStatus(storyId, branchId),
     queryFn: () => api.librarian.getStatus(storyId),
     refetchInterval: 5000,
   })
@@ -124,7 +163,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
     >
       {/* Tab bar */}
       <div className="shrink-0 px-4 pt-3">
-        <TabsList variant="line" className="w-full h-8 gap-0">
+        <TabsList variant="line" className="w-full h-8 gap-0 relative z-20">
           <TabsTrigger value="chat" className="text-[0.6875rem] gap-1.5 flex-1 px-1" data-component-id="librarian-tab-chat">
             <MessageSquare className="size-3" />
             Chat
@@ -135,7 +174,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
           </TabsTrigger>
           <TabsTrigger value="summaries" className="text-[0.6875rem] gap-1.5 flex-1 px-1" data-component-id="librarian-tab-summaries">
             <Bookmark className="size-3" />
-            Summaries
+            Memory
           </TabsTrigger>
         </TabsList>
       </div>
@@ -177,7 +216,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
             conversations={conversations ?? []}
             onSelect={(id) => { setActiveConversationId(id); setChatInitialInput('') }}
             onNew={async () => {
-              const conv = await createConversationMutation.mutateAsync(undefined)
+              const conv = await createConversationMutation.mutateAsync({})
               setActiveConversationId(conv.id)
               setChatInitialInput('')
             }}
@@ -191,7 +230,7 @@ export function LibrarianPanel({ storyId, askFragmentId, askPrefill, onAskFragme
           storyId={storyId}
           status={status}
           onOpenChat={(message) => {
-            createConversationMutation.mutate(undefined, {
+            createConversationMutation.mutate({}, {
               onSuccess: (conversation) => {
                 setActiveConversationId(conversation.id)
                 setChatInitialInput(message)
@@ -255,12 +294,15 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
             const timeStr = formatRelativeTime(date)
 
             return (
-              <button
+              <div
                 key={conv.id}
-                onClick={() => onSelect(conv.id)}
-                className="group w-full text-left rounded-md px-2.5 py-2 hover:bg-muted/50 transition-colors"
+                className="group w-full flex items-start gap-2 rounded-md px-2.5 py-2 hover:bg-muted/50 transition-colors"
               >
-                <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSelect(conv.id)}
+                  className="flex-1 min-w-0 flex items-start gap-2 text-left"
+                >
                   <MessageSquare className="size-3 text-muted-foreground/50 mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[0.6875rem] text-foreground/80 truncate leading-tight">
@@ -270,15 +312,16 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
                       {timeStr}
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDelete(conv.id) }}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive transition-all p-0.5 rounded shrink-0"
-                    title="Delete conversation"
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
-                </div>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(conv.id)}
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive transition-all p-0.5 rounded shrink-0"
+                  title="Delete conversation"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </div>
             )
           })}
         </div>
@@ -300,30 +343,84 @@ function formatRelativeTime(date: Date): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function buildMentionGroups(
+  entries: MentionEntry[],
+  fragmentById: Map<string, Fragment>,
+  customTypeByType: Map<string, CustomFragmentType>,
+): MentionGroup[] {
+  const groups = new Map<string, MentionGroup>()
+  for (const entry of entries) {
+    const [fragmentId] = entry
+    const type = fragmentById.get(fragmentId)?.type ?? inferFragmentTypeFromId(fragmentId) ?? 'custom'
+    const group = groups.get(type) ?? {
+      type,
+      visual: getFragmentTypeVisual(type, customTypeByType),
+      entries: [],
+    }
+    group.entries.push(entry)
+    groups.set(type, group)
+  }
+
+  for (const group of groups.values()) {
+    group.entries.sort((a, b) => {
+      const countDiff = mentionSourceCount(b[1]) - mentionSourceCount(a[1])
+      if (countDiff !== 0) return countDiff
+
+      const aName = fragmentById.get(a[0])?.name ?? a[0]
+      const bName = fragmentById.get(b[0])?.name ?? b[0]
+      return aName.localeCompare(bName)
+    })
+  }
+
+  return [...groups.values()].sort((a, b) =>
+    compareFragmentTypeVisuals(a.visual, b.visual),
+  )
+}
+
+function OperationDiffPreview({ items }: { items: ProposalDiffItem[] }) {
+  return (
+    <div className="mt-1.5 space-y-2 border-t border-border/20 pt-1.5 text-[0.625rem] leading-4">
+      {items.map((item) => {
+        const rows = diffRows(clipDiffText(item.before), clipDiffText(item.after))
+        if (rows.length === 0) return null
+
+        return (
+          <div key={item.key} className="space-y-0.5">
+            {items.length > 1 && item.fieldLabel && (
+              <p className="text-[0.5rem] uppercase tracking-wide text-muted-foreground/70">
+                {item.fieldLabel}
+              </p>
+            )}
+            <div className="-mx-2 min-w-0 overflow-hidden">
+              <DiffRowsView rows={rows} rowClassName="px-2" />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Story Tab ─────────────────────────────────────────────
 
-function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { status: LibrarianState | undefined; onOpenChat?: (message: string) => void }) {
+function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { status: LibrarianStatusResponse | undefined; onOpenChat?: (message: string) => void }) {
   const [refineTarget, setRefineTarget] = useState<{ fragmentId: string; fragmentName: string; instructions?: string } | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showAllAnalyses, setShowAllAnalyses] = useState(false)
+  const branchId = useActiveBranchId(storyId)
 
-  const { data: characters } = useQuery({
-    queryKey: ['fragments', storyId, 'character'],
-    queryFn: () => api.fragments.list(storyId, 'character'),
-  })
+  const { data: characters } = useQuery(q.fragments(storyId, branchId, 'character'))
+  const { data: guidelines } = useQuery(q.fragments(storyId, branchId, 'guideline'))
+  const { data: knowledge } = useQuery(q.fragments(storyId, branchId, 'knowledge'))
+  const { data: allFragments } = useQuery(q.fragments(storyId, branchId))
 
-  const { data: guidelines } = useQuery({
-    queryKey: ['fragments', storyId, 'guideline'],
-    queryFn: () => api.fragments.list(storyId, 'guideline'),
-  })
-
-  const { data: knowledge } = useQuery({
-    queryKey: ['fragments', storyId, 'knowledge'],
-    queryFn: () => api.fragments.list(storyId, 'knowledge'),
+  const { data: story } = useQuery({
+    queryKey: ['story', storyId],
+    queryFn: () => api.stories.get(storyId),
   })
 
   const { data: analyses } = useQuery({
-    queryKey: ['librarian-analyses', storyId],
+    queryKey: qk.librarianAnalyses(storyId, branchId),
     queryFn: () => api.librarian.listAnalyses(storyId),
     refetchInterval: 5000,
   })
@@ -340,7 +437,22 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
     ...(knowledge ?? []),
   ].filter((f) => !f.archived), [characters, guidelines, knowledge])
 
-  const charName = (id: string) => characters?.find((c) => c.id === id)?.name ?? id
+  const fragmentById = useMemo(
+    () => new Map((allFragments ?? []).map((fragment) => [fragment.id, fragment])),
+    [allFragments],
+  )
+
+  const customTypeByType = useMemo(
+    () => new Map((story?.settings.customFragmentTypes ?? []).map((def) => [def.type, def])),
+    [story?.settings.customFragmentTypes],
+  )
+
+  const charName = (id: string) => {
+    const found = characters?.find((c) => c.id === id)
+      || knowledge?.find((k) => k.id === id)
+      || fragmentById.get(id)
+    return found?.name ?? id
+  }
 
   const totalContradictions = analyses?.reduce((n, a) => n + a.contradictionCount, 0) ?? 0
   const totalSuggestions = analyses?.reduce((n, a) => n + a.pendingSuggestionCount, 0) ?? 0
@@ -390,6 +502,8 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
                   onToggle={() => setExpandedId(expandedId === summary.id ? null : summary.id)}
                   onOpenChat={onOpenChat}
                   charName={charName}
+                  fragmentById={fragmentById}
+                  customTypeByType={customTypeByType}
                 />
               ))}
               {!showAllAnalyses && analyses.length > 6 && (
@@ -413,21 +527,25 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
           />
         )}
 
-        {/* Character mentions */}
+        {/* Fragment mentions */}
         {hasMentions && status && (
-          <section>
-            <SectionLabel icon={<Users className="size-3" />}>Characters</SectionLabel>
-            <div className="space-y-0.5 mt-1.5">
-              {Object.entries(status.recentMentions ?? {}).map(([charId, fragmentIds]) => (
-                <div key={charId} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-accent/30 transition-colors">
-                  <span className="text-[0.6875rem] text-foreground/70">{charName(charId)}</span>
-                  <span className="text-[0.625rem] font-mono text-muted-foreground">
-                    {fragmentIds.length} mention{fragmentIds.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
+          (() => {
+            const mentionGroups = buildMentionGroups(
+              Object.entries(status.recentMentions ?? {}),
+              fragmentById,
+              customTypeByType,
+            )
+
+            return (
+              <>
+                <MentionGroupsSummary
+                  groups={mentionGroups}
+                  charName={charName}
+                  customTypeByType={customTypeByType}
+                />
+              </>
+            )
+          })()
         )}
 
         {/* Timeline */}
@@ -508,6 +626,184 @@ function SectionLabel({ children, icon }: { children: React.ReactNode; icon?: Re
   )
 }
 
+/**
+ * Two label levels inside an expanded analysis, so the card reads as a
+ * hierarchy. Both live in one register — uppercase, tracked, and smaller than
+ * body text — and rank by weight and contrast rather than size, matching
+ * SectionLabel above. Sentence-case sub-labels at a *larger* size than the
+ * fields containing them put the hierarchy exactly backwards, and left them
+ * sharing the plain register of the bullets they introduced.
+ */
+function AnalysisFieldLabel({
+  children,
+  tone = 'muted',
+}: {
+  children: React.ReactNode
+  tone?: 'muted' | 'destructive' | 'primary'
+}) {
+  return (
+    <span className={cn(
+      'text-[0.5625rem] uppercase tracking-[0.12em] font-medium',
+      tone === 'muted' && 'text-muted-foreground',
+      tone === 'destructive' && 'text-destructive/70',
+      tone === 'primary' && 'text-primary/70',
+    )}>
+      {children}
+    </span>
+  )
+}
+
+/** A span, not a paragraph, so it can also sit inline beside a single value. */
+function AnalysisSubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="block text-[0.5625rem] uppercase tracking-[0.08em] text-foreground/40">
+      {children}
+    </span>
+  )
+}
+
+/**
+ * A subsection holding exactly one value, laid out on its own line. Giving a
+ * single datum a heading and then a one-item bullet list read as structural
+ * noise: "Scene transition" above "- continue".
+ */
+function AnalysisInlineField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-1.5">
+      <AnalysisSubLabel>{label}</AnalysisSubLabel>
+      <span className="text-foreground/60 leading-relaxed">{children}</span>
+    </p>
+  )
+}
+
+/**
+ * One bullet grammar for every detail list in the card. Rows that open with
+ * their own marker — a timeline position badge, say — pass `marker={false}`, so
+ * the dash is not doubled up with something already doing its job.
+ */
+function AnalysisList({
+  items,
+  marker = true,
+}: {
+  items: Array<{ key: string; content: React.ReactNode }>
+  marker?: boolean
+}) {
+  return (
+    <ul className="mt-0.5 space-y-0.5">
+      {items.map((item) => (
+        <li key={item.key} className="text-foreground/60 leading-relaxed">
+          {marker ? '- ' : ''}{item.content}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+
+const THREAD_ACTION_LABELS: Record<string, string> = {
+  open: 'opened',
+  advance: 'advanced',
+  resolve: 'resolved',
+  abandon: 'abandoned',
+}
+
+/**
+ * Lifecycle and focus are two lanes describing the same threads, so listing
+ * them end to end showed one thread twice — once as `advance`, once as
+ * `foreground`. One row per thread, in the order the analysis first mentions it.
+ */
+export function threadContinuityRows(
+  operations: Array<{ threadKey: string; action: string; label?: string }>,
+  focus: Array<{ threadKey: string; visibility: string }>,
+): Array<{ key: string; content: React.ReactNode }> {
+  type ThreadRow = { label: string; actions: string[]; visibility?: string }
+  const rows = new Map<string, ThreadRow>()
+  const rowFor = (threadKey: string, label?: string): ThreadRow => {
+    const existing = rows.get(threadKey)
+    if (existing) {
+      if (label) existing.label = label
+      return existing
+    }
+    const created: ThreadRow = { label: label ?? continuityKeyLabel(threadKey), actions: [] }
+    rows.set(threadKey, created)
+    return created
+  }
+  for (const operation of operations) {
+    rowFor(operation.threadKey, operation.label).actions
+      .push(THREAD_ACTION_LABELS[operation.action] ?? operation.action)
+  }
+  for (const entry of focus) rowFor(entry.threadKey).visibility = entry.visibility
+
+  return [...rows.entries()].map(([threadKey, row]) => ({
+    key: `continuity-thread-${threadKey}`,
+    content: [
+      row.label,
+      [...row.actions, ...(row.visibility ? [`in the ${row.visibility}`] : [])].join(', '),
+    ].filter(Boolean).join(' — '),
+  }))
+}
+
+function MentionGroupsSummary({
+  groups,
+  charName,
+  customTypeByType,
+}: {
+  groups: MentionGroup[]
+  charName: (fragmentId: string) => string
+  customTypeByType: Map<string, CustomFragmentType>
+}) {
+  const [expandedByType, setExpandedByType] = useState<Record<string, boolean>>({})
+
+  if (groups.length === 0) return null
+
+  return (
+    <>
+      {groups.map((group, index) => {
+        const expanded = expandedByType[group.type] ?? false
+        const mentionCount = mentionLinkCount(group.entries)
+
+        return (
+          <section key={group.type} className={index === 0 ? undefined : 'mt-2'}>
+            <button
+              type="button"
+              onClick={() => setExpandedByType((prev) => ({ ...prev, [group.type]: !expanded }))}
+              className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-accent/25"
+            >
+              {expanded
+                ? <ChevronDown className="size-3 text-muted-foreground shrink-0" />
+                : <ChevronRight className="size-3 text-muted-foreground shrink-0" />
+              }
+              <FragmentTypeDisplayIcon type={group.type} customTypes={customTypeByType} className="size-3 text-muted-foreground shrink-0" />
+              <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
+                {group.visual.label}
+              </span>
+              <span className="ml-auto font-mono text-[0.5625rem] text-muted-foreground">
+                {mentionCount} mention{mentionCount !== 1 ? 's' : ''}
+              </span>
+            </button>
+
+            {expanded && (
+              <div className="space-y-0.5 mt-1">
+                {group.entries.map(([fragmentId, fragmentIds]) => {
+                  const count = mentionSourceCount(fragmentIds)
+                  return (
+                    <div key={fragmentId} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-accent/30 transition-colors">
+                      <span className="text-[0.6875rem] text-foreground/70">{charName(fragmentId)}</span>
+                      <span className="text-[0.625rem] font-mono text-muted-foreground">
+                        {count} mention{count !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )
+      })}
+    </>
+  )
+}
+
 function AnalysisItem({
   storyId,
   summary,
@@ -516,6 +812,8 @@ function AnalysisItem({
   onToggle,
   onOpenChat,
   charName,
+  fragmentById,
+  customTypeByType,
 }: {
   storyId: string
   summary: LibrarianAnalysisSummary
@@ -524,10 +822,13 @@ function AnalysisItem({
   onToggle: () => void
   onOpenChat?: (message: string) => void
   charName: (id: string) => string
+  fragmentById: Map<string, Fragment>
+  customTypeByType: Map<string, CustomFragmentType>
 }) {
   const queryClient = useQueryClient()
   const [editingSummary, setEditingSummary] = useState(false)
   const [summaryDraft, setSummaryDraft] = useState('')
+  const [expandedProposalDiffs, setExpandedProposalDiffs] = useState<Record<number, boolean>>({})
   const date = new Date(summary.createdAt)
   const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -535,19 +836,46 @@ function AnalysisItem({
     setSummaryDraft(analysis?.summaryUpdate ?? '')
   }, [analysis?.summaryUpdate])
 
-  const acceptMutation = useMutation({
+  useEffect(() => {
+    setExpandedProposalDiffs({})
+  }, [summary.id])
+
+  const acceptProposalMutation = useMutation({
     mutationFn: (index: number) =>
-      api.librarian.acceptSuggestion(storyId, summary.id, index),
+      api.librarian.acceptChangeProposal(storyId, summary.id, index),
+    // Invalidate on failure too: a failed accept marks the proposal stale
+    // server-side, so the panel must refetch to stop offering it.
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['librarian-analysis', storyId, summary.id] })
+      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId] })
+    },
+  })
+
+  const revertProposalMutation = useMutation({
+    mutationFn: (index: number) =>
+      api.librarian.revertChangeProposal(storyId, summary.id, index),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
       queryClient.invalidateQueries({ queryKey: ['librarian-analysis', storyId, summary.id] })
       queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId] })
     },
   })
 
-  const dismissMutation = useMutation({
+  const dismissProposalMutation = useMutation({
     mutationFn: (index: number) =>
-      api.librarian.dismissSuggestion(storyId, summary.id, index),
+      api.librarian.dismissChangeProposal(storyId, summary.id, index),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
+      queryClient.invalidateQueries({ queryKey: ['librarian-analysis', storyId, summary.id] })
+    },
+  })
+
+  const dismissContradictionMutation = useMutation({
+    mutationFn: (index: number) =>
+      api.librarian.dismissContradiction(storyId, summary.id, index),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
       queryClient.invalidateQueries({ queryKey: ['librarian-analysis', storyId, summary.id] })
@@ -573,52 +901,74 @@ function AnalysisItem({
     },
   })
 
-  const handleAcceptSuggestion = (_suggestion: LibrarianAnalysis['fragmentSuggestions'][number], index: number) => {
-    acceptMutation.mutate(index)
+  const handleAcceptProposal = (_proposal: LibrarianAnalysis['fragmentChangeProposals'][number], index: number) => {
+    acceptProposalMutation.mutate(index)
   }
 
+  const proposalMutationError = acceptProposalMutation.error
+    ?? revertProposalMutation.error
+    ?? dismissProposalMutation.error
+
   const pendingSuggestions = summary.pendingSuggestionCount
+  const mentionGroups = useMemo(
+    () => buildMentionGroups(
+      [...new Set((analysis?.mentions ?? []).map(mention => mention.fragmentId))]
+        .map((fragmentId) => [fragmentId, []] as MentionEntry),
+      fragmentById,
+      customTypeByType,
+    ),
+    [analysis?.mentions, fragmentById, customTypeByType],
+  )
 
   return (
     <div className="rounded-md border border-border/25 overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-1.5 px-2.5 py-2 text-[0.6875rem] hover:bg-accent/30 transition-colors"
-      >
-        {expanded
-          ? <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-          : <ChevronRight className="size-3 text-muted-foreground shrink-0" />
-        }
-        <span className="font-mono text-foreground/60 truncate">{summary.fragmentId}</span>
-        <span className="text-muted-foreground shrink-0">{timeStr}</span>
-        <div className="ml-auto flex gap-1 shrink-0 items-center">
-          {summary.contradictionCount > 0 && (
-            <span className="inline-flex items-center justify-center size-4 rounded-full bg-destructive/15 text-destructive text-[0.5625rem] font-mono">
-              {summary.contradictionCount}
-            </span>
-          )}
-          {pendingSuggestions > 0 && (
-            <span className="inline-flex items-center justify-center size-4 rounded-full bg-primary/10 text-primary text-[0.5625rem] font-mono">
-              {pendingSuggestions}
-            </span>
-          )}
-          <button
-            className="size-5 inline-flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors rounded"
-            onClick={(e) => {
-              e.stopPropagation()
-              deleteMutation.mutate()
-            }}
-          >
-            <Trash2 className="size-3" />
-          </button>
-        </div>
-      </button>
+      <div className="w-full flex items-center gap-1.5 px-2.5 py-2 text-[0.6875rem] hover:bg-accent/30 transition-colors">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
+        >
+          {expanded
+            ? <ChevronDown className="size-3 text-muted-foreground shrink-0" />
+            : <ChevronRight className="size-3 text-muted-foreground shrink-0" />
+          }
+          <span className="font-mono text-foreground/60 truncate">{summary.fragmentId}</span>
+          <span className="text-muted-foreground shrink-0">{timeStr}</span>
+          <div className="ml-auto flex gap-1 shrink-0 items-center">
+            {summary.continuityStale && (
+              <span
+                className="inline-flex items-center justify-center size-4 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                title="The prose changed after this analysis, so its continuity notes are no longer used. Re-analyze this passage to restore them."
+              >
+                <AlertTriangle className="size-2.5" />
+              </span>
+            )}
+            {summary.contradictionCount > 0 && (
+              <span className="inline-flex items-center justify-center size-4 rounded-full bg-destructive/15 text-destructive text-[0.5625rem] font-mono">
+                {summary.contradictionCount}
+              </span>
+            )}
+            {pendingSuggestions > 0 && (
+              <span className="inline-flex items-center justify-center size-4 rounded-full bg-primary/10 text-primary text-[0.5625rem] font-mono">
+                {pendingSuggestions}
+              </span>
+            )}
+          </div>
+        </button>
+        <button
+          type="button"
+          className="size-5 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors rounded"
+          onClick={() => deleteMutation.mutate()}
+        >
+          <Trash2 className="size-3" />
+        </button>
+      </div>
 
       {expanded && analysis && (
         <div className="border-t border-border/15 px-3 py-2.5 space-y-2.5 text-[0.6875rem] bg-muted/10">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground text-[0.625rem]">Summary update</span>
+              <AnalysisFieldLabel>Summary update</AnalysisFieldLabel>
               {!editingSummary ? (
                 <Button
                   size="sm"
@@ -666,66 +1016,79 @@ function AnalysisItem({
             )}
           </div>
 
-          {analysis.structuredSummary && (
+          {analysis.continuityProjection && (
             <div className="space-y-1.5">
-              <span className="text-muted-foreground text-[0.625rem]">Structured summary</span>
+              <AnalysisFieldLabel>Continuity notes</AnalysisFieldLabel>
+              {summary.continuityStale && (
+                <p className="text-amber-600 dark:text-amber-400 leading-relaxed">
+                  The prose changed after this analysis ran, so these notes are excluded from story
+                  continuity. Re-analyze this passage to rebuild them.
+                </p>
+              )}
+              <AnalysisInlineField label="Scene frame">
+                {analysis.continuityProjection.scene.transition}
+                {analysis.continuityProjection.scene.line
+                  ? ` — ${analysis.continuityProjection.scene.line}`
+                  : ''}
+                {analysis.continuityProjection.scene.location
+                  ? ` — ${analysis.continuityProjection.scene.location.label}`
+                  : ''}
+                {analysis.continuityProjection.scene.time
+                  ? ` — ${analysis.continuityProjection.scene.time.label}`
+                  : ''}
+              </AnalysisInlineField>
 
-              {analysis.structuredSummary.events.length > 0 && (
+              {analysis.continuityProjection.stateOperations.length > 0 && (
                 <div>
-                  <p className="text-[0.625rem] text-foreground/45 uppercase tracking-wide">Events</p>
-                  <ul className="mt-0.5 space-y-0.5">
-                    {analysis.structuredSummary.events.map((event, i) => (
-                      <li key={`structured-event-${i}`} className="text-foreground/60 leading-relaxed">
-                        - {event}
-                      </li>
-                    ))}
-                  </ul>
+                  <AnalysisSubLabel>Current state</AnalysisSubLabel>
+                  <AnalysisList items={analysis.continuityProjection.stateOperations.map((operation, i) => ({
+                    key: `continuity-state-${i}`,
+                    content: operation.action === 'clear'
+                      ? `${operation.stateKey}: no longer current`
+                      : `${operation.subject.label} — ${operation.facet}${operation.slot ? `/${operation.slot}` : ''}: ${operation.value} (${operation.scope}${operation.until ? ` until ${operation.until.label}` : ''}, ${operation.certainty})`,
+                  }))} />
                 </div>
               )}
 
-              {analysis.structuredSummary.stateChanges.length > 0 && (
+              {(analysis.continuityProjection.threadOperations.length > 0
+                || analysis.continuityProjection.threadFocus.length > 0) && (
                 <div>
-                  <p className="text-[0.625rem] text-foreground/45 uppercase tracking-wide">State changes</p>
-                  <ul className="mt-0.5 space-y-0.5">
-                    {analysis.structuredSummary.stateChanges.map((change, i) => (
-                      <li key={`structured-state-${i}`} className="text-foreground/60 leading-relaxed">
-                        - {change}
-                      </li>
-                    ))}
-                  </ul>
+                  <AnalysisSubLabel>Unresolved threads</AnalysisSubLabel>
+                  <AnalysisList items={threadContinuityRows(
+                    analysis.continuityProjection.threadOperations,
+                    analysis.continuityProjection.threadFocus,
+                  )} />
                 </div>
               )}
 
-              {analysis.structuredSummary.openThreads.length > 0 && (
+              {analysis.continuityProjection.knowledgeOperations.length > 0 && (
                 <div>
-                  <p className="text-[0.625rem] text-foreground/45 uppercase tracking-wide">Open threads</p>
-                  <ul className="mt-0.5 space-y-0.5">
-                    {analysis.structuredSummary.openThreads.map((thread, i) => (
-                      <li key={`structured-thread-${i}`} className="text-foreground/60 leading-relaxed">
-                        - {thread}
-                      </li>
-                    ))}
-                  </ul>
+                  <AnalysisSubLabel>Character awareness</AnalysisSubLabel>
+                  <AnalysisList items={analysis.continuityProjection.knowledgeOperations.map((operation, i) => ({
+                    key: `continuity-knowledge-${i}`,
+                    content: `${charName(operation.characterId)}: ${operation.action}${operation.fact ? ` — ${operation.fact}` : ''}`,
+                  }))} />
                 </div>
               )}
             </div>
           )}
 
-          {analysis.mentionedCharacters.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-muted-foreground text-[0.625rem] mr-1">Characters</span>
-              {analysis.mentionedCharacters.map((id) => (
+          {mentionGroups.map((group) => (
+            <div key={group.type} className="flex items-center gap-1 flex-wrap">
+              <span className="mr-1"><AnalysisFieldLabel>{group.visual.label}</AnalysisFieldLabel></span>
+              {group.entries.map(([id]) => (
                 <Badge key={id} variant="outline" className="text-[0.5625rem] h-4 px-1.5">
                   {charName(id)}
                 </Badge>
               ))}
             </div>
-          )}
+          ))}
 
-          {analysis.contradictions.length > 0 && (
+          {analysis.contradictions.some((contradiction) => !contradiction.dismissed) && (
             <div className="space-y-1.5">
-              <span className="text-destructive/70 text-[0.625rem] font-medium">Contradictions</span>
+              <AnalysisFieldLabel tone="destructive">Contradictions</AnalysisFieldLabel>
               {analysis.contradictions.map((c, i) => {
+                if (c.dismissed) return null
                 // Collect all unique fragment IDs: the analyzed prose + those cited in the contradiction
                 const allIds = [...new Set([summary.fragmentId, ...c.fragmentIds])]
                 return (
@@ -739,21 +1102,37 @@ function AnalysisItem({
                           </p>
                         )}
                       </div>
-                      {onOpenChat && (
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {onOpenChat && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 text-[0.5625rem] gap-1 text-destructive/60 hover:text-destructive px-1.5"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const refs = allIds.map((id) => `@${id}`).join(' ')
+                              onOpenChat(`Review and fix this contradiction if it is valid: ${c.description}\n\n${refs}`)
+                            }}
+                          >
+                            <MessageSquare className="size-2.5" />
+                            Review
+                          </Button>
+                        )}
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="ghost"
-                          className="h-5 text-[0.5625rem] gap-1 shrink-0 text-destructive/60 hover:text-destructive px-1.5"
+                          className="size-5 text-muted-foreground/50 hover:text-foreground"
+                          title="Dismiss contradiction"
+                          aria-label="Dismiss contradiction"
+                          disabled={dismissContradictionMutation.isPending}
                           onClick={(e) => {
                             e.stopPropagation()
-                            const refs = allIds.map((id) => `@${id}`).join(' ')
-                            onOpenChat(`Fix this contradiction: ${c.description}\n\n${refs}`)
+                            dismissContradictionMutation.mutate(i)
                           }}
                         >
-                          <MessageSquare className="size-2.5" />
-                          Fix
+                          <X className="size-2.5" />
                         </Button>
-                      )}
+                      </div>
                     </div>
                   </div>
                 )
@@ -761,93 +1140,216 @@ function AnalysisItem({
             </div>
           )}
 
-          {analysis.fragmentSuggestions.length > 0 && (
+          {analysis.fragmentChangeProposals.length > 0 && (
             <div className="space-y-1.5">
-              <span className="text-primary/70 text-[0.625rem] font-medium">Suggestions</span>
-              {analysis.fragmentSuggestions.map((s, i) => (
-                <div
-                  key={`${s.type ?? 'knowledge'}-${s.name}`}
-                  className={`rounded-md p-2 flex items-start justify-between gap-1 ${
-                    s.accepted
-                      ? 'bg-emerald-500/5 border border-emerald-500/10 opacity-60'
-                      : 'bg-primary/5 border border-primary/10'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">{s.type ?? 'knowledge'}</Badge>
-                      <span className="font-medium text-foreground/70">{s.name}</span>
-                      {s.accepted && (
-                        <Badge variant="secondary" className="text-[0.5625rem] h-3.5 gap-0.5 px-1">
-                          <Check className="size-2" />
-                          {s.targetFragmentId ? 'Updated' : 'Added'}
-                        </Badge>
-                      )}
-                      {!s.accepted && s.targetFragmentId && (
-                        <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
-                          Update
-                        </Badge>
-                      )}
-                      {s.accepted && s.autoApplied && (
-                        <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
-                          Auto
-                        </Badge>
+              <AnalysisFieldLabel tone="primary">Suggestions</AnalysisFieldLabel>
+              {analysis.fragmentChangeProposals.map((proposal, i) => {
+                const title = proposal.title?.trim()
+                  || `${proposal.operations.length} fragment change${proposal.operations.length === 1 ? '' : 's'}`
+                const validationResults = proposal.appliedResults?.length ? proposal.appliedResults : proposal.validation
+                const diffItemsByOperation = proposalOperationDiffItems(proposal)
+                const diffCount = [...diffItemsByOperation.values()].reduce((count, items) => count + items.length, 0)
+                const diffExpanded = expandedProposalDiffs[i] === true
+                const canRevert = proposal.accepted === true
+                  && (proposal.appliedChanges?.length ?? 0) > 0
+                return (
+                  <div
+                    key={`proposal-${summary.id}-${i}`}
+                    className={cn(
+                      'rounded-md p-2',
+                      proposal.accepted
+                        ? 'bg-emerald-500/5 border border-emerald-500/10'
+                        : 'bg-primary/5 border border-primary/10',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <Badge variant="outline" className="text-[0.5625rem] h-3.5 gap-0.5 px-1">
+                            <Wrench className="size-2" />
+                            proposal
+                          </Badge>
+                          <span className="font-medium text-foreground/70">{title}</span>
+                          <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
+                            {proposal.operations.length} op{proposal.operations.length === 1 ? '' : 's'}
+                          </Badge>
+                          {proposal.accepted && (
+                            <Badge variant="secondary" className="text-[0.5625rem] h-3.5 gap-0.5 px-1">
+                              <Check className="size-2" />
+                              Applied
+                            </Badge>
+                          )}
+                          {proposal.accepted && proposal.autoApplied && (
+                            <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
+                              Auto
+                            </Badge>
+                          )}
+                          {diffCount > 0 && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-0.5 h-3.5 px-1 text-[0.5625rem] text-muted-foreground hover:text-foreground rounded-sm hover:bg-muted/40 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setExpandedProposalDiffs((current) => ({
+                                  ...current,
+                                  [i]: !diffExpanded,
+                                }))
+                              }}
+                            >
+                              {diffExpanded ? <ChevronDown className="size-2" /> : <ChevronRight className="size-2" />}
+                              Diff
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {proposal.dismissed ? (
+                        <span
+                          className="text-[0.5625rem] text-muted-foreground italic shrink-0"
+                          title={proposal.stale ? proposal.staleReason : undefined}
+                        >
+                          {proposal.stale ? 'no longer applicable' : 'dismissed'}
+                        </span>
+                      ) : (!proposal.accepted || canRevert) && (
+                        <div className="flex gap-0.5 shrink-0">
+                          {!proposal.accepted && (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-5 text-muted-foreground hover:text-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleAcceptProposal(proposal, i)
+                                }}
+                                disabled={acceptProposalMutation.isPending}
+                                title="Apply suggestion"
+                              >
+                                <Plus className="size-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-5 text-muted-foreground hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  dismissProposalMutation.mutate(i)
+                                }}
+                                disabled={dismissProposalMutation.isPending}
+                                title="Dismiss suggestion"
+                              >
+                                <X className="size-3" />
+                              </Button>
+                            </>
+                          )}
+                          {canRevert && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-5 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                revertProposalMutation.mutate(i)
+                              }}
+                              disabled={revertProposalMutation.isPending}
+                              title="Revert suggestion"
+                            >
+                              <Undo2 className="size-3" />
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
-                    <p className="text-muted-foreground mt-0.5">{s.description}</p>
-                    {s.targetFragmentId && (
-                      <p className="text-[0.5625rem] text-muted-foreground mt-0.5 font-mono">
-                        updates {s.targetFragmentId}
+                    {proposal.rationale && (
+                      <p className="text-muted-foreground mt-0.5 break-words">{proposal.rationale}</p>
+                    )}
+                    {proposal.evidenceText && (
+                      <p className="text-muted-foreground/80 mt-0.5 break-words italic">
+                        Evidence: “{proposal.evidenceText}”
                       </p>
                     )}
-                    {s.sourceFragmentId && (
+                    <div className="mt-1 space-y-0.5">
+                      {proposal.operations.slice(0, 5).map((operation, operationIndex) => {
+                        const validation = validationResults.find((result) => result.operationId === operation.operationId)
+                          ?? validationResults[operationIndex]
+                        const field = validation?.target?.field
+                        const operationDiffItems = diffItemsByOperation.get(operationIndex) ?? []
+                        return (
+                          <div key={`${operation.operationId ?? operationIndex}`} className="min-w-0">
+                            <div className="flex items-center gap-1 min-w-0 text-[0.5625rem] text-muted-foreground">
+                              <Badge variant="outline" className="h-3.5 px-1 text-[0.5rem] shrink-0">
+                                {operationActionLabel(operation.action)}
+                              </Badge>
+                              <span className="truncate">
+                                {proposalOperationTarget(operation, validation, fragmentById)}
+                                {field ? `.${field}` : ''}
+                              </span>
+                            </div>
+                            {diffExpanded && operationDiffItems.length > 0 && (
+                              <OperationDiffPreview items={operationDiffItems} />
+                            )}
+                          </div>
+                        )
+                      })}
+                      {proposal.operations.length > 5 && (
+                        <p className="text-[0.5625rem] text-muted-foreground">
+                          +{proposal.operations.length - 5} more
+                        </p>
+                      )}
+                    </div>
+                    {proposal.sourceFragmentId && (
                       <p className="text-[0.5625rem] text-muted-foreground mt-0.5 font-mono">
-                        from {s.sourceFragmentId}
+                        from {proposal.sourceFragmentId}
                       </p>
                     )}
                   </div>
-                  {s.dismissed ? (
-                    <span className="text-[0.5625rem] text-muted-foreground italic shrink-0">dismissed</span>
-                  ) : !s.accepted && (
-                    <div className="flex gap-0.5 shrink-0">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-5 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleAcceptSuggestion(s, i)
-                        }}
-                      >
-                        <Plus className="size-3" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-5 text-muted-foreground hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          dismissMutation.mutate(i)
-                        }}
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                )
+              })}
+              {proposalMutationError && (
+                <p className="rounded-md border border-destructive/10 bg-destructive/5 px-2 py-1 text-[0.5625rem] text-destructive/80 leading-relaxed">
+                  {proposalMutationError instanceof Error ? proposalMutationError.message : 'Suggestion action failed.'}
+                </p>
+              )}
             </div>
           )}
 
           {analysis.timelineEvents.length > 0 && (
             <div className="space-y-1">
-              <span className="text-muted-foreground text-[0.625rem]">Timeline events</span>
-              {analysis.timelineEvents.map((t) => (
-                <div key={`${t.position}-${t.event}`} className="flex items-center gap-1.5">
-                  <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">{t.position}</Badge>
-                  <span className="text-foreground/60">{t.event}</span>
-                </div>
-              ))}
+              <AnalysisFieldLabel>Timeline events</AnalysisFieldLabel>
+              <AnalysisList marker={false} items={analysis.timelineEvents.map((t) => ({
+                key: `${t.position}-${t.event}`,
+                content: (
+                  <>
+                    <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1 mr-1 align-middle">{t.position}</Badge>
+                    {t.event}
+                  </>
+                ),
+              }))} />
+            </div>
+          )}
+
+          {analysis.passes && analysis.passes.length > 0 && (
+            <div className="space-y-1">
+              <AnalysisFieldLabel>Passes</AnalysisFieldLabel>
+              <div className="flex flex-wrap gap-1">
+                {analysis.passes.map((pass, index) => (
+                  <span
+                    key={`${pass.name}-${index}`}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.5625rem]',
+                      pass.status === 'complete' && 'border-emerald-500/15 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300',
+                      pass.status === 'skipped' && 'border-muted bg-muted/20 text-muted-foreground',
+                      pass.status === 'failed' && 'border-destructive/15 bg-destructive/5 text-destructive/80',
+                    )}
+                    title={pass.error ?? pass.reason ?? undefined}
+                  >
+                    <span>{pass.name}</span>
+                    <span className="opacity-70">{pass.status}</span>
+                    {typeof pass.durationMs === 'number' && (
+                      <span className="opacity-60">{Math.round(pass.durationMs)}ms</span>
+                    )}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 
@@ -891,6 +1393,17 @@ function StoredTraceViewer({ trace }: { trace: LibrarianAnalysis['trace'] }) {
   )
 }
 
+/**
+ * Every analysis tool refuses work by *returning* `{ ok: false, skipped: [...] }`
+ * rather than throwing, and reports partial losses by returning `ok: true`
+ * alongside a `skipped*` list. A row that renders a green "completed" for any
+ * result it received therefore reports a refusal as a success — a
+ * `proposeRecordCorrections completed` row on a call whose payload rejected the
+ * only correction in it — which makes the surface untestable by eye.
+ *
+ * The row states what the payload says about itself, so no tool has to remember
+ * to signal failure a second way for the author to see it.
+ */
 type CollapsedTraceItem =
   | { kind: 'reasoning'; text: string }
   | { kind: 'text'; text: string }
@@ -982,10 +1495,26 @@ function TraceItem({ item }: { item: CollapsedTraceItem }) {
   }
 
   if (item.kind === 'tool-result') {
+    const outcome = toolResultOutcome(item.result)
     return (
-      <div className="px-2 py-0.5 flex items-center gap-1">
-        <Check className="size-2.5 text-emerald-500/50" />
-        <span className="text-[0.5625rem] text-muted-foreground">{item.toolName} completed</span>
+      <div className="px-2 py-0.5 flex flex-col gap-0.5">
+        <div className="flex items-center gap-1">
+          {outcome.ok
+            ? <Check className="size-2.5 text-emerald-500/50" />
+            : <X className="size-2.5 text-amber-500/70" />}
+          <span className="text-[0.5625rem] text-muted-foreground">
+            {item.toolName} {outcome.ok ? 'completed' : 'rejected'}
+            {outcome.ok && outcome.dropped > 0 ? ` — ${outcome.dropped} skipped` : ''}
+          </span>
+        </div>
+        {outcome.reasons.map((reason, i) => (
+          <p key={i} className="pl-3.5 text-[0.5625rem] leading-relaxed text-amber-500/60">{reason}</p>
+        ))}
+        {outcome.dropped > outcome.reasons.length && (
+          <p className="pl-3.5 text-[0.5625rem] leading-relaxed text-amber-500/40 italic">
+            {outcome.dropped - outcome.reasons.length} gave no reason
+          </p>
+        )}
       </div>
     )
   }
@@ -993,22 +1522,22 @@ function TraceItem({ item }: { item: CollapsedTraceItem }) {
   return null
 }
 
-// ── Summaries tab ────────────────────────────────────────────
+// ── Authored memory tab ──────────────────────────────────────
 
 function SummariesTab({ storyId }: { storyId: string }) {
   const [showArchived, setShowArchived] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const branchId = useActiveBranchId(storyId)
 
   const { data: summaries } = useQuery({
-    queryKey: ['fragments', storyId, 'summary'],
-    queryFn: () => api.fragments.list(storyId, 'summary'),
+    ...q.fragments(storyId, branchId, 'summary'),
     refetchInterval: 5000,
   })
 
   const { data: archivedSummaries } = useQuery({
-    queryKey: ['fragments-archived', storyId, 'summary'],
+    queryKey: qk.fragmentsArchived(storyId, branchId, 'summary'),
     queryFn: async () => {
-      const all = await api.fragments.listArchived(storyId)
+      const all = await api.fragments.listArchived(storyId, branchId)
       return all.filter(f => f.type === 'summary')
     },
     enabled: showArchived,
@@ -1016,12 +1545,7 @@ function SummariesTab({ storyId }: { storyId: string }) {
 
   const sorted = useMemo(() => {
     if (!summaries) return []
-    return [...summaries].sort((a, b) => {
-      const aEra = a.meta?.isEraSummary ? 0 : 1
-      const bEra = b.meta?.isEraSummary ? 0 : 1
-      if (aEra !== bEra) return aEra - bEra
-      return a.createdAt.localeCompare(b.createdAt)
-    })
+    return [...summaries].sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt))
   }, [summaries])
 
   const editingFragment = useMemo(() => {
@@ -1038,8 +1562,8 @@ function SummariesTab({ storyId }: { storyId: string }) {
           <div className="pt-6">
             <EmptyState
               icon={<Bookmark className="size-5" />}
-              title="No summaries yet"
-              hint="The librarian will record a rolling summary here as you write. Generate prose to give it something to summarize."
+              title="No authored memory"
+              hint="Story history is derived automatically from source-linked analyses. Optional summary fragments you author appear here."
               variant="panel"
             />
           </div>
@@ -1104,12 +1628,9 @@ function SummaryCard({
   archived?: boolean
 }) {
   const queryClient = useQueryClient()
-  const chapterId = (fragment.meta?.chapterId as string | null | undefined) ?? null
-  const isEra = !!fragment.meta?.isEraSummary
-
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['fragments', storyId, 'summary'] })
-    queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId, 'summary'] })
+    queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+    queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId] })
   }
 
   const archiveMutation = useMutation({
@@ -1129,19 +1650,13 @@ function SummaryCard({
         onClick={onOpen}
         className="w-full text-left p-2.5 flex items-start gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-md"
       >
-        <Bookmark className={`size-3 mt-0.5 shrink-0 ${isEra ? 'text-primary/60' : 'text-muted-foreground/60'}`} />
+        <Bookmark className="size-3 mt-0.5 shrink-0 text-muted-foreground/60" />
         <div className="flex-1 min-w-0">
           <p className="text-[0.8125rem] font-display italic leading-tight text-foreground/90 truncate">{fragment.name}</p>
           <div className="flex items-center gap-1.5 mt-0.5 text-[0.5625rem] text-muted-foreground uppercase tracking-[0.12em]">
-            {isEra && <span>era</span>}
-            {isEra && <span aria-hidden className="text-muted-foreground/40">·</span>}
+            <span>authored</span>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
             <span className="tabular-nums normal-case tracking-normal">{fragment.content.length.toLocaleString()} chars</span>
-            {chapterId && (
-              <>
-                <span aria-hidden className="text-muted-foreground/40">·</span>
-                <span className="font-mono normal-case tracking-normal text-muted-foreground/60">{chapterId}</span>
-              </>
-            )}
           </div>
           <p className="mt-1.5 text-[0.6875rem] font-prose text-foreground/60 leading-relaxed line-clamp-2">
             {fragment.content || <span className="italic text-muted-foreground/40">(empty)</span>}
@@ -1193,12 +1708,9 @@ function FullscreenSummaryEditor({
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const savedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const chapterId = (fragment.meta?.chapterId as string | null | undefined) ?? null
-  const isEra = !!fragment.meta?.isEraSummary
-
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['fragments', storyId, 'summary'] })
-    queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId, 'summary'] })
+    queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
+    queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId] })
   }
 
   const saveMutation = useMutation({
@@ -1277,19 +1789,11 @@ function FullscreenSummaryEditor({
             {fragment.name}
           </p>
           <div className="flex items-center gap-2 text-[0.625rem] uppercase tracking-[0.15em] text-muted-foreground">
-            <span>{isEra ? 'era summary' : 'chapter summary'}</span>
+            <span>authored memory</span>
             <span aria-hidden className="text-muted-foreground/40">·</span>
             <span className="normal-case tracking-normal tabular-nums">
               {draft.length.toLocaleString()} chars
             </span>
-            {chapterId && (
-              <>
-                <span aria-hidden className="text-muted-foreground/40">·</span>
-                <span className="font-mono normal-case tracking-normal text-muted-foreground/60">
-                  {chapterId}
-                </span>
-              </>
-            )}
             {fragment.archived && (
               <>
                 <span aria-hidden className="text-muted-foreground/40">·</span>
@@ -1338,7 +1842,7 @@ function FullscreenSummaryEditor({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onBlur={saveIfDirty}
-            placeholder="Write a summary the librarian can remember…"
+            placeholder="Write author-owned story memory…"
             autoFocus
             spellCheck
             className="w-full min-h-[60vh] font-prose text-[1.0625rem] leading-[1.75] bg-transparent border-none shadow-none px-0 py-0 resize-none focus-visible:ring-0 focus-visible:outline-none placeholder:text-muted-foreground/35 placeholder:italic"
@@ -1366,4 +1870,3 @@ function FullscreenSummaryEditor({
     document.body,
   )
 }
-

@@ -21,6 +21,7 @@ import {
 } from '@/server/fragments/storage'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 import { createApp } from '@/server/api'
+import { createBranch, switchActiveBranch } from '@/server/fragments/branches'
 
 function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
   const now = new Date().toISOString()
@@ -29,7 +30,6 @@ function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: 'A hero enters a forest.',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings({ maxSteps: 5 }),
@@ -206,7 +206,7 @@ describe('librarian refine endpoint', () => {
   })
 
   it('includes story context in messages', async () => {
-    const story = makeStory({ summary: 'Epic quest' })
+    const story = makeStory()
     await createStory(dataDir, story)
 
     // Use a character fragment instead of prose (prose can't be refined via this endpoint)
@@ -230,6 +230,40 @@ describe('librarian refine endpoint', () => {
     const [, context, input] = mockExecute.mock.calls[0]
     expect(context.storyId).toBe(story.id)
     expect(input.fragmentId).toBe(character.id)
+  })
+
+  it('refines a fragment from the requested timeline even when another timeline is active', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    const alt = await createBranch(dataDir, story.id, 'Alt', 'main')
+    const altOnly = makeFragment({
+      type: 'character',
+      id: 'ch-alt-only',
+      name: 'Alt Character',
+      content: 'Exists only on Alt.',
+    })
+    await createFragment(dataDir, story.id, altOnly)
+    await switchActiveBranch(dataDir, story.id, 'main')
+
+    mockExecute.mockResolvedValue(createMockStreamResult('Refined alt character'))
+
+    const res = await app.fetch(
+      new Request(`http://localhost/api/stories/${story.id}/librarian/refine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fragmentId: altOnly.id,
+          branchId: alt.id,
+          instructions: 'Improve it',
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    const responseText = await res.text()
+    expect(responseText).toContain('Refined alt character')
+    expect(mockExecute).toHaveBeenCalled()
   })
 
   it('works without instructions (autonomous mode)', async () => {

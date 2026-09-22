@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type StoryMeta, type GlobalConfigSafe } from '@/lib/api'
-import { useTheme, useQuickSwitch, useCharacterMentions, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useWritingTransforms, useTransformContext, TRANSFORM_CONTEXT_LABELS, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
+import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useWritingTransforms, useTransformContext, TRANSFORM_CONTEXT_LABELS, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
 import { Settings2, ChevronRight, ExternalLink, Eye, EyeOff, Puzzle, RotateCcw, CircleHelp, Code } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { CustomCssPanel } from '@/components/settings/CustomCssPanel'
@@ -12,10 +12,17 @@ import { CustomTransformsControls } from '@/components/settings/CustomTransforms
 import { DesktopUpdatesControls } from '@/components/settings/DesktopUpdatesPanel'
 import { AboutSection } from '@/components/settings/AboutPanel'
 import { ModelSelect } from '@/components/settings/ModelSelect'
+import { SamplingNumberInput } from '@/components/settings/SamplingNumberInput'
 import { ProviderSelect } from '@/components/settings/ProviderSelect'
 import { getDesktopBridge, onDesktopBridgeReady } from '@/lib/desktop'
 import { resolveProvider, getInheritLabel } from '@/lib/model-role-helpers'
 import { useInteractionSounds } from '@/lib/interaction-sounds'
+import {
+  BUILTIN_FRAGMENT_TYPES,
+  compareFragmentTypeVisuals,
+  FragmentTypeDisplayIcon,
+  getFragmentTypeVisual,
+} from '@/components/fragments/fragment-type-icons'
 import {
   SettingsSection,
   SectionHeading,
@@ -90,6 +97,58 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
   )
 }
 
+function MentionTypePicker({
+  story,
+  enabledTypes,
+  onChange,
+}: {
+  story: StoryMeta
+  enabledTypes: string[]
+  onChange: (types: string[]) => void
+}) {
+  const customTypes = story.settings.customFragmentTypes ?? []
+  const options = useMemo(() => {
+    const visuals = [
+      ...BASE_MENTION_TYPES.map((type) => getFragmentTypeVisual(type, customTypes)),
+      ...customTypes
+        .filter((def) => !BUILTIN_FRAGMENT_TYPES.has(def.type))
+        .map((def) => getFragmentTypeVisual(def.type, customTypes)),
+    ]
+    return visuals.sort(compareFragmentTypeVisuals)
+  }, [customTypes])
+  const enabled = new Set(enabledTypes)
+
+  const toggleType = (type: string) => {
+    onChange(enabled.has(type)
+      ? enabledTypes.filter((current) => current !== type)
+      : [...enabledTypes, type])
+  }
+
+  return (
+    <div className="flex max-w-[22rem] flex-wrap justify-end gap-1.5">
+      {options.map((option) => {
+        const active = enabled.has(option.type)
+        return (
+          <button
+            key={option.type}
+            type="button"
+            aria-pressed={active}
+            onClick={() => toggleType(option.type)}
+            className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[0.625rem] font-medium transition-colors ${active
+                ? 'border-foreground/25 bg-foreground text-background shadow-[0_0_0_1px_rgba(0,0,0,0.03)]'
+                : 'border-border/40 bg-transparent text-muted-foreground hover:border-border/70 hover:text-foreground/75'
+              }`}
+            title={option.label}
+          >
+            <FragmentTypeDisplayIcon type={option.type} customTypes={customTypes} className="size-3" />
+            <span>{option.singularLabel}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 
 function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: {
   story: StoryMeta
@@ -142,8 +201,9 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                     value={directProviderId}
                     globalConfig={globalConfig}
                     onChange={(id) => {
+                      const current = overrides[role.key] ?? {}
                       updateMutation.mutate({
-                        modelOverrides: { ...overrides, [role.key]: { providerId: id, modelId: null, temperature: null } },
+                        modelOverrides: { ...overrides, [role.key]: { ...current, providerId: id, modelId: null } },
                       })
                     }}
                     disabled={updateMutation.isPending}
@@ -172,24 +232,21 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                   />
                 </div>
                 <div className="shrink-0 w-16">
-                  <input
-                    type="number"
+                  <SamplingNumberInput
                     min={0}
                     max={2}
                     step={0.1}
-                    value={overrides[role.key]?.temperature ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      const temp = val === '' ? null : parseFloat(val)
+                    value={overrides[role.key]?.temperature}
+                    onCommit={(temperature) => {
                       const current = overrides[role.key] ?? {}
                       updateMutation.mutate({
-                        modelOverrides: { ...overrides, [role.key]: { ...current, temperature: temp } },
+                        modelOverrides: { ...overrides, [role.key]: { ...current, temperature } },
                       })
                     }}
                     disabled={updateMutation.isPending}
                     placeholder="Temp"
                     title="Temperature (0–2). Leave empty to use provider default."
-                    className="w-full h-[26px] px-1.5 text-[0.6875rem] font-mono text-center bg-background border border-border/40 rounded-md focus:border-foreground/20 focus:outline-none placeholder:text-muted-foreground/50"
+                    className="w-full"
                   />
                 </div>
               </div>
@@ -413,7 +470,7 @@ export function SettingsPanel({
   const { theme, setTheme } = useTheme()
   const [interactionSounds, setInteractionSounds] = useInteractionSounds()
   const [quickSwitch, setQuickSwitch] = useQuickSwitch()
-  const [characterMentions, setCharacterMentions] = useCharacterMentions()
+  const [mentionTypes, setMentionTypes] = useMentionTypes()
   const [timelineBar, setTimelineBar] = useTimelineBar()
   const [proseWidth, setProseWidth] = useProseWidth()
   const [uiFontSize, setUiFontSize] = useUiFontSize()
@@ -426,8 +483,6 @@ export function SettingsPanel({
   useEffect(() => {
     return onDesktopBridgeReady(() => setHasDesktopBridge(true))
   }, [])
-
-  const summaryCompact = story.settings.summaryCompact ?? { maxCharacters: 12000, targetCharacters: 9000 }
 
   if (customCssPanelOpen) {
     return <CustomCssPanel onClose={() => setCustomCssPanelOpen(false)} />
@@ -473,8 +528,8 @@ export function SettingsPanel({
           <SettingRow label="Quick switch" description="Show chevrons to swap between variations">
             <Toggle checked={quickSwitch} onChange={setQuickSwitch} label="Toggle quick switch" />
           </SettingRow>
-          <SettingRow label="Character mentions" description="Highlight character names in prose">
-            <Toggle checked={characterMentions} onChange={setCharacterMentions} label="Toggle character mentions" />
+          <SettingRow label="Mentions" description="Highlight analyzed fragment references in prose">
+            <MentionTypePicker story={story} enabledTypes={mentionTypes} onChange={setMentionTypes} />
           </SettingRow>
           <SettingRow label="Timeline bar" description="Show timeline switcher above prose">
             <Toggle checked={timelineBar} onChange={setTimelineBar} label="Toggle timeline bar" />
@@ -703,85 +758,13 @@ export function SettingsPanel({
                 <NumberField
                   value={story.settings.contextCompact?.value ?? 10}
                   min={(story.settings.contextCompact?.type ?? 'proseLimit') === 'proseLimit' ? 1 : (story.settings.contextCompact?.type ?? 'proseLimit') === 'maxTokens' ? 100 : 500}
-                  max={(story.settings.contextCompact?.type ?? 'proseLimit') === 'proseLimit' ? 100 : (story.settings.contextCompact?.type ?? 'proseLimit') === 'maxTokens' ? 2000000 : 500000}
-                  step={(story.settings.contextCompact?.type ?? 'proseLimit') === 'proseLimit' ? 1 : (story.settings.contextCompact?.type ?? 'proseLimit') === 'maxTokens' ? 1000 : 5000}
+                  max={(story.settings.contextCompact?.type ?? 'proseLimit') === 'proseLimit' ? 100 : (story.settings.contextCompact?.type ?? 'proseLimit') === 'maxTokens' ? 100000 : 500000}
                   onChange={(v) => updateMutation.mutate({ contextCompact: { type: story.settings.contextCompact?.type ?? 'proseLimit', value: v } })}
                   disabled={updateMutation.isPending}
                   className={(story.settings.contextCompact?.type ?? 'proseLimit') !== 'proseLimit' ? 'w-20' : undefined}
                 />
               </div>
             </div>
-          </SettingsGroup>
-
-          <SettingsGroup title="Memory" description="How story state is summarized and carried forward over time.">
-            <SettingRow label="Summarization" description="Positions back before summarizing" helpTopic="generation#summarization">
-              <NumberField
-                value={story.settings.summarizationThreshold ?? 4}
-                min={0}
-                max={20}
-                onChange={(v) => updateMutation.mutate({ summarizationThreshold: v })}
-                disabled={updateMutation.isPending}
-              />
-            </SettingRow>
-            <div className="px-3 py-2.5">
-              <p className="text-[0.75rem] font-medium text-foreground/80">Summary compaction</p>
-              <p className="text-[0.625rem] text-muted-foreground mt-0.5 leading-snug">Keeps rolling summary bounded as stories grow</p>
-
-              <div className="mt-2.5 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[0.6875rem] text-muted-foreground">Max characters</span>
-                  <NumberField
-                    value={summaryCompact.maxCharacters}
-                    min={100}
-                    max={100000}
-                    step={1000}
-                    onChange={(v) => {
-                      const nextMax = Math.max(100, v)
-                      updateMutation.mutate({
-                        summaryCompact: {
-                          maxCharacters: nextMax,
-                          targetCharacters: Math.min(summaryCompact.targetCharacters, nextMax),
-                        },
-                      })
-                    }}
-                    disabled={updateMutation.isPending}
-                    className="w-20"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[0.6875rem] text-muted-foreground">Target characters</span>
-                  <NumberField
-                    value={summaryCompact.targetCharacters}
-                    min={100}
-                    max={summaryCompact.maxCharacters}
-                    step={1000}
-                    onChange={(v) => {
-                      updateMutation.mutate({
-                        summaryCompact: {
-                          maxCharacters: summaryCompact.maxCharacters,
-                          targetCharacters: Math.min(Math.max(100, v), summaryCompact.maxCharacters),
-                        },
-                      })
-                    }}
-                    disabled={updateMutation.isPending}
-                    className="w-20"
-                  />
-                </div>
-              </div>
-            </div>
-            <SettingRow
-              label="Hierarchical summaries"
-              description="Include chapter marker summaries with rolling story summary"
-              helpTopic="generation#hierarchical-summaries"
-            >
-              <Toggle
-                checked={story.settings.enableHierarchicalSummary ?? false}
-                onChange={(next) => updateMutation.mutate({ enableHierarchicalSummary: next })}
-                disabled={updateMutation.isPending}
-                label="Toggle hierarchical summaries"
-              />
-            </SettingRow>
           </SettingsGroup>
 
           <SettingsGroup title="Librarian" description="What happens after prose is generated and the librarian follows up.">
@@ -793,7 +776,7 @@ export function SettingsPanel({
                 label="Toggle disable auto analysis"
               />
             </SettingRow>
-            <SettingRow label="Auto-apply suggestions" description="Librarian auto creates and updates suggested fragments" helpTopic="librarian#auto-suggestions">
+            <SettingRow label="Auto-apply suggestions" description="Apply evidence-backed fragment corrections and new reusable records automatically" helpTopic="librarian#auto-suggestions">
               <Toggle
                 checked={story.settings.autoApplyLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ autoApplyLibrarianSuggestions: next })}
@@ -801,15 +784,15 @@ export function SettingsPanel({
                 label="Toggle auto-apply suggestions"
               />
             </SettingRow>
-            <SettingRow label="Disable directions" description="Skip story direction suggestions during analysis">
+            <SettingRow label="Disable automatic directions" description="Skip directions during automatic Librarian analysis; manual suggestions remain available">
               <Toggle
                 checked={story.settings.disableLibrarianDirections ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianDirections: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable directions"
+                label="Toggle automatic directions"
               />
             </SettingRow>
-            <SettingRow label="Disable suggestions" description="Skip fragment create/update suggestions during analysis">
+            <SettingRow label="Disable suggestions" description="Skip fragment corrections and new-record suggestions during analysis">
               <Toggle
                 checked={story.settings.disableLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianSuggestions: next })}

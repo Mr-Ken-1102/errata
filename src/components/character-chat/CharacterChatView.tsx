@@ -2,19 +2,16 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ChatEvent, type Fragment } from '@/lib/api'
 import type { PersonaMode, CharacterChatConversationSummary } from '@/lib/api/types'
-import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, Loader2 } from 'lucide-react'
 import { Caption, EmptyHint } from '@/components/ui/prose-text'
-import {
-  AssistantMessageView,
-  type AssistantMessage,
-  type ChatMessage,
-} from '@/components/chat/ChatMessageParts'
+import { AssistantMessageView, type AssistantMessage, type ChatMessage } from '@/components/chat/ChatMessageParts'
+import { ChatSendButton } from '@/components/chat/ChatSendButton'
+import { useRunStream } from '@/hooks/use-run-stream'
 import { CharacterAvatar } from '@/components/shared/CharacterAvatar'
 import { ChatConfig } from './ChatConfig'
 import { ConversationList } from './ConversationList'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 
 interface CharacterChatViewProps {
   storyId: string
@@ -24,6 +21,7 @@ interface CharacterChatViewProps {
 
 export function CharacterChatView({ storyId, initialCharacterId, onClose }: CharacterChatViewProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
 
   // Config state
   const [characterId, setCharacterId] = useState<string | null>(initialCharacterId ?? null)
@@ -32,25 +30,140 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
 
   // Conversation state
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [showConversations, setShowConversations] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pendingFirstMessage, setPendingFirstMessage] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const liveRef = useRef<AssistantMessage | null>(null)
+  const conversationIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId
+  }, [conversationId])
+
+  const activeConversationStorageKey = useMemo(
+    () => `errata:character-chat:active:${storyId}:${branchId ?? ''}`,
+    [branchId, storyId],
+  )
+
+  const pendingMessageStorageKey = useCallback(
+    (conversationIdToUse: string) =>
+      `errata:character-chat:pending:${storyId}:${branchId ?? ''}:${conversationIdToUse}`,
+    [branchId, storyId],
+  )
+
+  const installConversation = useCallback((conversation: Awaited<ReturnType<typeof api.characterChat.getConversation>>) => {
+    setCharacterId(conversation.characterId)
+    setPersona(conversation.persona)
+    setStoryPointId(conversation.storyPointFragmentId)
+    setConversationId(conversation.id)
+    conversationIdRef.current = conversation.id
+    setMessages(conversation.messages.map((message): ChatMessage => (
+      message.role === 'assistant'
+        ? {
+            role: 'assistant',
+            content: message.content,
+            ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+            ...(message.error ? { error: message.error } : {}),
+          }
+        : { role: 'user', content: message.content }
+    )))
+    const last = conversation.messages[conversation.messages.length - 1]
+    liveRef.current = last?.role === 'assistant' && last.status === 'streaming'
+      ? {
+          role: 'assistant',
+          content: last.content,
+          ...(last.reasoning ? { reasoning: last.reasoning } : {}),
+          ...(last.error ? { error: last.error } : {}),
+        }
+      : null
+  }, [])
+
+  const refreshConversation = useCallback(async () => {
+    const currentId = conversationIdRef.current
+    if (!currentId) return null
+    const conversation = await api.characterChat.getConversation(storyId, currentId)
+    installConversation(conversation)
+    return conversation
+  }, [installConversation, storyId])
+
+  const handleRunEvent = useCallback((event: ChatEvent) => {
+    if (event.type === 'run-start') {
+      const fresh: AssistantMessage = { role: 'assistant', content: '' }
+      liveRef.current = fresh
+      setMessages(previous => {
+        const next = [...previous]
+        if (next[next.length - 1]?.role === 'assistant') next[next.length - 1] = fresh
+        else next.push(fresh)
+        return next
+      })
+      return
+    }
+    if (event.type === 'run-end' || event.type === 'keepalive') return
+
+    const current = liveRef.current ?? { role: 'assistant' as const, content: '' }
+    let next = current
+    switch (event.type) {
+      case 'text':
+        next = { ...current, content: current.content + event.text }
+        break
+      case 'reasoning':
+        next = { ...current, reasoning: (current.reasoning ?? '') + event.text }
+        break
+      case 'error':
+        next = { ...current, error: event.error }
+        break
+      default:
+        return
+    }
+
+    liveRef.current = next
+    setMessages(previous => {
+      const copy = [...previous]
+      if (copy[copy.length - 1]?.role === 'assistant') copy[copy.length - 1] = next
+      else copy.push(next)
+      return copy
+    })
+  }, [])
+
+  const handleRunSettled = useCallback(async (
+    status: 'running' | 'complete' | 'error' | 'cancelled',
+    message?: string,
+  ) => {
+    liveRef.current = null
+    if (message) setError(message)
+    try {
+      await refreshConversation()
+    } catch {
+      // Keep streamed state if the authoritative reload fails.
+    }
+    await queryClient.invalidateQueries({ queryKey: ['character-chat-conversations', storyId] })
+    if (status === 'cancelled') setError(null)
+    textareaRef.current?.focus()
+  }, [queryClient, refreshConversation, storyId])
+
+  const run = useRunStream({
+    storyId,
+    branchId,
+    kind: 'character-chat',
+    scopeId: conversationId,
+    onEvent: handleRunEvent,
+    onSettled: handleRunSettled,
+    // During the first-send handoff the conversation id has just been created,
+    // but the pending message has not started yet. Avoid an attach/start race.
+    autoAttach: !!conversationId && pendingFirstMessage === null,
+  })
+  const isStreaming = run.isStreaming || pendingFirstMessage !== null
 
   // Data queries
-  const { data: allFragments } = useQuery({
-    queryKey: ['fragments', storyId],
-    queryFn: () => api.fragments.list(storyId),
-  })
+  const { data: allFragments } = useQuery(q.fragments(storyId, branchId))
 
-  const { data: proseChain } = useQuery({
-    queryKey: ['prose-chain', storyId],
-    queryFn: () => api.proseChain.get(storyId),
-  })
+  const { data: proseChain } = useQuery(q.proseChain(storyId, branchId))
 
   const characters = (allFragments ?? []).filter((f) => f.type === 'character')
   const proseFragments = (allFragments ?? []).filter((f) => f.type === 'prose')
@@ -97,158 +210,203 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     }
   }, [messages, scrollToBottom])
 
-  // Auto-resize textarea
   useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 400) + 'px'
+    const element = textareaRef.current
+    if (!element) return
+    element.style.height = 'auto'
+    element.style.height = Math.min(element.scrollHeight, 400) + 'px'
   }, [input])
 
-  // Handle character change — reset conversation
+  const resetConversationState = useCallback(() => {
+    setConversationId(null)
+    conversationIdRef.current = null
+    setMessages([])
+    setError(null)
+    liveRef.current = null
+    setPendingFirstMessage(null)
+  }, [])
+
+  const clearActiveConversation = useCallback(() => {
+    const currentId = conversationIdRef.current
+    try {
+      sessionStorage.removeItem(activeConversationStorageKey)
+      if (currentId) sessionStorage.removeItem(pendingMessageStorageKey(currentId))
+    } catch { /* ignore */ }
+    resetConversationState()
+  }, [activeConversationStorageKey, pendingMessageStorageKey, resetConversationState])
+
+  // Handle character change — reset conversation.
   const handleCharacterChange = useCallback((id: string) => {
     setCharacterId(id)
-    setConversationId(null)
-    setMessages([])
-    setError(null)
-  }, [])
+    clearActiveConversation()
+  }, [clearActiveConversation])
 
-  // Start new conversation
+  // Start new conversation without leaving an empty persisted conversation.
   const startNewConversation = useCallback(() => {
-    setConversationId(null)
-    setMessages([])
-    setError(null)
+    clearActiveConversation()
     setShowConversations(false)
     textareaRef.current?.focus()
-  }, [])
+  }, [clearActiveConversation])
 
-  // Resume a conversation
   const resumeConversation = useCallback(async (conv: CharacterChatConversationSummary) => {
     try {
       const full = await api.characterChat.getConversation(storyId, conv.id)
-      setCharacterId(full.characterId)
-      setPersona(full.persona)
-      setStoryPointId(full.storyPointFragmentId)
-      setConversationId(full.id)
-      setMessages(full.messages.map((m) => {
-        if (m.role === 'assistant') {
-          return {
-            role: 'assistant' as const,
-            content: m.content,
-            ...(m.reasoning ? { reasoning: m.reasoning } : {}),
-          }
-        }
-        return { role: 'user' as const, content: m.content }
-      }))
+      installConversation(full)
+      try { sessionStorage.setItem(activeConversationStorageKey, full.id) } catch { /* ignore */ }
       setError(null)
       setShowConversations(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load conversation')
+    } catch (resumeError) {
+      setError(resumeError instanceof Error ? resumeError.message : 'Failed to load conversation')
     }
-  }, [storyId])
+  }, [activeConversationStorageKey, installConversation, pendingMessageStorageKey, resetConversationState, storyId])
 
-  // Send a message
+  // Restore the conversation that was open in this branch so a page reload can
+  // reattach to its server-owned run.
+  useEffect(() => {
+    let cancelled = false
+    resetConversationState()
+
+    let saved: string | null = null
+    try { saved = sessionStorage.getItem(activeConversationStorageKey) } catch { /* ignore */ }
+    if (!saved) return
+
+    void api.characterChat.getConversation(storyId, saved).then((conversation) => {
+      if (cancelled) return
+      installConversation(conversation)
+
+      let pending: string | null = null
+      try { pending = sessionStorage.getItem(pendingMessageStorageKey(conversation.id)) } catch { /* ignore */ }
+
+      if (!pending) return
+
+      if (conversation.messages.length === 0) {
+        // The browser reloaded after creating the scope but before the POST
+        // reached the server. Reconstruct the optimistic turn and continue it.
+        setMessages([
+          { role: 'user', content: pending },
+          { role: 'assistant', content: '' },
+        ])
+        liveRef.current = { role: 'assistant', content: '' }
+        setPendingFirstMessage(pending)
+      } else {
+        // The server already accepted the turn (possibly still running).
+        // Let useRunStream reattach; resending would duplicate the user message.
+        try { sessionStorage.removeItem(pendingMessageStorageKey(conversation.id)) } catch { /* ignore */ }
+      }
+    }).catch(() => {
+      try { sessionStorage.removeItem(activeConversationStorageKey) } catch { /* ignore */ }
+    })
+
+    return () => { cancelled = true }
+  }, [activeConversationStorageKey, installConversation, storyId])
+
+  const startExistingConversationTurn = useCallback(async (conversationIdToUse: string, text: string) => {
+    await run.start((clientRequestId) =>
+      api.characterChat.chat(
+        storyId,
+        conversationIdToUse,
+        text,
+        clientRequestId,
+      ),
+    )
+  }, [run.start, storyId])
+
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isStreaming || !characterId) return
+    if (!text || isStreaming || !characterId || branchId === undefined) return
 
     setInput('')
     setError(null)
+    liveRef.current = { role: 'assistant', content: '' }
+    setMessages(previous => [
+      ...previous,
+      { role: 'user', content: text },
+      { role: 'assistant', content: '' },
+    ])
 
-    const userMessage: ChatMessage = { role: 'user', content: text }
-    const updatedMessages = [...messages, userMessage]
-    setMessages(updatedMessages)
-
-    // Add placeholder assistant message
-    const emptyAssistant: AssistantMessage = { role: 'assistant', content: '' }
-    setMessages([...updatedMessages, emptyAssistant])
-    setIsStreaming(true)
-
-    try {
-      // Create conversation on first message if needed
-      let activeConvId = conversationId
-      if (!activeConvId) {
-        const conv = await api.characterChat.createConversation(storyId, {
+    if (!conversationId) {
+      // Two-phase first send: create the scope now; start the run only after
+      // React has rendered useRunStream with that concrete conversation id.
+      setPendingFirstMessage(text)
+      try {
+        const conversation = await api.characterChat.createConversation(storyId, {
           characterId,
           persona,
           storyPointFragmentId: storyPointId,
         })
-        activeConvId = conv.id
-        setConversationId(conv.id)
+        conversationIdRef.current = conversation.id
+        try {
+          sessionStorage.setItem(activeConversationStorageKey, conversation.id)
+          sessionStorage.setItem(pendingMessageStorageKey(conversation.id), text)
+        } catch { /* ignore */ }
+        setConversationId(conversation.id)
+      } catch (createError) {
+        setPendingFirstMessage(null)
+        setMessages(previous => previous.slice(0, Math.max(0, previous.length - 2)))
+        setInput(text)
+        setError(createError instanceof Error ? createError.message : 'Failed to create conversation')
       }
+      return
+    }
 
-      // Build API messages (text only)
-      const apiMessages = updatedMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }))
-
-      const stream = await api.characterChat.chat(storyId, activeConvId, apiMessages)
-      const reader = stream.getReader()
-
-      let currentAssistant: AssistantMessage = { role: 'assistant', content: '' }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const event: ChatEvent = value
-
-        switch (event.type) {
-          case 'text':
-            currentAssistant = {
-              ...currentAssistant,
-              content: currentAssistant.content + (event.text ?? ''),
-            }
-            break
-          case 'reasoning':
-            currentAssistant = {
-              ...currentAssistant,
-              reasoning: (currentAssistant.reasoning ?? '') + (event.text ?? ''),
-            }
-            break
-          case 'tool-call': {
-            const existing = currentAssistant.toolCalls ?? []
-            currentAssistant = {
-              ...currentAssistant,
-              toolCalls: [...existing, { id: event.id, toolName: event.toolName, args: event.args ?? {} }],
-            }
-            break
-          }
-          case 'tool-result': {
-            const calls = currentAssistant.toolCalls ?? []
-            currentAssistant = {
-              ...currentAssistant,
-              toolCalls: calls.map((tc) =>
-                tc.id === event.id ? { ...tc, result: event.result } : tc,
-              ),
-            }
-            break
-          }
-          case 'finish':
-            break
-        }
-
-        setMessages([...updatedMessages, currentAssistant])
-      }
-
-      setMessages([...updatedMessages, currentAssistant])
-
-      // Invalidate conversation list
-      await queryClient.invalidateQueries({ queryKey: ['character-chat-conversations', storyId] })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chat failed')
-      setMessages(updatedMessages)
+    try {
+      await startExistingConversationTurn(conversationId, text)
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      await refreshConversation().catch(() => {})
     } finally {
-      setIsStreaming(false)
       textareaRef.current?.focus()
     }
-  }, [input, isStreaming, characterId, messages, conversationId, storyId, persona, storyPointId, queryClient])
+  }, [
+    activeConversationStorageKey,
+    branchId,
+    characterId,
+    conversationId,
+    input,
+    isStreaming,
+    persona,
+    refreshConversation,
+    startExistingConversationTurn,
+    storyId,
+    storyPointId,
+  ])
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+  // Complete the first-send handoff only after useRunStream has been rendered
+  // with the newly created conversation id.
+  useEffect(() => {
+    if (!conversationId || pendingFirstMessage === null) return
+    const text = pendingFirstMessage
+    let cancelled = false
+
+    void startExistingConversationTurn(conversationId, text).catch(async (sendError) => {
+      if (cancelled) return
+      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      await refreshConversation().catch(() => {})
+    }).finally(() => {
+      if (!cancelled) {
+        try { sessionStorage.removeItem(pendingMessageStorageKey(conversationId)) } catch { /* ignore */ }
+        setPendingFirstMessage(null)
+        textareaRef.current?.focus()
+      }
+    })
+
+    return () => { cancelled = true }
+  }, [
+    conversationId,
+    pendingFirstMessage,
+    pendingMessageStorageKey,
+    refreshConversation,
+    startExistingConversationTurn,
+  ])
+
+  const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === 'Enter'
+      && !event.shiftKey
+      && !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault()
+      void handleSend()
     }
   }, [handleSend])
 
@@ -352,6 +510,12 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
             )
           })}
 
+          {run.isReconnecting && (
+            <div className="text-[0.625rem] text-muted-foreground italic">
+              Reconnecting — the character is still responding on the server.
+            </div>
+          )}
+
           {error && (
             <div className="text-xs text-destructive bg-destructive/5 rounded-lg p-3">
               {error}
@@ -376,26 +540,22 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
                   ? `Say something to ${selectedCharacter.name}...`
                   : 'Select a character first...'
               }
-              disabled={isStreaming || !characterId}
+              disabled={isStreaming || !characterId || branchId === undefined}
               className="min-h-[44px] max-h-[400px] resize-none text-[0.8125rem] bg-transparent
                 placeholder:italic placeholder:text-muted-foreground flex-1 border-border/30
                 focus-visible:ring-primary/20"
               rows={1}
               data-component-id="character-chat-input"
             />
-            <Button
-              size="icon"
-              className="size-9 shrink-0"
-              disabled={!input.trim() || isStreaming || !characterId}
-              onClick={handleSend}
-              data-component-id="character-chat-send"
-            >
-              {isStreaming ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-            </Button>
+            <ChatSendButton
+              isStreaming={isStreaming}
+              canSend={branchId !== undefined && !!input.trim() && !!characterId}
+              onSend={() => { void handleSend() }}
+              onStop={() => { void run.cancel() }}
+              stopLabel={`Stop ${selectedCharacter?.name ?? 'the character'}`}
+              idPrefix="character-chat"
+              size="md"
+            />
           </div>
 
           <p className="text-[0.625rem] text-muted-foreground text-center mt-2">

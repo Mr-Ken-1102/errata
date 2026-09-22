@@ -35,7 +35,6 @@ function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: 'A hero enters a forest.',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -131,6 +130,8 @@ describe('character chat endpoints', () => {
   })
 
   afterEach(async () => {
+    // Allow background conversation writes to finish before removing the directory
+    await new Promise((resolve) => setTimeout(resolve, 50))
     await cleanup()
   })
 
@@ -287,7 +288,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
@@ -329,7 +330,7 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Where should I go?' }],
+            message: 'Where should I go?',
           }),
         }),
       )
@@ -340,7 +341,7 @@ describe('character chat endpoints', () => {
       expect(reasoningEvent!.text).toContain('riddles')
     })
 
-    it('uses read-only tools (no write tools)', async () => {
+    it('exposes no repository tools across the character knowledge boundary', async () => {
       const story = makeStory()
       await createStory(dataDir, story)
       await createFragment(dataDir, story.id, makeFragment())
@@ -350,28 +351,25 @@ describe('character chat endpoints', () => {
 
       mockEmptyResponse()
 
-      await app.fetch(
+      const response = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
+      await response.text()
 
       expect(mockAgentCtor).toHaveBeenCalled()
       const config = mockAgentCtor.mock.calls[0][0]
       const toolNames = Object.keys(config.tools)
 
-      // Should have read tools but NOT write tools
-      expect(toolNames.some((n: string) => n.startsWith('get') || n.startsWith('list') || n.startsWith('search'))).toBe(true)
-      expect(toolNames).not.toContain('editProse')
-      expect(toolNames).not.toContain('createFragment')
-      expect(toolNames).not.toContain('deleteFragment')
+      expect(toolNames).toEqual([])
     })
 
-    it('includes character name in system prompt', async () => {
+    it('keeps character instructions in system prompt and sends character details as user context', async () => {
       const story = makeStory()
       await createStory(dataDir, story)
       await createFragment(dataDir, story.id, makeFragment())
@@ -381,20 +379,30 @@ describe('character chat endpoints', () => {
 
       mockEmptyResponse()
 
-      await app.fetch(
+      const response = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
+      await response.text()
 
       expect(mockAgentCtor).toHaveBeenCalled()
       const config = mockAgentCtor.mock.calls[0][0]
-      expect(config.instructions).toContain('Kael')
-      expect(config.instructions).toContain('riddles')
+      expect(config.instructions).not.toContain('Kael')
+      expect(config.instructions).not.toContain('riddles')
+
+      expect(mockAgentStream).toHaveBeenCalled()
+      const streamArgs = mockAgentStream.mock.calls[0][0]
+      expect(streamArgs.messages[0].role).toBe('user')
+      expect(streamArgs.messages[0].content).toContain('Character memory and conversation context')
+      expect(streamArgs.messages[0].content).toContain('Kael')
+      expect(streamArgs.messages[0].content).toContain('riddles')
+      expect(streamArgs.messages[0].content).not.toContain('A hero enters a forest.')
+      expect(streamArgs.messages.at(-1)).toEqual({ role: 'user', content: 'Hello' })
     })
 
     it('returns 404 when conversation does not exist', async () => {
@@ -406,14 +414,14 @@ describe('character chat endpoints', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello' }],
+            message: 'Hello',
           }),
         }),
       )
       expect(res.status).toBe(404)
     })
 
-    it('returns 422 when messages array is empty', async () => {
+    it('returns 422 when message is blank', async () => {
       const story = makeStory()
       await createStory(dataDir, story)
       await createFragment(dataDir, story.id, makeFragment())
@@ -425,7 +433,7 @@ describe('character chat endpoints', () => {
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: [] }),
+          body: JSON.stringify({ message: '   ' }),
         }),
       )
       expect(res.status).toBe(422)
@@ -441,18 +449,16 @@ describe('character chat endpoints', () => {
 
       mockSimpleResponse()
 
-      await app.fetch(
+      const response = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Hello Kael' }],
+            message: 'Hello Kael',
           }),
         }),
       )
-
-      // Wait for async persistence
-      await new Promise((r) => setTimeout(r, 100))
+      await response.text()
 
       const getRes = await app.fetch(
         new Request(`http://localhost/api/stories/${story.id}/character-chat/conversations/${conv.id}`),

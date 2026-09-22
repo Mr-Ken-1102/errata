@@ -1,12 +1,18 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useRunStream } from '@/hooks/use-run-stream'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { PenLine, ArrowRight, Pause, Compass, RefreshCw, Loader2, PenSquare, Type } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { SuggestionDirection, ClarifyQuestion, Clarification } from '@/lib/api/types'
+import { invalidateStoryContent } from '@/lib/branch-cache'
+import { qk, useActiveBranchId } from '@/lib/query-keys'
+import type { ChatEvent, RunStatus, SuggestionDirection, ClarifyQuestion, Clarification } from '@/lib/api/types'
 import { QuestionCard } from '@/components/generation/QuestionCard'
+import { PovSelect } from '@/components/generation/PovSelect'
+import { mergeDirectionSuggestions } from './direction-suggestions'
 
 // A round high enough that the server withholds the ask tool and must write —
 // used by "Skip & write" to proceed without answering.
@@ -24,7 +30,14 @@ type InputMode = 'freeform' | 'guided' | 'compose'
 interface InlineGenerationInputProps {
   storyId: string
   isGenerating: boolean
-  onGenerationStart: () => void
+  /**
+   * The active head passage of the current timeline (last section's active
+   * fragment). Directions are anchored to the passage they were generated
+   * against and only stay relevant while that passage is still the head — once
+   * the timeline advances, they're hidden.
+   */
+  latestFragmentId?: string
+  onGenerationStart: (prompt: string) => void
   onGenerationStream: (text: string) => void
   onGenerationThoughts?: (steps: ThoughtStep[]) => void
   onGenerationComplete: () => void
@@ -38,7 +51,8 @@ const DEFAULT_SCENE_SETTING_INSTRUCTION = "Continue the story without advancing 
 
 export function InlineGenerationInput({
   storyId,
-  isGenerating,
+  isGenerating: parentIsGenerating,
+  latestFragmentId,
   onGenerationStart,
   onGenerationStream,
   onGenerationThoughts,
@@ -46,6 +60,7 @@ export function InlineGenerationInput({
   onGenerationError,
 }: InlineGenerationInputProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
   const [composeInput, setComposeInput] = useState('')
   const [isComposing, setIsComposing] = useState(false)
@@ -54,9 +69,68 @@ export function InlineGenerationInput({
   const [pendingQuestions, setPendingQuestions] = useState<ClarifyQuestion[] | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const composeTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  // In-flight generation context, preserved across the clarify round trip.
-  const genCtxRef = useRef<{ input: string; clarifications: Clarification[]; round: number }>({ input: '', clarifications: [], round: 0 })
+  // In-flight generation context, preserved across clarify and page reload.
+  const genCtxRef = useRef<{
+    input: string
+    clarifications: Clarification[]
+    round: number
+    pendingQuestions?: ClarifyQuestion[]
+  }>({
+    input: '',
+    clarifications: [],
+    round: 0,
+  })
+  const contextStorageKey = useMemo(
+    () => `errata:generation:context:${storyId}:${branchId ?? ''}:inline-generation`,
+    [branchId, storyId],
+  )
+  const persistGenerationContext = useCallback((
+    context: {
+      input: string
+      clarifications: Clarification[]
+      round: number
+      pendingQuestions?: ClarifyQuestion[]
+    } | null,
+  ) => {
+    try {
+      if (context) sessionStorage.setItem(contextStorageKey, JSON.stringify(context))
+      else sessionStorage.removeItem(contextStorageKey)
+    } catch {
+      // Recovery state must never block writing.
+    }
+  }, [contextStorageKey])
+
+  useEffect(() => {
+    genCtxRef.current = { input: '', clarifications: [], round: 0 }
+    setInput('')
+    setPendingQuestions(null)
+
+    try {
+      const raw = sessionStorage.getItem(contextStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as {
+        input?: string
+        clarifications?: Clarification[]
+        round?: number
+        pendingQuestions?: ClarifyQuestion[]
+      }
+      if (typeof parsed.input !== 'string') return
+      genCtxRef.current = {
+        input: parsed.input,
+        clarifications: Array.isArray(parsed.clarifications) ? parsed.clarifications : [],
+        round: typeof parsed.round === 'number' ? parsed.round : 0,
+        ...(Array.isArray(parsed.pendingQuestions)
+          ? { pendingQuestions: parsed.pendingQuestions }
+          : {}),
+      }
+      setInput(parsed.input)
+      if (parsed.pendingQuestions?.length) {
+        setPendingQuestions(parsed.pendingQuestions)
+      }
+    } catch {
+      // Ignore stale recovery state.
+    }
+  }, [contextStorageKey])
 
   // Mode state with localStorage persistence
   const [mode, setMode] = useState<InputMode>(() => {
@@ -72,12 +146,28 @@ export function InlineGenerationInput({
   // Suggestion state
   const [suggestions, setSuggestions] = useState<SuggestionDirection[]>([])
   const [manualSuggestions, setManualSuggestions] = useState<SuggestionDirection[] | null>(null)
+  const [invalidatedAnalysisId, setInvalidatedAnalysisId] = useState<string | null>(null)
+  // The head passage the manual/prewriter directions were produced for. They
+  // stay live only while that passage is still the head (same rule as analysis
+  // directions), so advancing the timeline retires them too.
+  const [manualAnchor, setManualAnchor] = useState<string | undefined>(undefined)
   const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number | null>(null)
+  /**
+   * Whether the pressed card was already expanded when the press started.
+   *
+   * Live state can't answer that: pressing a button focuses it, focus expands the
+   * card, so by click time it always reads "open" and the first tap would commit
+   * unseen. Snapshotted on pointerdown, which precedes the focus. Null means no
+   * pointer was involved, where current state is honest — Tab focused the card in
+   * its own interaction.
+   */
+  const pressStartedExpandedRef = useRef<boolean | null>(null)
 
   // Poll librarian status to detect when analysis completes
   const { data: librarianStatus } = useQuery({
-    queryKey: ['librarian-status', storyId],
+    queryKey: qk.librarianStatus(storyId, branchId),
     queryFn: () => api.librarian.getStatus(storyId),
     refetchInterval: 5_000,
   })
@@ -91,17 +181,26 @@ export function InlineGenerationInput({
     // (librarian writes annotations to fragment.meta, so prose fragments must be re-fetched)
     if (prev === 'running' && (curr === 'idle' || curr === 'error')) {
       queryClient.invalidateQueries({ queryKey: ['librarian-analyses', storyId] })
-      queryClient.invalidateQueries({ queryKey: ['fragments', storyId, 'prose'] })
+      queryClient.invalidateQueries({ queryKey: qk.fragments(storyId, branchId, 'prose') })
     }
-  }, [librarianStatus?.runStatus, queryClient, storyId])
+  }, [librarianStatus?.runStatus, queryClient, storyId, branchId])
 
   // Query latest analysis for auto-populated directions
   const { data: analysesList } = useQuery({
-    queryKey: ['librarian-analyses', storyId],
+    queryKey: qk.librarianAnalyses(storyId, branchId),
     queryFn: () => api.librarian.listAnalyses(storyId),
   })
 
-  const latestAnalysisId = analysesList?.[0]?.directionsCount ? analysesList[0].id : null
+  // Only surface the newest analysis's directions while the passage it was
+  // generated against is still the timeline's head. Once a new passage is
+  // written (or the tail is deleted / a variation switched), the analysis no
+  // longer describes "what comes next" and its directions drop out — until the
+  // librarian re-analyses the new head.
+  const latestSummary = analysesList?.[0]
+  const latestAnalysisId =
+    latestSummary?.directionsCount && latestSummary.fragmentId === latestFragmentId
+      ? latestSummary.id
+      : null
 
   const { data: latestAnalysis } = useQuery({
     queryKey: ['librarian-analysis', storyId, latestAnalysisId],
@@ -115,16 +214,31 @@ export function InlineGenerationInput({
     [latestAnalysis?.directions],
   )
 
-  // Merge: prewriter/manual directions first, then append analysis directions (deduplicated by title)
+  // Merge: prewriter/manual directions first, then append analysis directions
+  // unless the user explicitly refreshed directions for this analysis. Manual
+  // directions only count while their anchor is still the head; analysisDirections
+  // is already head-gated via latestAnalysisId. Always replace (never just append)
+  // so directions clear once the head moves on.
   useEffect(() => {
-    const base = manualSuggestions ?? []
-    const baseTitles = new Set(base.map(s => s.title))
-    const extra = analysisDirections.filter(s => !baseTitles.has(s.title))
-    const merged = [...base, ...extra]
-    if (merged.length > 0) {
-      setSuggestions(merged)
+    setSuggestions(mergeDirectionSuggestions({
+      manualSuggestions,
+      manualAnchor,
+      latestFragmentId,
+      analysisDirections,
+      latestAnalysisId,
+      invalidatedAnalysisId,
+    }))
+  }, [manualSuggestions, manualAnchor, analysisDirections, latestFragmentId, latestAnalysisId, invalidatedAnalysisId])
+
+  const updateActiveSuggestion = useCallback((nextIndex: number | null) => {
+    setActiveSuggestionIndex(nextIndex)
+  }, [])
+
+  useEffect(() => {
+    if (activeSuggestionIndex !== null && activeSuggestionIndex >= suggestions.length) {
+      updateActiveSuggestion(null)
     }
-  }, [manualSuggestions, analysisDirections])
+  }, [activeSuggestionIndex, suggestions.length, updateActiveSuggestion])
 
   const handleModeChange = (newMode: InputMode) => {
     setMode(newMode)
@@ -168,147 +282,254 @@ export function InlineGenerationInput({
   }, [composeInput])
 
   const prewriterDirectionsRef = useRef<SuggestionDirection[] | null>(null)
+  const accumulatedTextRef = useRef('')
+  const accumulatedReasoningRef = useRef('')
+  const thoughtStepsRef = useRef<ThoughtStep[]>([])
+  const askedQuestionsRef = useRef<ClarifyQuestion[] | null>(null)
+  const rejectionReasonRef = useRef<string | null>(null)
+  const thoughtsDirtyRef = useRef(false)
+  const rafScheduledRef = useRef(false)
+  const startedLocallyRef = useRef(false)
 
-  const handleGenerateWithInput = useCallback(async (generationInput: string, clarifications: Clarification[] = [], round = 0) => {
-    if (!generationInput.trim() || isGenerating) return
+  const flushGenerationView = useCallback((forceThoughts = false) => {
+    onGenerationStream(accumulatedTextRef.current)
+    if ((forceThoughts || thoughtsDirtyRef.current) && thoughtStepsRef.current.length > 0) {
+      onGenerationThoughts?.([...thoughtStepsRef.current])
+      thoughtsDirtyRef.current = false
+    }
+  }, [onGenerationStream, onGenerationThoughts])
 
-    onGenerationStart()
+  const scheduleGenerationViewFlush = useCallback(() => {
+    if (rafScheduledRef.current) return
+    rafScheduledRef.current = true
+    requestAnimationFrame(() => {
+      flushGenerationView()
+      rafScheduledRef.current = false
+    })
+  }, [flushGenerationView])
+
+  const handleRunEvent = useCallback((event: ChatEvent) => {
+    if (event.type === 'run-start') {
+      accumulatedTextRef.current = ''
+      accumulatedReasoningRef.current = ''
+      thoughtStepsRef.current = []
+      askedQuestionsRef.current = null
+      rejectionReasonRef.current = null
+      prewriterDirectionsRef.current = null
+      thoughtsDirtyRef.current = false
+
+      if (!startedLocallyRef.current) {
+        onGenerationStart(genCtxRef.current.input)
+      }
+      startedLocallyRef.current = false
+      return
+    }
+
+    if (event.type === 'text') {
+      accumulatedTextRef.current += event.text
+    } else if (event.type === 'reasoning') {
+      accumulatedReasoningRef.current += event.text
+      const last = thoughtStepsRef.current[thoughtStepsRef.current.length - 1]
+      if (last && last.type === 'reasoning') {
+        last.text = accumulatedReasoningRef.current
+      } else {
+        thoughtStepsRef.current.push({ type: 'reasoning', text: accumulatedReasoningRef.current })
+      }
+      thoughtsDirtyRef.current = true
+    } else if (event.type === 'tool-call') {
+      accumulatedReasoningRef.current = ''
+      thoughtStepsRef.current.push({
+        type: 'tool-call',
+        id: event.id,
+        toolName: event.toolName,
+        args: event.args,
+      })
+      thoughtsDirtyRef.current = true
+    } else if (event.type === 'tool-result') {
+      thoughtStepsRef.current.push({
+        type: 'tool-result',
+        id: event.id,
+        toolName: event.toolName,
+        result: event.result,
+      })
+      thoughtsDirtyRef.current = true
+    } else if (event.type === 'prewriter-text') {
+      const last = thoughtStepsRef.current[thoughtStepsRef.current.length - 1]
+      if (last && last.type === 'prewriter-text') {
+        last.text += event.text
+      } else {
+        accumulatedReasoningRef.current = ''
+        thoughtStepsRef.current.push({ type: 'prewriter-text', text: event.text })
+      }
+      thoughtsDirtyRef.current = true
+    } else if (event.type === 'prewriter-reset') {
+      const last = thoughtStepsRef.current[thoughtStepsRef.current.length - 1]
+      if (last && last.type === 'prewriter-text') last.text = ''
+      thoughtsDirtyRef.current = true
+    } else if (event.type === 'prewriter-directions') {
+      prewriterDirectionsRef.current = event.directions
+    } else if (event.type === 'clarify-questions') {
+      askedQuestionsRef.current = event.questions
+      const nextContext = {
+        ...genCtxRef.current,
+        pendingQuestions: event.questions,
+      }
+      genCtxRef.current = nextContext
+      persistGenerationContext(nextContext)
+    } else if (event.type === 'generation-rejected') {
+      rejectionReasonRef.current = event.reason
+    } else if (event.type === 'phase') {
+      accumulatedReasoningRef.current = ''
+      thoughtStepsRef.current.push({ type: 'phase', phase: event.phase })
+      thoughtsDirtyRef.current = true
+    } else if (event.type === 'error') {
+      setError(event.error)
+    } else {
+      return
+    }
+
+    scheduleGenerationViewFlush()
+  }, [onGenerationStart, persistGenerationContext, scheduleGenerationViewFlush])
+
+  const handleRunSettled = useCallback(async (status: RunStatus, message?: string) => {
+    flushGenerationView(true)
+
+    if (askedQuestionsRef.current) {
+      setPendingQuestions(askedQuestionsRef.current)
+      if (message) setError(message)
+      onGenerationComplete()
+      return
+    }
+
+    if (rejectionReasonRef.current) {
+      setError(rejectionReasonRef.current)
+      persistGenerationContext(null)
+      onGenerationError()
+      return
+    }
+
+    if (status === 'error') {
+      setError(message ?? 'Generation failed')
+      persistGenerationContext(null)
+      onGenerationError()
+      return
+    }
+
+    if (status === 'cancelled') {
+      await invalidateStoryContent(queryClient, storyId)
+      persistGenerationContext(null)
+      onGenerationComplete()
+      return
+    }
+
+    await invalidateStoryContent(queryClient, storyId)
+
+    if (prewriterDirectionsRef.current?.length) {
+      const chain = queryClient.getQueryData<{ entries: Array<{ active: string }> }>(
+        qk.proseChain(storyId, branchId),
+      )
+      setManualAnchor(chain?.entries.at(-1)?.active ?? latestFragmentId)
+      setManualSuggestions(prewriterDirectionsRef.current)
+    }
+
+    setInput('')
+    persistGenerationContext(null)
+    onGenerationComplete()
+  }, [
+    branchId,
+    flushGenerationView,
+    latestFragmentId,
+    onGenerationComplete,
+    onGenerationError,
+    persistGenerationContext,
+    queryClient,
+    storyId,
+  ])
+
+  const run = useRunStream({
+    storyId,
+    branchId,
+    kind: 'generation',
+    scopeId: 'inline-generation',
+    onEvent: handleRunEvent,
+    onSettled: handleRunSettled,
+    recoverFullRunOnAttach: true,
+  })
+  const isGenerating = parentIsGenerating || run.isStreaming
+
+  const handleGenerateWithInput = useCallback(async (
+    generationInput: string,
+    clarifications: Clarification[] = [],
+    round = 0,
+  ) => {
+    if (!generationInput.trim() || isGenerating || branchId === undefined) return
+
+    onGenerationStart(generationInput)
+    startedLocallyRef.current = true
     setError(null)
     setPendingQuestions(null)
     prewriterDirectionsRef.current = null
-    genCtxRef.current = { input: generationInput, clarifications, round }
 
-    const ac = new AbortController()
-    abortRef.current = ac
-    let askedQuestions: ClarifyQuestion[] | null = null
+    const context = {
+      input: generationInput,
+      clarifications,
+      round,
+      pendingQuestions: undefined,
+    }
+    genCtxRef.current = context
+    persistGenerationContext(context)
 
     try {
-      const opts = clarifications.length || round > 0 ? { clarifications, clarifyRound: round } : undefined
-      const stream = await api.generation.generateAndSave(storyId, generationInput, ac.signal, opts)
-
-      const reader = stream.getReader()
-      let accumulatedText = ''
-      let accumulatedReasoning = ''
-      const thoughtSteps: ThoughtStep[] = []
-      let thoughtsDirty = false
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        if (value.type === 'text') {
-          accumulatedText += value.text
-        } else if (value.type === 'reasoning') {
-          accumulatedReasoning += value.text
-          const last = thoughtSteps[thoughtSteps.length - 1]
-          if (last && last.type === 'reasoning') {
-            last.text = accumulatedReasoning
-          } else {
-            thoughtSteps.push({ type: 'reasoning', text: accumulatedReasoning })
-          }
-          thoughtsDirty = true
-        } else if (value.type === 'tool-call') {
-          accumulatedReasoning = ''
-          thoughtSteps.push({ type: 'tool-call', id: value.id, toolName: value.toolName, args: value.args })
-          thoughtsDirty = true
-        } else if (value.type === 'tool-result') {
-          thoughtSteps.push({ type: 'tool-result', id: value.id, toolName: value.toolName, result: value.result })
-          thoughtsDirty = true
-        } else if (value.type === 'prewriter-text') {
-          const last = thoughtSteps[thoughtSteps.length - 1]
-          if (last && last.type === 'prewriter-text') {
-            last.text += value.text
-          } else {
-            accumulatedReasoning = ''
-            thoughtSteps.push({ type: 'prewriter-text', text: value.text })
-          }
-          thoughtsDirty = true
-        } else if (value.type === 'prewriter-reset') {
-          // Prewriter re-wrote the brief in a new step — clear the live block so
-          // it refills with the final version instead of showing it twice.
-          const last = thoughtSteps[thoughtSteps.length - 1]
-          if (last && last.type === 'prewriter-text') {
-            last.text = ''
-          }
-          thoughtsDirty = true
-        } else if (value.type === 'prewriter-directions') {
-          prewriterDirectionsRef.current = value.directions
-        } else if (value.type === 'clarify-questions') {
-          askedQuestions = value.questions
-        } else if (value.type === 'phase') {
-          accumulatedReasoning = ''
-          thoughtSteps.push({ type: 'phase', phase: value.phase })
-          thoughtsDirty = true
-        }
-
-        if (!rafScheduled) {
-          rafScheduled = true
-          const textSnapshot = accumulatedText
-          const stepsSnapshot = thoughtsDirty ? [...thoughtSteps] : null
-          thoughtsDirty = false
-          requestAnimationFrame(() => {
-            onGenerationStream(textSnapshot)
-            if (stepsSnapshot) onGenerationThoughts?.(stepsSnapshot)
-            rafScheduled = false
-          })
-        }
-      }
-
-      // Final flush
-      onGenerationStream(accumulatedText)
-      if (thoughtSteps.length > 0) onGenerationThoughts?.([...thoughtSteps])
-
-      // The prewriter asked clarifying questions instead of writing — surface
-      // them and wait for answers (no prose was produced this round).
-      if (askedQuestions) {
-        setPendingQuestions(askedQuestions)
-        onGenerationComplete()
-        return
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-
-      if (prewriterDirectionsRef.current?.length) {
-        setManualSuggestions(prewriterDirectionsRef.current)
-      }
-
-      setInput('')
-      onGenerationComplete()
-    } catch (err) {
-      // User-initiated abort — not an error
-      if (ac.signal.aborted) {
-        await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-        await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-        onGenerationComplete()
-      } else {
-        setError(err instanceof Error ? err.message : 'Generation failed')
-        onGenerationError()
-      }
-    } finally {
-      abortRef.current = null
+      await run.start((clientRequestId) => api.generation.generateAndSave(
+        storyId,
+        generationInput,
+        undefined,
+        {
+          clarifications,
+          clarifyRound: round,
+          clientRequestId,
+          scopeId: 'inline-generation',
+          ...(branchId ? { branchId } : {}),
+        },
+      ))
+    } catch (runError) {
+      startedLocallyRef.current = false
+      persistGenerationContext(null)
+      setError(runError instanceof Error ? runError.message : 'Generation failed')
+      onGenerationError()
     }
-  }, [storyId, isGenerating, onGenerationStart, onGenerationStream, onGenerationThoughts, onGenerationComplete, onGenerationError, queryClient])
+  }, [
+    branchId,
+    isGenerating,
+    onGenerationError,
+    onGenerationStart,
+    persistGenerationContext,
+    run.start,
+    storyId,
+  ])
 
   const handleGenerate = () => {
-    handleGenerateWithInput(input)
+    void handleGenerateWithInput(input)
   }
 
   const handleAnswers = useCallback((answers: Clarification[]) => {
-    const { input: gi, clarifications, round } = genCtxRef.current
+    const { input: generationInput, clarifications, round } = genCtxRef.current
     setPendingQuestions(null)
-    handleGenerateWithInput(gi, [...clarifications, ...answers], round + 1)
+    void handleGenerateWithInput(
+      generationInput,
+      [...clarifications, ...answers],
+      round + 1,
+    )
   }, [handleGenerateWithInput])
 
   const handleSkipQuestions = useCallback(() => {
-    const { input: gi, clarifications } = genCtxRef.current
+    const { input: generationInput, clarifications } = genCtxRef.current
     setPendingQuestions(null)
-    handleGenerateWithInput(gi, clarifications, FORCE_PROCEED_ROUND)
+    void handleGenerateWithInput(generationInput, clarifications, FORCE_PROCEED_ROUND)
   }, [handleGenerateWithInput])
 
   const handleStop = () => {
-    abortRef.current?.abort()
+    void run.cancel()
   }
 
   const handleCompose = async () => {
@@ -325,8 +546,7 @@ export function InlineGenerationInput({
         meta: { generationMode: 'manual' },
       })
       await api.proseChain.addSection(storyId, fragment.id)
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
+      await invalidateStoryContent(queryClient, storyId)
       setComposeInput('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add section')
@@ -338,8 +558,16 @@ export function InlineGenerationInput({
   const handleFetchSuggestions = async () => {
     setIsFetchingSuggestions(true)
     setSuggestionError(null)
+    setInvalidatedAnalysisId(latestAnalysisId)
+    setManualAnchor(undefined)
+    setManualSuggestions(null)
+    setSuggestions([])
+    updateActiveSuggestion(null)
     try {
-      const result = await api.generation.suggestDirections(storyId)
+      const result = await api.generation.proposeDirections(storyId)
+      // proposeDirections is computed from the current story state, i.e. the
+      // current head — anchor to it so these retire when the timeline advances.
+      setManualAnchor(latestFragmentId)
       setManualSuggestions(result.suggestions)
     } catch (err) {
       setSuggestionError(err instanceof Error ? err.message : 'Failed to load suggestions')
@@ -364,7 +592,7 @@ export function InlineGenerationInput({
   })()
 
   return (
-    <div className="relative mt-2" data-component-id="inline-generation-root">
+    <div className="relative" data-component-id="inline-generation-root">
       {/* Error */}
       {(error || suggestionError) && (
         <div className="text-sm text-destructive mb-3 font-sans">
@@ -372,9 +600,15 @@ export function InlineGenerationInput({
         </div>
       )}
 
+      {run.isReconnecting && (
+        <div className="text-xs text-muted-foreground mb-3 font-sans italic">
+          Reconnecting — generation is still running on the server.
+        </div>
+      )}
+
       {/* Clarifying questions from the prewriter */}
       {pendingQuestions && (
-        <div className="mb-3 overflow-hidden rounded-xl border border-border/40 bg-card/40">
+        <div className="mb-3 overflow-hidden rounded-xl border border-border/40 bg-card shadow-md">
           <QuestionCard
             questions={pendingQuestions}
             onSubmit={handleAnswers}
@@ -387,10 +621,10 @@ export function InlineGenerationInput({
       {/* Unified input container */}
       <div
         className={cn(
-          'relative rounded-xl border transition-all duration-300',
+          'relative rounded-xl border transition-all duration-300 shadow-lg bg-card',
           (mode === 'freeform' || mode === 'compose') && isFocused
-            ? 'border-primary/25 shadow-[0_0_0_1px_var(--primary)/8%,0_2px_12px_-2px_var(--primary)/6%] bg-card/60'
-            : 'border-border/30 bg-card/20 hover:border-border/50 hover:bg-card/30',
+            ? 'border-primary/25 shadow-[0_0_0_1px_var(--primary)/8%,0_4px_16px_-2px_var(--primary)/6%]'
+            : 'border-border/30 hover:border-border/50',
         )}
       >
         {/* Mode toggle */}
@@ -446,9 +680,9 @@ export function InlineGenerationInput({
             rows={1}
             className="w-full resize-none bg-transparent border-none outline-none px-4 pt-1.5 pb-2 font-prose text-[0.9375rem] leading-relaxed text-foreground placeholder:text-muted-foreground placeholder:italic disabled:opacity-40"
             style={{ minHeight: '44px', maxHeight: '200px', overflowY: 'auto', scrollbarWidth: 'none' }}
-            disabled={isGenerating}
+            disabled={isGenerating || branchId === undefined}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 handleGenerate()
               }
@@ -458,43 +692,43 @@ export function InlineGenerationInput({
 
         {/* Guided mode */}
         {mode === 'guided' && (
-          <div className="px-3 pt-1.5 pb-2">
+          <div className="px-2.5 pt-1 pb-1.5">
             {/* Quick action buttons */}
-            <div className="flex gap-2 mb-2">
+            <div className="flex gap-1.5 mb-1.5">
               <button
                 type="button"
-                disabled={isGenerating}
+                disabled={isGenerating || branchId === undefined}
                 onClick={() => handleGenerateWithInput(story?.settings.guidedContinuePrompt || DEFAULT_CONTINUE_INSTRUCTION)}
                 className={cn(
-                  'group flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border transition-all duration-200 text-left',
+                  'group flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all duration-200 text-left',
                   'border-border/30 hover:border-primary/30 hover:bg-primary/[0.04]',
                   'disabled:opacity-40 disabled:pointer-events-none',
                 )}
               >
-                <div className="shrink-0 size-7 rounded-md bg-primary/10 flex items-center justify-center transition-colors group-hover:bg-primary/15">
+                <div className="shrink-0 size-6 rounded bg-primary/10 flex items-center justify-center transition-colors group-hover:bg-primary/15">
                   <ArrowRight className="size-3.5 text-primary/70" />
                 </div>
-                <div>
-                  <div className="text-[0.8125rem] font-medium text-foreground/85 font-sans leading-tight">Continue</div>
-                  <div className="text-[0.65625rem] text-muted-foreground leading-snug mt-0.5">Advance the plot naturally</div>
+                <div className="min-w-0">
+                  <div className="text-[0.75rem] font-medium text-foreground/85 font-sans leading-tight truncate">Continue</div>
+                  <div className="hidden sm:block text-[0.625rem] text-muted-foreground leading-tight mt-0.5 truncate">Advance plot</div>
                 </div>
               </button>
               <button
                 type="button"
-                disabled={isGenerating}
+                disabled={isGenerating || branchId === undefined}
                 onClick={() => handleGenerateWithInput(story?.settings.guidedSceneSettingPrompt || DEFAULT_SCENE_SETTING_INSTRUCTION)}
                 className={cn(
-                  'group flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border transition-all duration-200 text-left',
+                  'group flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all duration-200 text-left',
                   'border-border/30 hover:border-primary/30 hover:bg-primary/[0.04]',
                   'disabled:opacity-40 disabled:pointer-events-none',
                 )}
               >
-                <div className="shrink-0 size-7 rounded-md bg-primary/10 flex items-center justify-center transition-colors group-hover:bg-primary/15">
+                <div className="shrink-0 size-6 rounded bg-primary/10 flex items-center justify-center transition-colors group-hover:bg-primary/15">
                   <Pause className="size-3.5 text-primary/70" />
                 </div>
-                <div>
-                  <div className="text-[0.8125rem] font-medium text-foreground/85 font-sans leading-tight">Scene-setting</div>
-                  <div className="text-[0.65625rem] text-muted-foreground leading-snug mt-0.5">Atmosphere &amp; character moments</div>
+                <div className="min-w-0">
+                  <div className="text-[0.75rem] font-medium text-foreground/85 font-sans leading-tight truncate">Scene-setting</div>
+                  <div className="hidden sm:block text-[0.625rem] text-muted-foreground leading-tight mt-0.5 truncate">Atmosphere</div>
                 </div>
               </button>
             </div>
@@ -503,10 +737,10 @@ export function InlineGenerationInput({
             {suggestions.length === 0 && !isFetchingSuggestions && (
               <button
                 type="button"
-                disabled={isGenerating}
+                disabled={isGenerating || branchId === undefined}
                 onClick={handleFetchSuggestions}
                 className={cn(
-                  'w-full flex items-center justify-center gap-2 py-2 rounded-lg transition-all duration-200',
+                  'w-full flex items-center justify-center gap-2 py-1.5 rounded-md transition-all duration-200',
                   'text-[0.75rem] font-sans text-muted-foreground hover:text-foreground/70',
                   'border border-dashed border-border/40 hover:border-primary/25 hover:bg-primary/[0.02]',
                   'disabled:opacity-40 disabled:pointer-events-none',
@@ -527,12 +761,12 @@ export function InlineGenerationInput({
 
             {/* Suggestion cards */}
             {suggestions.length > 0 && !isFetchingSuggestions && (
-              <div className="space-y-1.5">
+              <div className="relative">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[0.625rem] text-muted-foreground font-sans uppercase tracking-wider">Directions</span>
                   <button
                     type="button"
-                    disabled={isGenerating}
+                    disabled={isGenerating || branchId === undefined}
                     onClick={handleFetchSuggestions}
                     aria-label="Refresh directions"
                     className="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
@@ -540,48 +774,144 @@ export function InlineGenerationInput({
                     <RefreshCw className="size-3" />
                   </button>
                 </div>
-                {suggestions.map((s, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      'group/card flex items-stretch rounded-lg border transition-all duration-200',
-                      'border-border/25 hover:border-primary/25 bg-card/30 hover:bg-primary/[0.03]',
-                      isGenerating && 'opacity-40 pointer-events-none',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      disabled={isGenerating}
-                      onClick={() => { setManualSuggestions(null); setSuggestions([]); handleGenerateWithInput(s.instruction) }}
-                      className="flex-1 text-left px-3.5 py-2.5 min-w-0"
-                    >
-                      <div className="text-[0.8125rem] font-medium text-foreground/80 font-sans leading-snug group-hover/card:text-foreground/90 transition-colors">
-                        {s.title}
-                      </div>
-                      <div className="text-[0.71875rem] text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
-                        {s.description}
-                      </div>
-                    </button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          disabled={isGenerating}
-                          onClick={() => {
-                            setInput(s.instruction)
-                            handleModeChange('freeform')
-                            requestAnimationFrame(() => textareaRef.current?.focus())
-                          }}
-                          aria-label={`Edit ${s.title} before sending`}
-                          className="shrink-0 flex items-center justify-center w-9 border-l border-border/20 text-muted-foreground/40 hover:text-foreground/60 hover:bg-muted/30 transition-colors rounded-r-lg"
+                <div
+                  className="flex flex-col gap-1"
+                  // Only a mouse previews on hover. A pointer that arrives by
+                  // touching fires enter at contact and leave on release, both
+                  // before the click — one press would expand, collapse, commit.
+                  onPointerLeave={(event) => {
+                    if (event.pointerType === 'mouse') updateActiveSuggestion(null)
+                  }}
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      updateActiveSuggestion(null)
+                    }
+                  }}
+                >
+                  {suggestions.map((s, i) => {
+                    const isExpanded = activeSuggestionIndex === i
+                    const chooseSuggestion = () => {
+                      setManualSuggestions(null)
+                      setSuggestions([])
+                      handleGenerateWithInput(s.instruction)
+                    }
+
+                    /**
+                     * One rule for every pointer, hence no device branch: a card
+                     * commits only if it was already showing what it will do.
+                     * Hover satisfies that ahead of a click; a touch expands
+                     * first and commits on the second tap. A finger that misses
+                     * the edit control then merely opens a collapsed card.
+                     */
+                    const activateSuggestion = () => {
+                      const wasExpanded = pressStartedExpandedRef.current ?? isExpanded
+                      pressStartedExpandedRef.current = null
+                      if (wasExpanded) chooseSuggestion()
+                      else updateActiveSuggestion(i)
+                    }
+                    // Ahead of the focus this same press will trigger.
+                    const recordPressStart = () => { pressStartedExpandedRef.current = isExpanded }
+
+                    return (
+                      <div
+                        key={i}
+                        onPointerEnter={(event) => {
+                          if (event.pointerType === 'mouse') updateActiveSuggestion(i)
+                        }}
+                        onFocus={() => updateActiveSuggestion(i)}
+                        className={cn(
+                          'group/card w-full overflow-hidden rounded-md border bg-card/90',
+                          'transition-[border-color,background-color,box-shadow] duration-200',
+                          'border-border/25 hover:border-primary/25 hover:bg-card hover:shadow-md',
+                          'focus-within:border-primary/25 focus-within:bg-card focus-within:shadow-md',
+                          isExpanded && 'border-primary/25 bg-card shadow-md',
+                          isGenerating && 'opacity-40',
+                        )}
+                      >
+                        {/* Top bar (one-line layout) */}
+                        <div className="flex w-full items-stretch min-h-8 pointer-coarse:min-h-11">
+                          <button
+                            type="button"
+                            disabled={isGenerating || branchId === undefined}
+                            onPointerDown={recordPressStart}
+                            onClick={activateSuggestion}
+                            aria-expanded={isExpanded}
+                            className="flex-1 text-left px-2.5 py-1.5 min-w-0"
+                          >
+                            <div className="flex min-w-0 items-baseline gap-2">
+                              <span className="shrink-0 text-[0.75rem] font-medium text-foreground/80 font-sans leading-tight group-hover/card:text-foreground/90 transition-colors">
+                                {s.title}
+                              </span>
+                              <span
+                                className={cn(
+                                  'min-w-0 truncate text-[0.6875rem] text-muted-foreground leading-tight transition-[opacity,max-width] duration-300 ease-in-out',
+                                  isExpanded
+                                    ? 'opacity-0 max-w-0 pointer-events-none'
+                                    : 'opacity-100 max-w-full',
+                                )}
+                              >
+                                {s.description}
+                              </span>
+                            </div>
+                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isGenerating || branchId === undefined}
+                                onClick={() => {
+                                  // The textarea mounts with the mode change, and iOS
+                                  // opens the keyboard only for a focus() inside the
+                                  // gesture's own task — which a rAF callback is not.
+                                  // flushSync commits the mount while the click still owns
+                                  // the task.
+                                  // The textarea mounts with the mode change, and iOS
+                                  // opens the keyboard only for a focus() inside the
+                                  // gesture's own task — which a rAF callback is not.
+                                  // flushSync commits the mount while the click still owns
+                                  // the task.
+                                  flushSync(() => {
+                                    setInput(s.instruction)
+                                    handleModeChange('freeform')
+                                  })
+                                  const el = textareaRef.current
+                                  el?.focus()
+                                  // Editing continues at the end, not in front of the text.
+                                  el?.setSelectionRange(el.value.length, el.value.length)
+                                }}
+                                aria-label={`Edit ${s.title} before sending`}
+                                // 32px suits a cursor; 44px is the WCAG 2.5.5 floor.
+                                className="shrink-0 flex items-center justify-center w-8 pointer-coarse:w-11 border-l border-border/20 text-muted-foreground/40 hover:text-foreground/60 hover:bg-muted/30 transition-colors rounded-r-md"
+                              >
+                                <PenSquare className="size-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">Edit before sending</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        {/* Bottom expanded description */}
+                        <div
+                          className={cn(
+                            'grid overflow-hidden transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                            isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+                          )}
                         >
-                          <PenSquare className="size-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="left">Edit before sending</TooltipContent>
-                    </Tooltip>
-                  </div>
-                ))}
+                          <div className="min-h-0 overflow-hidden">
+                            <button
+                              type="button"
+                              disabled={isGenerating || branchId === undefined}
+                              onPointerDown={recordPressStart}
+                              onClick={activateSuggestion}
+                              className="block w-full px-2.5 pb-2 text-left text-[0.6875rem] text-muted-foreground leading-normal whitespace-normal break-words disabled:cursor-default"
+                            >
+                              {s.description}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -601,7 +931,7 @@ export function InlineGenerationInput({
             style={{ minHeight: '100px', maxHeight: '400px', overflowY: 'auto', scrollbarWidth: 'none' }}
             disabled={isComposing}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 handleCompose()
               }
@@ -654,6 +984,13 @@ export function InlineGenerationInput({
                 </select>
               </div>
             )}
+            {mode !== 'compose' && (
+              <PovSelect
+                storyId={storyId}
+                branchId={branchId}
+                disabled={isGenerating}
+              />
+            )}
           </div>
 
           {/* Right: Write/Stop/Add button + shortcut hint */}
@@ -679,7 +1016,7 @@ export function InlineGenerationInput({
                 size="sm"
                 className="h-7 text-xs gap-1.5 rounded-lg font-medium"
                 onClick={handleGenerate}
-                disabled={!input.trim()}
+                disabled={!input.trim() || branchId === undefined}
                 data-component-id="inline-generation-submit"
               >
                 <PenLine className="size-3" />

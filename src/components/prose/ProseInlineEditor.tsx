@@ -82,7 +82,7 @@ export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCan
         className="prose-content w-full resize-none overflow-hidden bg-transparent p-0 text-foreground outline-none border-none caret-primary disabled:opacity-60"
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); onCancel(); return }
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit() }
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); commit() }
         }}
       />
       <div className="mt-3 flex items-center gap-2 border-t border-border/20 pt-2">

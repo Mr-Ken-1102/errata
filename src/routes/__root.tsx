@@ -29,7 +29,7 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
       { name: 'description', content: 'Errata is a model-assisted writing workspace for developing stories, characters, knowledge, and prose.' },
       { title: 'Errata' },
     ],
@@ -95,7 +95,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: fontScript }} />
         <script dangerouslySetInnerHTML={{ __html: fontLoaderScript }} />
       </head>
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body className="min-h-dvh bg-background text-foreground antialiased">
         {children}
         <Scripts />
       </body>

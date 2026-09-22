@@ -6,7 +6,9 @@ This document covers the full data model and API surface you need to write an im
 
 ## Fragment Schema
 
-Every fragment is a JSON object conforming to this schema. Source: `src/server/fragments/schema.ts`.
+Every fragment is a JSON object conforming to this schema. The canonical shared contract is `src/contracts/story.ts`; `src/server/fragments/schema.ts` remains as a compatibility façade for existing server imports.
+
+Fragment mutation operations and their validation/apply/revert result shapes live in `src/contracts/fragment-changes.ts`. The server's `change-operations.ts` and `change-apply.ts` modules add storage behavior while retaining compatibility exports for existing imports.
 
 | Field | Type | Default | Constraints | Description |
 |---|---|---|---|---|
@@ -61,9 +63,9 @@ Plugins can register additional types with custom prefixes via the `FragmentType
 ### Type semantics
 
 - **prose** — Story text. Ordered by the prose chain. Not directly included via the fragment list; the prose chain controls which prose fragments appear in context.
-- **character** — Character definitions. Bio, personality, appearance. Sticky characters are always in context; non-sticky ones appear in a shortlist the LLM can query.
+- **character** — Character definitions. Bio, personality, appearance. Sticky characters are always in context; non-sticky ones appear as catalog rows the LLM can query.
 - **guideline** — Writing instructions. Sticky by default — they're always in context. Used for style rules, tone guidance, dos/don'ts.
-- **knowledge** — World-building facts, lore, rules. Non-sticky by default; the LLM sees a shortlist and can read full entries via tools.
+- **knowledge** — World-building facts, lore, rules. Non-sticky by default; the LLM sees catalog rows and can read full entries via tools.
 - **image** / **icon** — Media references. Content is typically a base64 data URL or external URL.
 - **marker** — Chapter markers. Inserted into the prose chain to delimit chapters. Renders no content into LLM context but structures the story timeline.
 
@@ -105,7 +107,7 @@ When writing an importer, you can generate IDs yourself as long as they match th
 
 ## Prose Chain
 
-The prose chain is the ordered sequence of prose sections that make up the story. Source: `src/server/fragments/prose-chain.ts`, schema in `src/server/fragments/schema.ts`.
+The prose chain is the ordered sequence of prose sections that make up the story. Source: `src/server/fragments/prose-chain.ts`, with separate `StoredProseChain` and expanded `ProseChainResponse` contracts in `src/contracts/story.ts`.
 
 ### Schema
 
@@ -273,7 +275,7 @@ All endpoints are prefixed with `/api`. Request/response bodies are JSON.
 | `POST` | `/stories` | `{ name, description, coverImage? }` | `StoryMeta` |
 | `GET` | `/stories` | — | `StoryMeta[]` |
 | `GET` | `/stories/:storyId` | — | `StoryMeta` |
-| `PUT` | `/stories/:storyId` | `{ name, description, summary?, coverImage? }` | `StoryMeta` |
+| `PUT` | `/stories/:storyId` | `{ name, description, coverImage? }` | `StoryMeta` |
 | `DELETE` | `/stories/:storyId` | — | `{ ok: true }` |
 | `PATCH` | `/stories/:storyId/settings` | Partial settings object | `StoryMeta` |
 
@@ -283,9 +285,6 @@ Important story settings for prose generation and memory include:
 - `maxSteps`
 - `disableThinking`
 - `contextCompact: { type: 'proseLimit' | 'maxTokens' | 'maxCharacters', value }`
-- `summarizationThreshold`
-- `summaryCompact: { maxCharacters, targetCharacters }`
-- `enableHierarchicalSummary`
 - `disableLibrarianAutoAnalysis`
 - `autoApplyLibrarianSuggestions`
 - `disableLibrarianDirections`
@@ -370,7 +369,7 @@ Deletion requires the fragment to be archived first (422 error otherwise).
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `POST` | `/stories/:storyId/generate` | `{ input, saveResult?, mode?, fragmentId? }` | Streaming NDJSON/text response with `text`, `reasoning`, `tool-call`, `tool-result`, `phase`, `finish`, and optional prewriter events |
-| `POST` | `/stories/:storyId/suggest-directions` | `{ count? }` | `{ suggestions }` |
+| `POST` | `/stories/:storyId/propose-directions` | `{ count? }` | `{ suggestions }` |
 
 Generation modes:
 
@@ -778,7 +777,8 @@ async function importChat(storyName: string, messages: Array<{ role: string; con
 
 | File | Purpose |
 |---|---|
-| `src/server/fragments/schema.ts` | Zod schemas for Fragment, ProseChain, StoryMeta, Branches |
+| `src/contracts/story.ts` | Canonical shared Zod schemas and types for Fragment, stored/API prose chains, StoryMeta, and Branches |
+| `src/server/fragments/schema.ts` | Compatibility re-export for the original server-local contract path |
 | `src/server/fragments/storage.ts` | Filesystem CRUD for stories and fragments |
 | `src/server/fragments/prose-chain.ts` | Prose chain read/write operations |
 | `src/server/fragments/registry.ts` | Fragment type registry (built-in types + plugin types) |

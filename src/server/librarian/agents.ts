@@ -4,8 +4,11 @@ import { agentBlockRegistry } from '../agents/agent-block-registry'
 import { modelRoleRegistry } from '../agents/model-role-registry'
 import { instructionRegistry } from '../instructions'
 import type { AgentDefinition } from '../agents/types'
+import { coreProposalToolNames, coreReadToolNames, createFragmentTools } from '../llm/tools'
+import { getStory } from '../fragments/storage'
+import { createEmptyCollector, createLibrarianOnlineTools, listLibrarianAnalyzeToolNames } from './analysis-tools'
 import { runLibrarian } from './agent'
-import { librarianChat } from './chat'
+import { librarianChat, createLibrarianChatBespokeTools } from './chat'
 import { refineFragment } from './refine'
 import { optimizeCharacter } from './optimize-character'
 import { transformProseSelection } from './prose-transform'
@@ -43,6 +46,7 @@ const ChatInputSchema = z.object({
     content: z.string(),
   })),
   maxSteps: z.int().positive().optional(),
+  povCharacterId: z.string().optional(),
 })
 
 const OptimizeCharacterInputSchema = z.object({
@@ -59,6 +63,7 @@ const ProseTransformInputSchema = z.object({
   sourceContent: z.string().optional(),
   contextBefore: z.string().optional(),
   contextAfter: z.string().optional(),
+  povCharacterId: z.string().optional(),
 })
 
 declare module '../agents/agent-instance' {
@@ -76,7 +81,7 @@ const analyzeDefinition: AgentDefinition<typeof AnalyzeInputSchema> = {
   description: 'Analyze a prose fragment for continuity signals and summary updates.',
   inputSchema: AnalyzeInputSchema,
   run: async (ctx, input) => {
-    return runLibrarian(ctx.dataDir, ctx.storyId, input.fragmentId)
+    return runLibrarian(ctx.dataDir, ctx.storyId, input.fragmentId, { abortSignal: ctx.abortSignal })
   },
 }
 
@@ -86,7 +91,7 @@ const refineDefinition: AgentDefinition<typeof RefineInputSchema> = {
   inputSchema: RefineInputSchema,
   allowedCalls: ['librarian.analyze'],
   run: async (ctx, input) => {
-    return refineFragment(ctx.dataDir, ctx.storyId, input)
+    return refineFragment(ctx.dataDir, ctx.storyId, input, { abortSignal: ctx.abortSignal })
   },
 }
 
@@ -95,7 +100,7 @@ const optimizeCharacterDefinition: AgentDefinition<typeof OptimizeCharacterInput
   description: 'Optimize a character sheet using depth-focused writing methodology.',
   inputSchema: OptimizeCharacterInputSchema,
   run: async (ctx, input) => {
-    return optimizeCharacter(ctx.dataDir, ctx.storyId, input)
+    return optimizeCharacter(ctx.dataDir, ctx.storyId, input, { abortSignal: ctx.abortSignal })
   },
 }
 
@@ -105,7 +110,7 @@ const chatDefinition: AgentDefinition<typeof ChatInputSchema> = {
   inputSchema: ChatInputSchema,
   allowedCalls: ['librarian.refine', 'librarian.analyze', 'librarian.optimize-character'],
   run: async (ctx, input) => {
-    return librarianChat(ctx.dataDir, ctx.storyId, input)
+    return librarianChat(ctx.dataDir, ctx.storyId, input, { abortSignal: ctx.abortSignal })
   },
 }
 
@@ -114,7 +119,7 @@ const proseTransformDefinition: AgentDefinition<typeof ProseTransformInputSchema
   description: 'Transform a selected prose span using librarian model guidance.',
   inputSchema: ProseTransformInputSchema,
   run: async (ctx, input) => {
-    return transformProseSelection(ctx.dataDir, ctx.storyId, input)
+    return transformProseSelection(ctx.dataDir, ctx.storyId, input, { abortSignal: ctx.abortSignal })
   },
 }
 
@@ -146,7 +151,17 @@ export function registerLibrarianAgents(): void {
     displayName: 'Librarian Analyze',
     description: 'Analyzes prose fragments for continuity signals and summary updates.',
     createDefaultBlocks: createLibrarianAnalyzeBlocks,
-    availableTools: ['updateSummary', 'reportMentions', 'reportContradictions', 'suggestFragment', 'updateFragment', 'reportTimeline', 'suggestDirections'],
+    availableTools: listLibrarianAnalyzeToolNames(),
+    resolveTools: async ({ dataDir, storyId }) => {
+      const story = await getStory(dataDir, storyId)
+      return createLibrarianOnlineTools(createEmptyCollector(), {
+        dataDir,
+        storyId,
+        disableDirections: story?.settings.disableLibrarianDirections === true,
+        disableSuggestions: story?.settings.disableLibrarianSuggestions === true,
+        customFragmentTypes: story?.settings.customFragmentTypes,
+      })
+    },
     buildPreviewContext: buildAnalyzePreviewContext,
   })
 
@@ -156,10 +171,17 @@ export function registerLibrarianAgents(): void {
     description: 'Conversational librarian assistant with write-enabled fragment tools.',
     createDefaultBlocks: createLibrarianChatBlocks,
     availableTools: [
-      'getFragment', 'listFragments', 'searchFragments', 'listFragmentTypes',
-      'createFragment', 'updateFragment', 'editFragment', 'deleteFragment',
-      'editProse', 'getStorySummary', 'updateStorySummary', 'reanalyzeFragment', 'optimizeCharacter',
+      ...coreReadToolNames(),
+      ...coreProposalToolNames(),
+      'invokeAgent',
+      'inspectRun',
+      'readContinuity',
+      'setCharacterVoice',
     ],
+    resolveTools: ({ dataDir, storyId }) => ({
+      ...createFragmentTools(dataDir, storyId, { readOnly: false }),
+      ...createLibrarianChatBespokeTools(dataDir, storyId),
+    }),
     buildPreviewContext: buildChatPreviewContext,
   })
 
@@ -169,10 +191,10 @@ export function registerLibrarianAgents(): void {
     description: 'Refines non-prose fragments using story context and fragment tools.',
     createDefaultBlocks: createLibrarianRefineBlocks,
     availableTools: [
-      'getFragment', 'listFragments', 'searchFragments', 'listFragmentTypes',
-      'createFragment', 'updateFragment', 'editFragment', 'deleteFragment',
-      'editProse', 'getStorySummary', 'updateStorySummary',
+      ...coreReadToolNames(),
+      ...coreProposalToolNames(),
     ],
+    resolveTools: ({ dataDir, storyId }) => createFragmentTools(dataDir, storyId, { readOnly: false }),
     buildPreviewContext: buildRefinePreviewContext,
   })
 
@@ -182,10 +204,10 @@ export function registerLibrarianAgents(): void {
     description: 'Optimizes character sheets using depth-focused writing methodology (causality, Egri dimensions, friction, contrast).',
     createDefaultBlocks: createOptimizeCharacterBlocks,
     availableTools: [
-      'getFragment', 'listFragments', 'searchFragments', 'listFragmentTypes',
-      'createFragment', 'updateFragment', 'editFragment', 'deleteFragment',
-      'editProse', 'getStorySummary', 'updateStorySummary',
+      ...coreReadToolNames(),
+      ...coreProposalToolNames(),
     ],
+    resolveTools: ({ dataDir, storyId }) => createFragmentTools(dataDir, storyId, { readOnly: false }),
     buildPreviewContext: buildOptimizeCharacterPreviewContext,
   })
 

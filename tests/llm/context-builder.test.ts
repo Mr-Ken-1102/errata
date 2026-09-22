@@ -4,13 +4,19 @@ import { createTempDir, makeTestSettings } from '../setup'
 import {
   createStory,
   createFragment,
+  getFragment,
 } from '@/server/fragments/storage'
 import { addProseSection } from '@/server/fragments/prose-chain'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
+import { saveAnalysis } from '@/server/librarian/storage'
+import { analysisSourceRevision } from '@/server/librarian/continuity-source'
+import { SUMMARY_CONTRACT_VERSION } from '@/server/librarian/summary-projection'
 import {
   buildContext,
   buildContextState,
   assembleMessages,
+  canReadFragments,
+  fragmentCatalogContent,
   createDefaultBlocks,
   compileBlocks,
   addCacheBreakpoints,
@@ -31,7 +37,6 @@ function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: 'The hero embarked on a journey.',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -87,7 +92,6 @@ describe('context-builder', () => {
     expect(msg).toBeDefined()
     expect(msg!.content).toContain('Test Story')
     expect(msg!.content).toContain('A test story')
-    expect(msg!.content).toContain('The hero embarked on a journey.')
   })
 
   it('includes recent prose fragments in context', async () => {
@@ -158,7 +162,7 @@ describe('context-builder', () => {
     expect(msg!.content).toContain('Magic requires blood sacrifice.')
   })
 
-  it('includes non-sticky guidelines as shortlist only', async () => {
+  it('includes non-sticky guidelines as catalog rows only', async () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
@@ -175,7 +179,7 @@ describe('context-builder', () => {
     const messages = await buildContext(dataDir, story.id, 'Continue')
     const msg = messages.find((m) => m.role === 'user')
 
-    // Shortlist should contain id and description but not full content
+    // Catalog should contain id and description but not full content
     expect(msg!.content).toContain('gl-0002')
     expect(msg!.content).toContain('Point of view constraints')
     expect(msg!.content).not.toContain('Always use third person limited.')
@@ -297,10 +301,12 @@ describe('context-builder', () => {
     const msg = messages.find((m) => m.role === 'user')
 
     expect(msg!.content).toContain('Elena is a fierce warrior with red hair.')
-    expect(msg!.content).toContain('## Characters')
+    expect(msg!.content).toContain('## User Fragments')
+    expect(msg!.content).toContain('### Characters')
+    expect(msg!.content).toContain('#### Elena')
   })
 
-  it('includes non-sticky characters as shortlist only', async () => {
+  it('includes non-sticky characters as catalog rows only', async () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
@@ -317,24 +323,284 @@ describe('context-builder', () => {
     const messages = await buildContext(dataDir, story.id, 'Continue')
     const msg = messages.find((m) => m.role === 'user')
 
-    // Shortlist should contain id and description but not full content
+    // Catalog should contain id and description but not full content
     expect(msg!.content).toContain('ch-0002')
     expect(msg!.content).toContain('The antagonist')
     expect(msg!.content).not.toContain('The dark lord rules with an iron fist.')
   })
 
-  it('includes fragment tool availability in system message', async () => {
+  it('carries non-sticky characters mentioned in recent prose as full sheets, not catalog rows', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    const character = makeFragment({
+      id: 'ch-0002',
+      type: 'character',
+      name: 'Villain',
+      description: 'The antagonist',
+      content: 'The dark lord rules with an iron fist.',
+      sticky: false,
+    })
+    await createFragment(dataDir, story.id, character)
+
+    // Prose the librarian annotated as mentioning the villain.
+    const prose = makeFragment({
+      id: 'pr-0002',
+      type: 'prose',
+      name: 'Ch1',
+      content: 'They marched on the keep.',
+      order: 1,
+      meta: { annotations: [{ type: 'mention', fragmentId: 'ch-0002', text: 'dark lord' }] },
+    })
+    await createFragment(dataDir, story.id, prose)
+
+    const state = await buildContextState(dataDir, story.id, 'Continue')
+    expect((state.recentCharacters ?? []).map((c) => c.id)).toContain('ch-0002')
+    expect(state.characterCatalog.map((c) => c.id)).not.toContain('ch-0002')
+
+    const blocks = createDefaultBlocks(state)
+    const recent = findBlock(blocks, 'fragment-recent')
+    expect(recent).toBeDefined()
+    expect(recent!.content).toContain('## Recent Fragments')
+    expect(recent!.content).toContain('### Characters')
+    expect(recent!.content).toContain('The dark lord rules with an iron fist.')
+  })
+
+  it('uses an explicit receipt read as a one-turn bridge before librarian annotations exist', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    const character = makeFragment({
+      id: 'ch-0003',
+      type: 'character',
+      name: 'Scout',
+      description: 'A cautious scout',
+      content: 'The scout hides a silver compass.',
+      sticky: false,
+    })
+    await createFragment(dataDir, story.id, character)
+
+    const prose = makeFragment({
+      id: 'pr-0003',
+      type: 'prose',
+      name: 'Ch1',
+      content: 'The path narrowed under the old trees.',
+      order: 1,
+      meta: {
+        contextReceipt: {
+          version: 1,
+          entries: [{ fragmentId: 'ch-0003', access: 'read', actor: 'writer', reason: 'explicit-read' }],
+        },
+      },
+    })
+    await createFragment(dataDir, story.id, prose)
+
+    const state = await buildContextState(dataDir, story.id, 'Continue')
+    expect((state.recentCharacters ?? []).map((c) => c.id)).toContain('ch-0003')
+    expect(state.characterCatalog.map((c) => c.id)).not.toContain('ch-0003')
+
+    const blocks = createDefaultBlocks(state)
+    const recent = findBlock(blocks, 'fragment-recent')
+    expect(recent).toBeDefined()
+    expect(recent!.content).toContain('### Characters')
+    expect(recent!.content).toContain('The scout hides a silver compass.')
+  })
+
+  it('does not let inherited full context renew itself through a receipt', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    const character = makeFragment({
+      id: 'ch-0003',
+      type: 'character',
+      name: 'Scout',
+      description: 'A cautious scout',
+      content: 'The scout hides a silver compass.',
+      sticky: false,
+    })
+    await createFragment(dataDir, story.id, character)
+
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'pr-0002',
+      type: 'prose',
+      name: 'Earlier',
+      content: 'The scout checked the path.',
+      order: 1,
+      meta: {
+        contextReceipt: {
+          version: 1,
+          entries: [{
+            fragmentId: 'ch-0003',
+            access: 'read',
+            actor: 'writer',
+            reason: 'explicit-read',
+          }],
+        },
+      },
+    }))
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'pr-0003',
+      type: 'prose',
+      name: 'Latest',
+      content: 'The road continued north.',
+      order: 2,
+      meta: {
+        contextReceipt: {
+          version: 1,
+          entries: [{
+            fragmentId: 'ch-0003',
+            access: 'full',
+            actor: 'writer',
+            reason: 'recent-context',
+          }],
+        },
+      },
+    }))
+
+    const state = await buildContextState(dataDir, story.id, 'Continue')
+    expect((state.recentCharacters ?? []).map((c) => c.id)).not.toContain('ch-0003')
+    expect(state.characterCatalog.map((c) => c.id)).toContain('ch-0003')
+  })
+
+  it('promotes recently mentioned non-sticky knowledge to recentKnowledge and formats it', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    const knowledge = makeFragment({
+      id: 'kn-0002',
+      type: 'knowledge',
+      name: 'Necronomicon',
+      description: 'Ancient spellbook',
+      content: 'Contains dark forbidden spells.',
+      sticky: false,
+    })
+    await createFragment(dataDir, story.id, knowledge)
+
+    // Prose the librarian annotated as mentioning the knowledge.
+    const prose = makeFragment({
+      id: 'pr-0002',
+      type: 'prose',
+      name: 'Ch1',
+      content: 'They found the book.',
+      order: 1,
+      meta: { annotations: [{ type: 'mention', fragmentId: 'kn-0002', text: 'spellbook' }] },
+    })
+    await createFragment(dataDir, story.id, prose)
+
+    const state = await buildContextState(dataDir, story.id, 'Continue')
+    expect((state.recentKnowledge ?? []).map((k) => k.id)).toContain('kn-0002')
+    expect(state.knowledgeCatalog.map((k) => k.id)).not.toContain('kn-0002')
+
+    const blocks = createDefaultBlocks(state)
+    const recent = findBlock(blocks, 'fragment-recent')
+    expect(recent).toBeDefined()
+    expect(recent!.content).toContain('### Knowledge')
+    expect(recent!.content).toContain('Contains dark forbidden spells.')
+  })
+
+  it('injects story custom fragment types as sticky, recent, and catalog context', async () => {
+    const story = makeStory({
+      settings: {
+        ...makeTestSettings(),
+        customFragmentTypes: [
+          {
+            type: 'location',
+            name: 'Locations',
+            description: 'Places in the story',
+            icon: 'MapPin',
+            showInSidebar: true,
+          },
+        ],
+      },
+    })
+    await createStory(dataDir, story)
+
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'loc-0001',
+      type: 'location',
+      name: 'Crystal Library',
+      description: 'A bright archive',
+      content: 'Every shelf hums with captured starlight.',
+      sticky: true,
+    }))
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'loc-0002',
+      type: 'location',
+      name: 'Forgotten Bridge',
+      description: 'A dangerous crossing',
+      content: 'The bridge stones remember every betrayal.',
+      sticky: false,
+    }))
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'loc-0003',
+      type: 'location',
+      name: 'Ash Market',
+      description: 'A market below the city',
+      content: 'The Ash Market trades in debts and sealed names.',
+      sticky: false,
+    }))
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'pr-0002',
+      type: 'prose',
+      name: 'Ch1',
+      content: 'They descended below the city.',
+      order: 1,
+      meta: { annotations: [{ type: 'mention', fragmentId: 'loc-0003', text: 'market' }] },
+    }))
+
+    const state = await buildContextState(dataDir, story.id, 'Continue')
+    expect((state.stickyCustomFragments ?? []).map((f) => f.id)).toContain('loc-0001')
+
+    const recentLocations = (state.recentCustomFragments ?? []).find((group) => group.type === 'location')
+    expect(recentLocations?.fragments.map((f) => f.id)).toEqual(['loc-0003'])
+
+    const catalogLocations = (state.customFragmentCatalogs ?? []).find((group) => group.type === 'location')
+    expect(catalogLocations?.fragments.map((f) => f.id)).toEqual(['loc-0002'])
+
+    const blocks = createDefaultBlocks(state)
+    const sticky = findBlock(blocks, 'user-fragments')
+    expect(sticky).toBeDefined()
+    expect(sticky!.content).toContain('## User Fragments')
+    expect(sticky!.content).toContain('### Locations')
+    expect(sticky!.content).toContain('#### Crystal Library')
+    expect(sticky!.content).toContain('Every shelf hums with captured starlight.')
+
+    const recent = findBlock(blocks, 'fragment-recent')
+    expect(recent).toBeDefined()
+    expect(recent!.content).toContain('### Locations')
+    expect(recent!.content).toContain('The Ash Market trades in debts and sealed names.')
+
+    const catalog = findBlock(blocks, 'fragment-catalog')
+    expect(catalog).toBeDefined()
+    expect(catalog!.content).toContain('## Fragment Catalog')
+    expect(catalog!.content).toContain('one-line catalog row, not the full fragment')
+    expect(catalog!.content).toContain('### Locations')
+    expect(catalog!.content).toContain('loc-0002')
+    expect(catalog!.content).toContain('A dangerous crossing')
+    expect(catalog!.content).not.toContain('The bridge stones remember every betrayal.')
+    expect(catalog!.fragmentContext).toEqual({
+      mode: 'summary-index',
+      scope: 'catalog',
+      fragmentType: 'mixed',
+      fragmentIds: ['loc-0002'],
+    })
+  })
+
+  it('carries tool usage policy without enumerating a tool catalog', async () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
     const messages = await buildContext(dataDir, story.id, 'Continue')
     const sysMsg = messages.find((m) => m.role === 'system')!
 
-    // System message should list available tools (built-in types have llmTools: false)
+    // Tool names/descriptions are delivered via the SDK schema, so the system
+    // message holds only usage policy — never a catalog that could drift from
+    // the agent's actually-enabled tools.
     expect(sysMsg.content).not.toContain('getCharacter')
     expect(sysMsg.content).not.toContain('listCharacters')
-    expect(sysMsg.content).toContain('listFragmentTypes')
-    expect(sysMsg.content).toContain('creative writing assistant')
+    expect(sysMsg.content).not.toContain('listFragmentTypes')
+    expect(sysMsg.content).toContain('retrieve the full details')
+    expect(sysMsg.content).toContain('fiction writer')
   })
 
   it('includes only prose before target fragment when proseBeforeFragmentId is set', async () => {
@@ -366,8 +632,14 @@ describe('context-builder', () => {
   })
 
   it('omits story summary when excludeStorySummary is true', async () => {
-    const story = makeStory({ summary: 'Late events that should not leak into regenerate context.' })
+    const story = makeStory()
     await createStory(dataDir, story)
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'sm-authored',
+      type: 'summary',
+      name: 'Author overview',
+      content: 'Late events that should not leak into regenerate context.',
+    }))
 
     const messages = await buildContext(dataDir, story.id, 'Regenerate this section', {
       excludeStorySummary: true,
@@ -378,8 +650,8 @@ describe('context-builder', () => {
     expect(user.content).not.toContain('Late events that should not leak into regenerate context.')
   })
 
-  it('renders summary fragments into the context and filters by coverageEnd when summaryBeforeFragmentId is set', async () => {
-    const story = makeStory({ summary: '' })
+  it('renders source-current analysis memory before the recent prose window', async () => {
+    const story = makeStory()
     await createStory(dataDir, story)
 
     const proseIds = ['pr-0001', 'pr-0002', 'pr-0003', 'pr-0004']
@@ -395,39 +667,109 @@ describe('context-builder', () => {
       await addProseSection(dataDir, story.id, fragment.id)
     }
 
-    // Summary fragment covering up to pr-0002 — should appear in the context
-    // when target is pr-0003.
+    const first = await getFragment(dataDir, story.id, 'pr-0001')
+    await saveAnalysis(dataDir, story.id, {
+      id: 'la-first',
+      createdAt: new Date().toISOString(),
+      fragmentId: 'pr-0001',
+      sourceRevision: analysisSourceRevision(first!),
+      summaryUpdate: 'By then, Summary A had happened.',
+      summaryContractVersion: SUMMARY_CONTRACT_VERSION,
+      mentions: [], contradictions: [], fragmentChangeProposals: [], timelineEvents: [],
+    })
+
+    const messages = await buildContext(dataDir, story.id, 'Regenerate C', {
+      proseBeforeFragmentId: 'pr-0003',
+      excludeFragmentId: 'pr-0003',
+      contextCompact: { type: 'proseLimit', value: 1 },
+    })
+    const joined = messages.map(m => m.content).join('\n')
+
+    expect(joined).toContain('By then, Summary A had happened.')
+    expect(joined).toContain('## End of Story Summary')
+    expect(joined).not.toContain('Passage 3')
+  })
+
+  it('keeps the complete continuity fold outside the bounded writer view', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+    const passage = makeFragment({ id: 'pr-0001', type: 'prose', content: 'Passage 1', order: 1 })
+    await createFragment(dataDir, story.id, passage)
+    await addProseSection(dataDir, story.id, passage.id)
+    const storedPassage = (await getFragment(dataDir, story.id, passage.id))!
+
+    await saveAnalysis(dataDir, story.id, {
+      id: 'la-continuity-full-fold',
+      createdAt: new Date().toISOString(),
+      fragmentId: passage.id,
+      sourceRevision: analysisSourceRevision(storedPassage),
+      summaryUpdate: '',
+      mentions: [], contradictions: [], fragmentChangeProposals: [], timelineEvents: [],
+      continuityProjection: {
+        version: 2,
+        scene: { transition: 'continue', line: 'present' },
+        stateOperations: Array.from({ length: 30 }, (_, index) => ({
+          stateKey: `condition_${index}`,
+          action: 'set' as const,
+          subject: { key: `condition_subject_${index}`, label: `Condition ${index}` },
+          facet: 'status',
+          certainty: 'explicit',
+          scope: 'cross-scene',
+          value: `Value ${index}`,
+          evidenceSegments: [1],
+          evidenceText: 'Passage 1',
+        })),
+        threadOperations: [],
+        threadFocus: [],
+        knowledgeOperations: [],
+      },
+    })
+
+    const state = await buildContextState(dataDir, story.id, 'Continue')
+
+    expect(state.continuityLedger?.currentState).toHaveLength(30)
+    expect(state.continuityView?.currentState).toHaveLength(24)
+    expect(state.continuityLedger?.currentState[0].stateKey).toBe('condition_0')
+    expect(state.continuityView?.currentState[0].stateKey).toBe('condition_6')
+  })
+
+  it('excludes unscoped authored summaries from target-relative context', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    const proseIds = ['pr-0001', 'pr-0002', 'pr-0003']
+    for (let i = 0; i < proseIds.length; i++) {
+      const fragment = makeFragment({
+        id: proseIds[i],
+        type: 'prose',
+        name: `Prose ${i + 1}`,
+        content: `Passage ${i + 1}`,
+        order: i + 1,
+      })
+      await createFragment(dataDir, story.id, fragment)
+      await addProseSection(dataDir, story.id, fragment.id)
+    }
+
     await createFragment(dataDir, story.id, makeFragment({
-      id: 'sm-a1a1a1',
+      id: 'sm-era001',
       type: 'summary',
-      name: 'Opening summary',
-      content: 'Summary A and B.',
+      name: 'Opening era',
+      content: 'Old arc summary.',
       placement: 'system',
-      meta: { chapterId: null, isEraSummary: false, coverageEnd: 'pr-0002' },
-    }))
-    // Summary fragment covering up to pr-0004 — should be excluded at pr-0003.
-    await createFragment(dataDir, story.id, makeFragment({
-      id: 'sm-b2b2b2',
-      type: 'summary',
-      name: 'Later summary',
-      content: 'Summary D.',
-      placement: 'system',
-      meta: { chapterId: null, isEraSummary: false, coverageEnd: 'pr-0004' },
+      meta: {},
     }))
 
     const messages = await buildContext(dataDir, story.id, 'Regenerate C', {
       proseBeforeFragmentId: 'pr-0003',
-      summaryBeforeFragmentId: 'pr-0003',
       excludeFragmentId: 'pr-0003',
     })
     const joined = messages.map(m => m.content).join('\n')
 
-    expect(joined).toContain('Summary A and B.')
-    expect(joined).not.toContain('Summary D.')
+    expect(joined).not.toContain('Old arc summary.')
   })
 
   it('omits the summary block when no summary fragments exist', async () => {
-    const story = makeStory({ summary: '' })
+    const story = makeStory()
     await createStory(dataDir, story)
 
     const proseA = makeFragment({ id: 'pr-0001', type: 'prose', name: 'A', content: 'A', order: 1 })
@@ -540,6 +882,42 @@ describe('context-builder', () => {
   })
 })
 
+/**
+ * A catalog row tells its reader how to expand it, and that sentence is only
+ * correct if it matches the reader's toolset. Three states, not two: a call site
+ * that never said is not the same claim as an agent that has no tools.
+ */
+describe('catalog expansion note', () => {
+  const sections = [{ type: 'character', label: 'Characters', fragments: [makeFragment({ id: 'ch-a', type: 'character', name: 'Alice', description: 'A person' })] }]
+
+  it('reads a silent call site as able to read, so no existing prompt changes', () => {
+    expect(canReadFragments({})).toBeUndefined()
+    expect(fragmentCatalogContent(sections, { canReadFragments: canReadFragments({}) }))
+      .toContain('Use readFragments')
+  })
+
+  it('tells an agent with no tools that a row is all it gets', () => {
+    expect(canReadFragments({ enabledTools: [] })).toBe(false)
+    const content = fragmentCatalogContent(sections, { canReadFragments: canReadFragments({ enabledTools: [] }) })
+    expect(content).not.toContain('readFragments')
+    expect(content).toContain('You cannot open these rows')
+  })
+
+  // An author disabling readFragments on an agent that otherwise has tools is
+  // the same situation as a toolless agent, and must read the same way.
+  it('follows the resolved toolset, not merely the presence of some tool', () => {
+    expect(canReadFragments({ enabledTools: ['listFragments', 'readProseChain'] })).toBe(false)
+    expect(canReadFragments({ enabledTools: ['readFragments'] })).toBe(true)
+    expect(fragmentCatalogContent(sections, { canReadFragments: canReadFragments({ enabledTools: ['listFragments'] }) }))
+      .toContain('You cannot open these rows')
+  })
+
+  it('keeps the editing wording for a reader that both reads and edits', () => {
+    expect(fragmentCatalogContent(sections, { editable: true, canReadFragments: true }))
+      .toContain('Read full fragments with readFragments before editing')
+  })
+})
+
 describe('context blocks', () => {
   let dataDir: string
   let cleanup: () => Promise<void>
@@ -570,7 +948,7 @@ describe('context blocks', () => {
       expect(ids).toContain('instructions')
       expect(ids).toContain('tools')
       expect(ids).toContain('story-info')
-      expect(ids).toContain('summary')
+      expect(ids).not.toContain('summary')
       expect(ids).toContain('author-input')
     })
 
@@ -591,7 +969,7 @@ describe('context blocks', () => {
     })
 
     it('omits summary block when summary is empty', async () => {
-      const story = makeStory({ summary: '' })
+      const story = makeStory()
       await createStory(dataDir, story)
 
       const state = await buildContextState(dataDir, story.id, 'Continue')
@@ -607,7 +985,7 @@ describe('context blocks', () => {
       const state = await buildContextState(dataDir, story.id, 'Continue')
       const blocks = createDefaultBlocks(state)
 
-      expect(findBlock(blocks, 'prose')).toBeUndefined()
+      expect(findBlock(blocks, 'prose-recent')).toBeUndefined()
     })
 
     it('creates prose block when prose fragments exist', async () => {
@@ -620,13 +998,15 @@ describe('context blocks', () => {
       const state = await buildContextState(dataDir, story.id, 'Continue')
       const blocks = createDefaultBlocks(state)
 
-      const prose = findBlock(blocks, 'prose')
+      const prose = findBlock(blocks, 'prose-recent')
       expect(prose).toBeDefined()
       expect(prose!.role).toBe('user')
+      expect(prose!.content).toContain('## Recent Prose\n\nHello world.\n\n## End of Recent Prose')
       expect(prose!.content).toContain('Hello world.')
+      expect(prose!.content).not.toMatch(/\n{3,}/)
     })
 
-    it('creates shortlist blocks for non-sticky fragments', async () => {
+    it('creates a fragment catalog for non-sticky fragments', async () => {
       const story = makeStory()
       await createStory(dataDir, story)
       await createFragment(dataDir, story.id, makeFragment({
@@ -641,20 +1021,24 @@ describe('context blocks', () => {
       const state = await buildContextState(dataDir, story.id, 'Continue')
       const blocks = createDefaultBlocks(state)
 
-      expect(findBlock(blocks, 'shortlist-guidelines')).toBeDefined()
-      expect(findBlock(blocks, 'shortlist-knowledge')).toBeDefined()
+      const catalog = findBlock(blocks, 'fragment-catalog')
+      expect(catalog).toBeDefined()
+      expect(catalog!.content).toContain('## Fragment Catalog')
+      expect(catalog!.content).toContain('one-line catalog row, not the full fragment')
+      expect(catalog!.content).toContain('### Guidelines')
+      expect(catalog!.content).toContain('### Knowledge')
+      expect(catalog!.content).toContain('gl-0001')
+      expect(catalog!.content).toContain('kn-0001')
     })
 
-    it('omits shortlist blocks when no non-sticky fragments of that type', async () => {
+    it('omits the fragment catalog when there are no catalog rows', async () => {
       const story = makeStory()
       await createStory(dataDir, story)
 
       const state = await buildContextState(dataDir, story.id, 'Continue')
       const blocks = createDefaultBlocks(state)
 
-      expect(findBlock(blocks, 'shortlist-guidelines')).toBeUndefined()
-      expect(findBlock(blocks, 'shortlist-knowledge')).toBeUndefined()
-      expect(findBlock(blocks, 'shortlist-characters')).toBeUndefined()
+      expect(findBlock(blocks, 'fragment-catalog')).toBeUndefined()
     })
 
     it('all blocks have source "builtin"', async () => {
@@ -669,56 +1053,6 @@ describe('context blocks', () => {
       }
     })
 
-    it('includes hierarchical chapter summaries when enabled', async () => {
-      const story = makeStory({
-        settings: makeTestSettings({
-          enableHierarchicalSummary: true,
-          contextCompact: { type: 'proseLimit', value: 2 },
-        }),
-      })
-      await createStory(dataDir, story)
-
-      const marker1 = makeFragment({ id: 'mk-0001', type: 'marker', name: 'Chapter 1', content: 'Meso summary for chapter 1.' })
-      const marker2 = makeFragment({ id: 'mk-0002', type: 'marker', name: 'Chapter 2', content: 'Meso summary for chapter 2.' })
-      const marker3 = makeFragment({ id: 'mk-0003', type: 'marker', name: 'Chapter 3', content: 'Meso summary for chapter 3.' })
-      const prose1 = makeFragment({ id: 'pr-0001', type: 'prose', content: 'Prose 1', order: 1 })
-      const prose2 = makeFragment({ id: 'pr-0002', type: 'prose', content: 'Prose 2', order: 2 })
-      const prose3 = makeFragment({ id: 'pr-0003', type: 'prose', content: 'Prose 3', order: 3 })
-      const prose4 = makeFragment({ id: 'pr-0004', type: 'prose', content: 'Prose 4', order: 4 })
-      const prose5 = makeFragment({ id: 'pr-0005', type: 'prose', content: 'Prose 5', order: 5 })
-
-      for (const fragment of [marker1, prose1, prose2, marker2, prose3, prose4, marker3, prose5]) {
-        await createFragment(dataDir, story.id, fragment)
-        await addProseSection(dataDir, story.id, fragment.id)
-      }
-
-      const state = await buildContextState(dataDir, story.id, 'Continue')
-      const blocks = createDefaultBlocks(state)
-
-      const chapterSummaries = findBlock(blocks, 'chapter-summaries')
-      expect(chapterSummaries).toBeDefined()
-      expect(chapterSummaries!.content).toContain('Meso summary for chapter 2.')
-      expect(chapterSummaries!.content).toContain('Meso summary for chapter 3.')
-      expect(chapterSummaries!.content).not.toContain('Meso summary for chapter 1.')
-    })
-
-    it('does not include chapter summaries block when hierarchical summaries are disabled', async () => {
-      const story = makeStory({
-        settings: makeTestSettings({
-          enableHierarchicalSummary: false,
-        }),
-      })
-      await createStory(dataDir, story)
-
-      const marker = makeFragment({ id: 'mk-0001', type: 'marker', name: 'Chapter 1', content: 'Meso summary.' })
-      await createFragment(dataDir, story.id, marker)
-      await addProseSection(dataDir, story.id, marker.id)
-
-      const state = await buildContextState(dataDir, story.id, 'Continue')
-      const blocks = createDefaultBlocks(state)
-
-      expect(findBlock(blocks, 'chapter-summaries')).toBeUndefined()
-    })
   })
 
   describe('compileBlocks', () => {

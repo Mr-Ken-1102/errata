@@ -19,9 +19,6 @@ import {
 } from '@/components/ui/sidebar'
 import {
   Info,
-  Users,
-  BookOpen,
-  Database,
   Image,
   Settings,
   ChevronRight,
@@ -42,7 +39,7 @@ import {
 } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { componentId } from '@/lib/dom-ids'
-import { FragmentTypeIcon } from '@/components/fragments/fragment-type-icons'
+import { FragmentTypeDisplayIcon, getFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
 
 export type SidebarSection =
   | 'story-info'
@@ -67,6 +64,7 @@ interface StorySidebarProps {
   storyId: string
   story: StoryMeta | undefined
   activeSection: SidebarSection
+  storySetupActive?: boolean
   onSectionChange: (section: SidebarSection) => void
   onLaunchWizard?: () => void
   enabledPanelPlugins: Array<{
@@ -101,16 +99,17 @@ function PluginIcon({ icon }: { icon?: { type: 'lucide'; name: string } | { type
 }
 
 const FRAGMENT_SECTIONS = [
-  { id: 'fragments' as const, label: 'All fragments', icon: Hash },
-  { id: 'guidelines' as const, label: 'Guidelines', icon: BookOpen },
-  { id: 'characters' as const, label: 'Characters', icon: Users },
-  { id: 'knowledge' as const, label: 'Knowledge', icon: Database },
+  { id: 'fragments' as const, label: 'All fragments', type: null },
+  { id: 'guidelines' as const, label: getFragmentTypeVisual('guideline').label, type: 'guideline' },
+  { id: 'characters' as const, label: getFragmentTypeVisual('character').label, type: 'character' },
+  { id: 'knowledge' as const, label: getFragmentTypeVisual('knowledge').label, type: 'knowledge' },
 ]
 
 export function StorySidebar({
   storyId,
   story,
   activeSection,
+  storySetupActive = false,
   onSectionChange,
   onLaunchWizard,
   enabledPanelPlugins,
@@ -169,7 +168,7 @@ export function StorySidebar({
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={activeSection === null}
+                  isActive={activeSection === null && !storySetupActive}
                   onClick={() => { onSectionChange(null); dismissMobileSheet() }}
                   tooltip="Story"
                   data-component-id="sidebar-story-link"
@@ -181,6 +180,7 @@ export function StorySidebar({
               {onLaunchWizard && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    isActive={storySetupActive}
                     onClick={() => { onLaunchWizard(); dismissMobileSheet() }}
                     tooltip="Story setup"
                     data-component-id="sidebar-story-setup"
@@ -248,7 +248,10 @@ export function StorySidebar({
                     tooltip={section.label}
                     data-component-id={componentId('sidebar-section', section.id)}
                   >
-                    <section.icon className="size-4" />
+                    {section.type
+                      ? <FragmentTypeDisplayIcon type={section.type} className="size-4" />
+                      : <Hash className="size-4" />
+                    }
                     <span>{section.label}</span>
                     <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                   </SidebarMenuButton>
@@ -262,7 +265,7 @@ export function StorySidebar({
                     tooltip={section.name}
                     data-component-id={componentId('sidebar-section', section.type)}
                   >
-                    <FragmentTypeIcon icon={section.icon} className="size-4" />
+                    <FragmentTypeDisplayIcon type={section.type} customTypes={story?.settings.customFragmentTypes} className="size-4" />
                     <span>{section.name}</span>
                     <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                   </SidebarMenuButton>

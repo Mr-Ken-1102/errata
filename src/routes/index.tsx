@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
+import { useWindowFileDrop } from '@/hooks/use-window-file-drop'
 import { useNavigate } from '@tanstack/react-router'
 import { api, type StoryMeta } from '@/lib/api'
+import { readClipboardText } from '@/lib/clipboard'
 import {
   parseErrataExport,
   readFileAsText,
@@ -38,9 +40,12 @@ import { useInteractionSounds } from '@/lib/interaction-sounds'
 import { ProviderList, ProviderPanel } from '@/components/settings/ProviderManager'
 import { AboutSection } from '@/components/settings/AboutPanel'
 import { DesktopUpdatesControls } from '@/components/settings/DesktopUpdatesPanel'
+import { PresetManager } from '@/components/presets/PresetManager'
 import { SectionHeading, SettingRow, SettingsCard, Toggle } from '@/components/settings/primitives'
-import { getStoryDisplayName } from '@/lib/story-display'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { getStoryDisplayName } from '@/lib/story-display'
+import type { FileDropDetails } from '@/lib/file-drop'
+import { createStoryArchiveFromFolderDrop } from '@/lib/story-folder-import'
 
 const THEME_OPTIONS = [
   { value: 'light' as const, label: 'Light', Icon: Sun },
@@ -63,11 +68,10 @@ function StoryListPage() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showProviders, setShowProviders] = useState(false)
-  const [fileDragOver, setFileDragOver] = useState(false)
-  const dragCounter = useRef(0)
 
   // Options section state
   const [showOptions, setShowOptions] = useState(false)
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [autoApplyLibrarian, setAutoApplyLibrarian] = useState(false)
   const [parsed, setParsed] = useState<ErrataExportData | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
@@ -78,6 +82,12 @@ function StoryListPage() {
     queryKey: ['stories'],
     queryFn: api.stories.list,
   })
+
+  const { data: presetsData } = useQuery({
+    queryKey: ['presets'],
+    queryFn: api.presets.list,
+  })
+  const availablePresets = presetsData?.presets ?? []
 
   const sortedStories = useMemo(() => {
     if (!stories) return []
@@ -118,6 +128,7 @@ function StoryListPage() {
     if (result) {
       setParsed(result)
       setParseError(null)
+      setSelectedPresetId(null)
       if (result._errata === 'fragment-bundle') {
         setSelectedIndices(new Set(result.fragments.map((_, i) => i)))
       }
@@ -154,12 +165,13 @@ function StoryListPage() {
   }, [handleImportTextChange])
 
   const handleImportPaste = useCallback(async () => {
-    try {
-      const text = await navigator.clipboard.readText()
-      handleImportTextChange(text)
-    } catch {
-      setParseError('Could not read clipboard. Try pasting manually with Ctrl+V.')
+    const text = await readClipboardText()
+    if (text === null) {
+      // Device-neutral on purpose; see the note in FragmentImportDialog.
+      setParseError('Could not read the clipboard. Paste into the box below instead.')
+      return
     }
+    handleImportTextChange(text)
   }, [handleImportTextChange])
 
   const toggleBundleItem = useCallback((index: number) => {
@@ -184,6 +196,7 @@ function StoryListPage() {
     setDescription('')
     setCoverImage(null)
     setShowOptions(false)
+    setSelectedPresetId(null)
     setAutoApplyLibrarian(false)
     setParsed(null)
     setParseError(null)
@@ -201,8 +214,16 @@ function StoryListPage() {
         await api.settings.update(newStory.id, { autoApplyLibrarianSuggestions: true })
       }
 
-      // 3. Import fragments if any are selected
-      if (parsed) {
+      // 3. Seed from a reusable preset or import a one-off bundle.
+      if (selectedPresetId) {
+        try {
+          await api.presets.apply(selectedPresetId, newStory.id)
+        } catch (error) {
+          // Avoid leaving an empty duplicate behind if the author retries.
+          await api.stories.delete(newStory.id).catch(() => {})
+          throw error
+        }
+      } else if (parsed) {
         const entries: FragmentExportEntry[] = parsed._errata === 'fragment'
           ? [{ ...(parsed as FragmentClipboardData).fragment, attachments: (parsed as FragmentClipboardData).attachments }]
           : (parsed as FragmentBundleData).fragments.filter((_, i) => selectedIndices.has(i))
@@ -237,42 +258,37 @@ function StoryListPage() {
   const [manualWizard, setManualWizard] = useState(false)
   const showOnboarding = manualWizard || (!configLoading && globalConfig && globalConfig.providers.length === 0)
 
-  // Global drag-and-drop for story archives (ZIP) and character card files (JSON + PNG)
-  useEffect(() => {
-    const hasFiles = (e: DragEvent) => {
-      if (!e.dataTransfer) return false
-      for (let i = 0; i < e.dataTransfer.types.length; i++) {
-        if (e.dataTransfer.types[i] === 'Files') return true
+  // Surfaces a failed drag-and-drop import (e.g. a corrupt .zip). Cleared on the
+  // next drop and auto-dismissed after a few seconds.
+  const [dropError, setDropError] = useState<string | null>(null)
+
+  // Global drag-and-drop for story archives (ZIP or unpacked folders) and character cards.
+  const handleFileDrop = useCallback(
+    async (files: File[], dropDetails: FileDropDetails) => {
+      setDropError(null)
+
+      // An unpacked Errata story has the same layout as a story ZIP. Package it
+      // in memory and reuse the existing atomic importer without adding another
+      // visible import mode to the library UI.
+      if (dropDetails.directoryNames.length > 0) {
+        try {
+          const folderResult = await createStoryArchiveFromFolderDrop(dropDetails)
+          if (folderResult.kind === 'archive') {
+            const newStory = await api.stories.importFromZip(folderResult.file)
+            await queryClient.invalidateQueries({ queryKey: ['stories'] })
+            navigate({ to: '/story/$storyId', params: { storyId: newStory.id } })
+          } else if (folderResult.kind === 'ambiguous') {
+            setDropError('Drop one unpacked Errata story folder at a time.')
+          } else if (folderResult.kind === 'invalid') {
+            setDropError(`Couldn't import "${folderResult.directoryName}": missing ${folderResult.missing}`)
+          }
+        } catch (err) {
+          setDropError(
+            `Couldn't import story folder: ${err instanceof Error ? err.message : 'invalid story archive'}`,
+          )
+        }
+        return
       }
-      return false
-    }
-
-    const handleDragEnter = (e: DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-      dragCounter.current++
-      if (dragCounter.current === 1) setFileDragOver(true)
-    }
-
-    const handleDragLeave = (e: DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-      dragCounter.current--
-      if (dragCounter.current === 0) setFileDragOver(false)
-    }
-
-    const handleDragOver = (e: DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-    }
-
-    const handleDrop = async (e: DragEvent) => {
-      e.preventDefault()
-      dragCounter.current = 0
-      setFileDragOver(false)
-
-      const files = e.dataTransfer?.files
-      if (!files || files.length === 0) return
 
       // Try PNG character cards first
       for (let i = 0; i < files.length; i++) {
@@ -371,24 +387,26 @@ function StoryListPage() {
             await queryClient.invalidateQueries({ queryKey: ['stories'] })
             navigate({ to: '/story/$storyId', params: { storyId: newStory.id } })
             return
-          } catch {
-            // Not a valid story archive
+          } catch (err) {
+            // A file that is clearly a .zip but fails to import is a real error,
+            // not a format mismatch — surface it rather than silently doing nothing.
+            setDropError(
+              `Couldn't import "${file.name}": ${err instanceof Error ? err.message : 'invalid story archive'}`,
+            )
+            return
           }
         }
       }
-    }
+    },
+    [navigate, queryClient],
+  )
+  const isFileDragging = useWindowFileDrop(handleFileDrop)
 
-    document.addEventListener('dragenter', handleDragEnter)
-    document.addEventListener('dragleave', handleDragLeave)
-    document.addEventListener('dragover', handleDragOver)
-    document.addEventListener('drop', handleDrop)
-    return () => {
-      document.removeEventListener('dragenter', handleDragEnter)
-      document.removeEventListener('dragleave', handleDragLeave)
-      document.removeEventListener('dragover', handleDragOver)
-      document.removeEventListener('drop', handleDrop)
-    }
-  }, [navigate, queryClient])
+  useEffect(() => {
+    if (!dropError) return
+    const timer = setTimeout(() => setDropError(null), 6000)
+    return () => clearTimeout(timer)
+  }, [dropError])
 
   if (showOnboarding) {
     return (
@@ -474,6 +492,51 @@ function StoryListPage() {
                   />
                 </div>
 
+                {availablePresets.length > 0 && (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">
+                      Start from
+                    </label>
+                    <div className="max-h-40 overflow-y-auto overflow-hidden rounded-lg border border-border/40 divide-y divide-border/20">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPresetId(null)}
+                        className={`w-full px-3 py-2 text-left text-xs transition-colors ${
+                          selectedPresetId === null
+                            ? 'bg-primary/10 text-foreground'
+                            : 'text-muted-foreground hover:bg-accent/40'
+                        }`}
+                        data-component-id="story-create-preset-none"
+                      >
+                        No preset
+                      </button>
+                      {availablePresets.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPresetId(preset.id)
+                            setParsed(null)
+                            setParseError(null)
+                            setSelectedIndices(new Set())
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                            selectedPresetId === preset.id
+                              ? 'bg-primary/10 text-foreground'
+                              : 'text-muted-foreground hover:bg-accent/40'
+                          }`}
+                          data-component-id={`story-create-preset-${preset.id}`}
+                        >
+                          <span className="truncate">{preset.name}</span>
+                          <span className="shrink-0 text-[0.625rem] text-muted-foreground">
+                            {preset.fragmentCount} fragment{preset.fragmentCount === 1 ? '' : 's'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Cover Image Upload */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Cover Image</label>
@@ -526,7 +589,13 @@ function StoryListPage() {
                           Import Fragments
                         </label>
 
-                        {!parsed && (
+                        {selectedPresetId && (
+                          <p className="text-[0.6875rem] italic text-muted-foreground">
+                            A story preset is selected above. Choose “No preset” to import a one-off fragment bundle instead.
+                          </p>
+                        )}
+
+                        {!selectedPresetId && !parsed && (
                           <>
                             <div className="flex gap-1.5">
                               <Button
@@ -678,13 +747,27 @@ function StoryListPage() {
       </main>
 
       {/* Global file drag-drop overlay */}
-      {fileDragOver && (
+      {isFileDragging && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-16 py-12">
             <Upload className="size-8 text-primary/50" />
             <p className="text-sm font-medium text-primary/70">Drop to import</p>
             <p className="text-xs text-muted-foreground">Story archive (.zip), character card (.json / .png)</p>
           </div>
+        </div>
+      )}
+
+      {dropError && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex max-w-md -translate-x-1/2 items-start gap-2 rounded-lg border border-destructive/30 bg-background px-4 py-3 shadow-lg" role="alert">
+          <AlertCircle className="size-4 mt-0.5 shrink-0 text-destructive" />
+          <span className="text-sm text-foreground">{dropError}</span>
+          <button
+            onClick={() => setDropError(null)}
+            className="ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label="Dismiss"
+          >
+            <X className="size-4" />
+          </button>
         </div>
       )}
 
@@ -733,6 +816,13 @@ function StoryListPage() {
               <SectionHeading label="LLM providers" />
               <div className="mt-2">
                 <ProviderList onManage={() => { setShowSettings(false); setShowProviders(true) }} />
+              </div>
+            </section>
+
+            <section>
+              <SectionHeading label="Story presets" />
+              <div className="mt-2">
+                <PresetManager />
               </div>
             </section>
 

@@ -1,4 +1,5 @@
-import { apiFetch, fetchEventStream } from './client'
+import { apiFetch } from './client'
+import { fetchRunEventStream } from './runs'
 import type {
   CharacterChatConversation,
   CharacterChatConversationSummary,
@@ -44,10 +45,17 @@ export const characterChat = {
   chat: (
     storyId: string,
     conversationId: string,
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-  ) =>
-    fetchEventStream(
-      `/stories/${storyId}/character-chat/conversations/${conversationId}/chat`,
-      { messages },
-    ),
+    message: string,
+    clientRequestId?: string,
+  ) => fetchRunEventStream(
+    `/stories/${storyId}/character-chat/conversations/${conversationId}/chat`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        ...(clientRequestId ? { clientRequestId } : {}),
+      }),
+    },
+  ),
 }

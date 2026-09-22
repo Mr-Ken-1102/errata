@@ -1,9 +1,12 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Fragment } from '@/lib/api'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 import { resolveFragmentVisual, generateBubbles, hexagonPoints, diamondPoints, type Bubble } from '@/lib/fragment-visuals'
 import { serializeFragment, serializeBundle, downloadExportFile } from '@/lib/fragment-clipboard'
+import { copyText } from '@/lib/clipboard'
 import { PublishPackDialog } from '@/components/erratanet/PublishPackDialog'
+import { SavePresetDialog } from '@/components/presets/SavePresetDialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -22,24 +25,17 @@ import {
   Download,
   Clipboard,
   Check,
-  BookOpen,
-  Users,
-  Database,
   Package,
   Settings2,
   UploadCloud,
+  BookmarkPlus,
 } from 'lucide-react'
+import { FragmentTypeDisplayIcon, getFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
 
 interface FragmentExportPanelProps {
   storyId: string
   storyName?: string
   onClose: () => void
-}
-
-const TYPE_CONFIG: Record<string, { label: string; icon: typeof BookOpen }> = {
-  guideline: { label: 'Guidelines', icon: BookOpen },
-  character: { label: 'Characters', icon: Users },
-  knowledge: { label: 'Knowledge', icon: Database },
 }
 
 const EXPORTABLE_TYPES = ['guideline', 'character', 'knowledge']
@@ -65,11 +61,10 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
   const [copied, setCopied] = useState(false)
   const [includeConfigs, setIncludeConfigs] = useState(false)
   const [publishMode, setPublishMode] = useState<null | 'fragments' | 'story'>(null)
+  const [showSavePreset, setShowSavePreset] = useState(false)
+  const branchId = useActiveBranchId(storyId)
 
-  const { data: allFragments } = useQuery({
-    queryKey: ['fragments', storyId],
-    queryFn: () => api.fragments.list(storyId),
-  })
+  const { data: allFragments } = useQuery(q.fragments(storyId, branchId))
 
   const { data: exportedConfigs } = useQuery({
     queryKey: ['blocks', storyId, 'export-configs'],
@@ -87,15 +82,8 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
     return { customBlockCount, overrideCount, agentCount, hasBlockConfig }
   }, [exportedConfigs])
 
-  const { data: imageFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'image'],
-    queryFn: () => api.fragments.list(storyId, 'image'),
-  })
-
-  const { data: iconFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'icon'],
-    queryFn: () => api.fragments.list(storyId, 'icon'),
-  })
+  const { data: imageFragments } = useQuery(q.fragments(storyId, branchId, 'image'))
+  const { data: iconFragments } = useQuery(q.fragments(storyId, branchId, 'icon'))
 
   const mediaById = useMemo(() => {
     const map = new Map<string, Fragment>()
@@ -191,7 +179,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
       json = serializeBundle(selectedFragments, mediaById, storyName, bundleConfigs)
     }
 
-    await navigator.clipboard.writeText(json)
+    if (!await copyText(json)) return
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [selectedFragments, mediaById, storyName, bundleConfigs])
@@ -232,9 +220,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
 
       <PanelBody className="px-6 py-4 gap-6">
           {Object.entries(grouped).map(([type, fragments]) => {
-            const config = TYPE_CONFIG[type]
-            if (!config) return null
-            const Icon = config.icon
+            const visual = getFragmentTypeVisual(type)
             const groupAllSelected = fragments.every((f) => selected.has(f.id))
             const groupSomeSelected = fragments.some((f) => selected.has(f.id))
 
@@ -253,9 +239,9 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
                     className="size-3.5"
                     tabIndex={-1}
                   />
-                  <Icon className="size-3.5 text-muted-foreground" />
+                  <FragmentTypeDisplayIcon type={type} className="size-3.5 text-muted-foreground" />
                   <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    {config.label}
+                    {visual.label}
                   </span>
                   <span className="text-[0.625rem] text-muted-foreground ml-auto">
                     {fragments.filter((f) => selected.has(f.id)).length}/{fragments.length}
@@ -398,6 +384,17 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           size="sm"
           variant="outline"
           className="gap-1.5"
+          disabled={selected.size === 0}
+          onClick={() => setShowSavePreset(true)}
+          data-component-id="fragment-export-save-preset"
+        >
+          <BookmarkPlus className="size-3.5" />
+          Save as preset
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
           onClick={() => setPublishMode('story')}
         >
           <UploadCloud className="size-3.5" />
@@ -413,6 +410,14 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
         onOpenChange={(o) => { if (!o) setPublishMode(null) }}
         mode={publishMode ?? 'fragments'}
         storyId={storyId}
+        selectedFragments={selectedFragments}
+        mediaById={mediaById}
+        storyName={storyName}
+      />
+
+      <SavePresetDialog
+        open={showSavePreset}
+        onOpenChange={setShowSavePreset}
         selectedFragments={selectedFragments}
         mediaById={mediaById}
         storyName={storyName}

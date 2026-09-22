@@ -1,101 +1,78 @@
 // API Types
+import type {
+  AgentBlockConfig,
+  BlockConfig,
+} from '@/contracts/block-config'
+import type { Fragment as StoryFragment, SamplingSettings } from '@/contracts/story'
+export type {
+  AgentBlockConfig,
+  BlockConfig,
+  BlockOverride,
+  CustomBlockDefinition,
+  ImportConfigsPayload,
+} from '@/contracts/block-config'
+export type {
+  BranchesIndex,
+  BranchMeta,
+  CustomFragmentType,
+  FragmentVersion,
+  ProseChainResponse,
+  ProseChainResponseEntry,
+  ProseVariationSummary,
+  SamplingSettings,
+  StoryMeta,
+} from '@/contracts/story'
+export type {
+  LibrarianAcceptChangeProposalResponse,
+  LibrarianAnalysis,
+  LibrarianAnalysisSummary,
+  LibrarianAnalyzeLaneCompletion,
+  LibrarianAnalyzeLaneRequirement,
+  LibrarianAnalyzeLaneStatus,
+  LibrarianCandidateFragment,
+  LibrarianCandidateSource,
+  LibrarianContradiction,
+  LibrarianDirection,
+  LibrarianFragmentChangeProposal,
+  LibrarianMention,
+  LibrarianPassRecord,
+  LibrarianRuntimeStatus,
+  LibrarianRunStatus,
+  LibrarianRevertChangeProposalResponse,
+  LibrarianStatusResponse,
+  StoredLibrarianState,
+} from '@/contracts/librarian'
+export type {
+  AppliedChange as LibrarianAppliedProposalChange,
+  AppliedFieldChange as LibrarianAppliedFieldChange,
+  DiffPreview as FragmentDiffPreview,
+  EditableField as FragmentEditableField,
+  FragmentChangeAction,
+  FragmentChangeOperation,
+  OperationError as FragmentOperationError,
+  OperationValidation as FragmentOperationValidation,
+  RevertResult as LibrarianProposalRevertResult,
+} from '@/contracts/fragment-changes'
+export type {
+  AnalysisSourceRevision,
+  CitedEvidence,
+  ContinuityProjection,
+  KnowledgeOperation,
+  NarrativeDuration,
+  NarrativeTime,
+  SceneLocation,
+  SceneTransitionKind,
+  SceneUpdate,
+  StateOperation,
+  StateScope,
+  StateSubject,
+  ThreadFocus,
+  ThreadOperation,
+} from '@/contracts/continuity'
 
-export interface CustomFragmentType {
-  type: string
-  name: string
-  description: string
-  icon: string
-  showInSidebar: boolean
-}
-
-export interface StoryMeta {
-  id: string
-  name: string
-  description: string
-  coverImage: string | null
-  /**
-   * @deprecated DEPRECATED (summary-fragments migration). Rolling summaries
-   * now live in fragments of type 'summary'. This field is cleared by
-   * the server-side migration on first load and is no longer written
-   * anywhere. Kept so existing payloads parse. Safe to drop once the
-   * server-side schema removes it.
-   */
-  summary: string
-  createdAt: string
-  updatedAt: string
-  settings: {
-    outputFormat: 'plaintext' | 'markdown'
-    enabledPlugins: string[]
-    summarizationThreshold?: number
-    maxSteps?: number
-    modelOverrides?: Record<string, { providerId?: string | null; modelId?: string | null; temperature?: number | null }>
-    // Legacy fields (backward compat)
-    providerId?: string | null
-    modelId?: string | null
-    generationMode?: 'standard' | 'prewriter'
-    /** Prewriter asks clarifying questions before writing. Only active in prewriter mode. */
-    clarifyBeforeGenerate?: boolean
-    /** How much the prewriter deliberates. Only active in prewriter mode. */
-    prewriterReasoning?: 'short' | 'normal' | 'extensive'
-    disableLibrarianAutoAnalysis?: boolean
-    autoApplyLibrarianSuggestions?: boolean
-    disableLibrarianDirections?: boolean
-    disableLibrarianSuggestions?: boolean
-    contextOrderMode?: 'simple' | 'advanced'
-    fragmentOrder?: string[]
-    customFragmentTypes?: CustomFragmentType[]
-    contextCompact?: { type: 'proseLimit' | 'maxTokens' | 'maxCharacters'; value: number }
-    /**
-     * @deprecated DEPRECATED (summary-fragments migration). Drove the old
-     * LLM-backed story.summary compactor. Per-fragment overflow now uses
-     * a constant threshold in the librarian. Setting is ignored.
-     */
-    summaryCompact?: { maxCharacters: number; targetCharacters: number }
-    enableHierarchicalSummary?: boolean
-    guidedContinuePrompt?: string
-    guidedSceneSettingPrompt?: string
-    guidedSuggestPrompt?: string
-    disableThinking?: boolean
-    expandThoughtsByDefault?: boolean
-    /** erratanet provenance: installed-from pack and/or where this story is published. */
-    erratanet?: {
-      pack?: string
-      version?: string
-      publishedAs?: { pack: string; version: string }
-      /** Fragment packs published from this story (e.g. a reusable "starter"). */
-      fragmentPacks?: { pack: string; version: string; fragmentIds: string[] }[]
-      /** Agent-config packs shared from this story, re-syncable as new versions. */
-      agentConfigs?: { pack: string; version: string; includes: string[] }[]
-    }
-  }
-}
-
-export interface Fragment {
-  id: string
-  type: string
-  name: string
-  description: string
-  content: string
-  tags: string[]
-  refs: string[]
-  sticky: boolean
-  placement: 'system' | 'user'
-  createdAt: string
-  updatedAt: string
-  order: number
-  meta: Record<string, unknown>
+/** API and local draft fragments always carry archive state. */
+export type Fragment = Omit<StoryFragment, 'archived'> & {
   archived: boolean
-  version?: number
-  versions?: FragmentVersion[]
-}
-
-export interface FragmentVersion {
-  version: number
-  name: string
-  description: string
-  content: string
-  createdAt: string
-  reason?: string
 }
 
 export interface FrozenSection {
@@ -135,72 +112,11 @@ export interface GenerationLogSummary {
   input: string
   fragmentId: string | null
   model: string
+  sampling?: SamplingSettings
   durationMs: number
   toolCallCount: number
   stepCount: number
   stepsExceeded: boolean
-}
-
-export interface LibrarianAnalysisSummary {
-  id: string
-  createdAt: string
-  fragmentId: string
-  contradictionCount: number
-  suggestionCount: number
-  pendingSuggestionCount: number
-  timelineEventCount: number
-  directionsCount: number
-  hasTrace?: boolean
-}
-
-export interface LibrarianAnalysis {
-  id: string
-  createdAt: string
-  fragmentId: string
-  summaryUpdate: string
-  structuredSummary?: {
-    events: string[]
-    stateChanges: string[]
-    openThreads: string[]
-  }
-  mentionedCharacters: string[]
-  mentions?: Array<{ characterId: string; text: string }>
-  contradictions: Array<{
-    description: string
-    fragmentIds: string[]
-  }>
-  fragmentSuggestions: Array<{
-    type: 'character' | 'knowledge'
-    targetFragmentId?: string
-    name: string
-    description: string
-    content: string
-    sourceFragmentId?: string
-    accepted?: boolean
-    autoApplied?: boolean
-    createdFragmentId?: string
-    dismissed?: boolean
-  }>
-  timelineEvents: Array<{
-    event: string
-    position: 'before' | 'during' | 'after'
-  }>
-  directions?: SuggestionDirection[]
-  trace?: Array<{
-    type: string
-    [key: string]: unknown
-  }>
-}
-
-export interface LibrarianState {
-  lastAnalyzedFragmentId: string | null
-  recentMentions: Record<string, string[]>
-  timeline: Array<{ event: string; fragmentId: string }>
-  runStatus?: 'idle' | 'scheduled' | 'running' | 'error'
-  pendingFragmentId?: string | null
-  runningFragmentId?: string | null
-  lastError?: string | null
-  updatedAt?: string
 }
 
 export interface AgentTraceEntry {
@@ -211,7 +127,7 @@ export interface AgentTraceEntry {
   startedAt: string
   finishedAt: string
   durationMs: number
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'aborted'
   error?: string
   output?: Record<string, unknown>
 }
@@ -221,7 +137,7 @@ export interface AgentRunTraceRecord {
   runId: string
   storyId: string
   agentName: string
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'aborted'
   startedAt: string
   finishedAt: string
   durationMs: number
@@ -231,19 +147,49 @@ export interface AgentRunTraceRecord {
   trace: AgentTraceEntry[]
 }
 
-export interface LibrarianAcceptSuggestionResponse {
-  analysis: LibrarianAnalysis
-  createdFragmentId: string | null
+export interface ChatHistoryToolCall {
+  toolName: string
+  args: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+
+export type ChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
+
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+  reasoning?: string
+  toolCalls?: ChatHistoryToolCall[]
+  plan?: string[]
+  completedSteps?: string[]
+  incomplete?: boolean
+  runId?: string
+  status?: ChatTurnStatus
+  error?: string
 }
 
 export interface ChatHistory {
-  messages: Array<{ role: 'user' | 'assistant'; content: string; reasoning?: string }>
+  messages: ChatHistoryMessage[]
   updatedAt: string
 }
 
 export interface ConversationMeta {
   id: string
   title: string
+  createdAt: string
+  updatedAt: string
+  povCharacterId?: string
+}
+
+/** Story-independent reusable context bundle for seeding a new story. */
+export interface StoryPresetMeta {
+  id: string
+  name: string
+  description: string
+  sourceStoryName?: string
+  fragmentCount: number
+  countsByType: Record<string, number>
   createdAt: string
   updatedAt: string
 }
@@ -266,22 +212,6 @@ export interface GlobalConfigSafe {
   defaultProviderId: string | null
 }
 
-export interface ProseChainEntry {
-  proseFragments: Array<{
-    id: string
-    type: string
-    name: string
-    description: string
-    createdAt: string
-    generationMode?: string
-  }>
-  active: string
-}
-
-export interface ProseChain {
-  entries: ProseChainEntry[]
-}
-
 export interface GenerationLog {
   id: string
   createdAt: string
@@ -291,10 +221,14 @@ export interface GenerationLog {
   generatedText: string
   fragmentId: string | null
   model: string
+  sampling?: SamplingSettings
   durationMs: number
   stepCount: number
   finishReason: string
   stepsExceeded: boolean
+  commitStatus?: 'committed' | 'rejected'
+  rejectionCode?: 'empty_output' | 'incomplete_finish' | 'reasoning_leak'
+  rejectionReason?: string
   totalUsage?: { inputTokens: number; outputTokens: number }
   reasoning?: string
   prewriterBrief?: string
@@ -302,6 +236,7 @@ export interface GenerationLog {
   prewriterMessages?: Array<{ role: string; content: string }>
   prewriterDurationMs?: number
   prewriterModel?: string
+  prewriterSampling?: SamplingSettings
   prewriterUsage?: { inputTokens: number; outputTokens: number }
   prewriterDirections?: Array<{ pacing: string; title: string; description: string; instruction: string }>
 }
@@ -319,30 +254,6 @@ export interface PluginManifestInfo {
       | { type: 'lucide'; name: string }
       | { type: 'svg'; src: string }
   }
-}
-
-// Block Config types
-export interface BlockOverride {
-  enabled?: boolean
-  order?: number
-  contentMode?: 'override' | 'prepend' | 'append' | null
-  customContent?: string
-}
-
-export interface CustomBlockDefinition {
-  id: string
-  name: string
-  role: 'system' | 'user'
-  order: number
-  enabled: boolean
-  type: 'simple' | 'script'
-  content: string
-}
-
-export interface BlockConfig {
-  customBlocks: CustomBlockDefinition[]
-  overrides: Record<string, BlockOverride>
-  blockOrder: string[]
 }
 
 export interface BuiltinBlockMeta {
@@ -363,6 +274,8 @@ export interface BlockPreviewResponse {
   messages: Array<{ role: string; content: string }>
   blocks: Array<{ id: string; name: string; role: string }>
   blockCount: number
+  /** Tools sent to the model via the SDK schema, with disabledTools applied. */
+  tools: Array<{ name: string; description: string; enabled: boolean }>
 }
 
 // Agent Block types
@@ -377,11 +290,6 @@ export interface AgentBlockInfo {
   displayName: string
   description: string
   availableTools: string[]
-}
-
-export interface AgentBlockConfig extends BlockConfig {
-  disabledTools: string[]
-  disableAutoAnalysis?: boolean
 }
 
 export interface AgentBlocksResponse {
@@ -400,26 +308,6 @@ export interface ExportedAgentConfig {
 export interface ExportedConfigs {
   blockConfig?: BlockConfig
   agentBlockConfigs?: Record<string, AgentBlockConfig>
-}
-
-export interface ImportConfigsPayload {
-  blockConfig?: BlockConfig
-  agentBlockConfigs?: Record<string, AgentBlockConfig>
-}
-
-// Branch types
-export interface BranchMeta {
-  id: string
-  name: string
-  order: number
-  parentBranchId?: string
-  forkAfterIndex?: number
-  createdAt: string
-}
-
-export interface BranchesIndex {
-  branches: BranchMeta[]
-  activeBranchId: string
 }
 
 export interface SuggestionDirection {
@@ -451,6 +339,29 @@ export interface Clarification {
   answer: string
 }
 
+// --- Server-authoritative runs ---
+
+export type RunKind =
+  | 'librarian.chat'
+  | 'generation'
+  | 'character-chat'
+  | 'librarian.refine'
+  | 'librarian.prose-transform'
+
+export type RunStatus = 'running' | 'complete' | 'error' | 'cancelled'
+
+export interface RunSummary {
+  id: string
+  storyId: string
+  kind: RunKind
+  scopeId: string | null
+  status: RunStatus
+  startedAt: string
+  finishedAt?: string
+  error?: string
+  seq: number
+}
+
 export type ChatEvent =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
@@ -458,10 +369,33 @@ export type ChatEvent =
   | { type: 'prewriter-reset' }
   | { type: 'tool-call'; id: string; toolName: string; args: Record<string, unknown> }
   | { type: 'tool-result'; id: string; toolName: string; result: unknown }
+  | { type: 'tool-error'; id: string; toolName: string; error: string }
   | { type: 'phase'; phase: string }
-  | { type: 'finish'; finishReason: string; stepCount: number }
+  /**
+   * A run ended. `stopped` marks the ones the server tore down on request:
+   * those close the stream just as cleanly as a completed run, so termination
+   * alone cannot tell a client whether anything was committed.
+   *
+   * Every cancellable streaming route reports the same flag.
+   */
+  | { type: 'finish'; finishReason: string; stepCount: number; stopped?: boolean }
+  | { type: 'generation-rejected'; reason: string; code: 'empty_output' | 'incomplete_finish' | 'reasoning_leak'; finishReason: string }
   | { type: 'prewriter-directions'; directions: SuggestionDirection[] }
   | { type: 'clarify-questions'; questions: ClarifyQuestion[]; round: number }
+  | { type: 'run-start'; runId: string; kind: RunKind; status: RunStatus }
+  | { type: 'run-end'; status: RunStatus }
+  | { type: 'error'; error: string }
+  | { type: 'keepalive' }
+
+export type SequencedChatEvent = ChatEvent & { seq: number }
+
+export type TerminalChatEvent =
+  | Extract<ChatEvent, { type: 'run-end' }>
+  | Extract<ChatEvent, { type: 'error' }>
+
+export function isTerminalChatEvent(event: ChatEvent): event is TerminalChatEvent {
+  return event.type === 'run-end' || event.type === 'error'
+}
 
 // Character Chat types
 export type PersonaMode =
@@ -469,11 +403,16 @@ export type PersonaMode =
   | { type: 'stranger' }
   | { type: 'custom'; prompt: string }
 
+export type CharacterChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
+
 export interface CharacterChatMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
   createdAt: string
+  runId?: string
+  status?: CharacterChatTurnStatus
+  error?: string
 }
 
 export interface CharacterChatConversation {
@@ -638,6 +577,8 @@ export interface AgentConfigModelRole {
   providerName?: string | null
   model?: string | null
   temperature?: number | null
+  topP?: number | null
+  topK?: number | null
 }
 
 /** Inspectable, side-effect-free view of a config (incl. verbatim script source). */

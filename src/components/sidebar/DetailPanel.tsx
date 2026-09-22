@@ -1,22 +1,23 @@
-import { useState, useEffect, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import type { Fragment, StoryMeta } from '@/lib/api'
 import type { SidebarSection } from './StorySidebar'
 import { getPluginPanel } from '@/lib/plugin-panels'
-import { FragmentList } from '@/components/fragments/FragmentList'
-import { ContextOrderPanel } from '@/components/fragments/ContextOrderPanel'
-import { AgentsPanel } from '@/components/agents/AgentsPanel'
-import { StoryInfoPanel } from './StoryInfoPanel'
-import { SettingsView } from './SettingsView'
-import { LibrarianPanel } from './LibrarianPanel'
-import { ArchivePanel } from './ArchivePanel'
-import { TimelineManagerPanel } from './TimelineManagerPanel'
-import { FragmentTypesPanel } from './FragmentTypesPanel'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ErratanetPanel } from '@/components/erratanet/ErratanetPanel'
 import { X, ChevronsLeftRight, ChevronsRightLeft } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
+
+const FragmentList = lazy(() => import('@/components/fragments/FragmentList').then((module) => ({ default: module.FragmentList })))
+const ContextOrderPanel = lazy(() => import('@/components/fragments/ContextOrderPanel').then((module) => ({ default: module.ContextOrderPanel })))
+const AgentsPanel = lazy(() => import('@/components/agents/AgentsPanel').then((module) => ({ default: module.AgentsPanel })))
+const StoryInfoPanel = lazy(() => import('./StoryInfoPanel').then((module) => ({ default: module.StoryInfoPanel })))
+const SettingsView = lazy(() => import('./SettingsView').then((module) => ({ default: module.SettingsView })))
+const LibrarianPanel = lazy(() => import('./LibrarianPanel').then((module) => ({ default: module.LibrarianPanel })))
+const ArchivePanel = lazy(() => import('./ArchivePanel').then((module) => ({ default: module.ArchivePanel })))
+const TimelineManagerPanel = lazy(() => import('./TimelineManagerPanel').then((module) => ({ default: module.TimelineManagerPanel })))
+const FragmentTypesPanel = lazy(() => import('./FragmentTypesPanel').then((module) => ({ default: module.FragmentTypesPanel })))
+const ErratanetPanel = lazy(() => import('@/components/erratanet/ErratanetPanel').then((module) => ({ default: module.ErratanetPanel })))
 
 interface DetailPanelProps {
   storyId: string
@@ -33,6 +34,7 @@ interface DetailPanelProps {
   onLaunchWizard?: () => void
   onImportFragment?: () => void
   onImportCard?: () => void
+  onImportLorebook?: () => void
   onExport?: () => void
   onDownloadStory?: () => void
   onExportProse?: () => void
@@ -46,6 +48,7 @@ interface DetailPanelProps {
   }>
   askLibrarianFragmentId?: string | null
   askLibrarianPrefill?: string | null
+  askLibrarianCapturePov?: boolean
   onAskLibrarianConsumed?: () => void
 }
 
@@ -79,6 +82,10 @@ const SECTION_LIST_IDS: Record<string, string> = {
   knowledge: 'knowledge-sidebar-list',
 }
 
+function PanelLoading() {
+  return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading panel…</div>
+}
+
 export function DetailPanel({
   storyId,
   story,
@@ -94,12 +101,14 @@ export function DetailPanel({
   onLaunchWizard,
   onImportFragment,
   onImportCard,
+  onImportLorebook,
   onExport,
   onDownloadStory,
   onExportProse,
   enabledPanelPlugins,
   askLibrarianFragmentId,
   askLibrarianPrefill,
+  askLibrarianCapturePov,
   onAskLibrarianConsumed,
 }: DetailPanelProps) {
   const isMobile = useIsMobile()
@@ -119,14 +128,31 @@ export function DetailPanel({
   }
 
   useEffect(() => {
+    let firstFrame: number | null = null
+    let secondFrame: number | null = null
+    let closeFallback: ReturnType<typeof setTimeout> | null = null
+
     if (open) {
       setMounted(true)
-      // Trigger enter animation on next frame
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setVisible(true))
+      // Trigger enter animation on next frame.
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => setVisible(true))
       })
     } else {
       setVisible(false)
+
+      // Correctness must not depend on CSS transitionend. Reduced-motion or an
+      // interrupted transition may legitimately emit no transition event.
+      closeFallback = setTimeout(() => {
+        setMounted(false)
+        setRenderedSection(null)
+      }, 250)
+    }
+
+    return () => {
+      if (firstFrame !== null) cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+      if (closeFallback !== null) clearTimeout(closeFallback)
     }
   }, [open])
 
@@ -192,22 +218,24 @@ export function DetailPanel({
   // inline detail panel.
   if (activeSection === 'settings') {
     return (
-      <SettingsView
-        storyId={storyId}
-        story={story}
-        visible={visible}
-        onClose={onClose}
-        onTransitionEnd={handleTransitionEnd}
-        onManageProviders={onManageProviders}
-        onOpenPluginPanel={onOpenPluginPanel}
-        onTogglePluginSidebar={onTogglePluginSidebar}
-        pluginSidebarVisibility={pluginSidebarVisibility}
-      />
+      <Suspense fallback={<PanelLoading />}>
+        <SettingsView
+          storyId={storyId}
+          story={story}
+          visible={visible}
+          onClose={onClose}
+          onTransitionEnd={handleTransitionEnd}
+          onManageProviders={onManageProviders}
+          onOpenPluginPanel={onOpenPluginPanel}
+          onTogglePluginSidebar={onTogglePluginSidebar}
+          pluginSidebarVisibility={pluginSidebarVisibility}
+        />
+      </Suspense>
     )
   }
 
   const panelContent = (
-    <>
+    <Suspense fallback={<PanelLoading />}>
       {activeSection === 'story-info' && (
         <ScrollArea className="h-full">
           <StoryInfoPanel storyId={storyId} story={story} onLaunchWizard={onLaunchWizard} onExport={onExport} onDownloadStory={onDownloadStory} onExportProse={onExportProse} />
@@ -232,7 +260,13 @@ export function DetailPanel({
 
       {librarianActivated.current && (
         <div className={activeSection === 'agent-activity' ? 'h-full overflow-hidden' : 'hidden'}>
-          <LibrarianPanel storyId={storyId} askFragmentId={askLibrarianFragmentId} askPrefill={askLibrarianPrefill} onAskFragmentConsumed={onAskLibrarianConsumed} />
+          <LibrarianPanel
+            storyId={storyId}
+            askFragmentId={askLibrarianFragmentId}
+            askPrefill={askLibrarianPrefill}
+            askCapturePov={askLibrarianCapturePov}
+            onAskFragmentConsumed={onAskLibrarianConsumed}
+          />
         </div>
       )}
 
@@ -253,6 +287,7 @@ export function DetailPanel({
           onCreateNew={() => onCreateFragment(SECTION_TO_TYPE[activeSection])}
           onImport={onImportFragment}
           onImportCard={activeSection === 'characters' ? onImportCard : undefined}
+          onImportLorebook={activeSection === 'knowledge' ? onImportLorebook : undefined}
           selectedId={selectedFragmentId}
         />
       )}
@@ -314,7 +349,7 @@ export function DetailPanel({
           <p className="p-4 text-sm text-muted-foreground">Plugin panel not found</p>
         )
       })()}
-    </>
+    </Suspense>
   )
 
   // Mobile: full-screen overlay

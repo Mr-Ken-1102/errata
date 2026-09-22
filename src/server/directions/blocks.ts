@@ -1,62 +1,119 @@
-import type { ContextBlock } from '../llm/context-builder'
+import { STORY_SUMMARY_PLACEHOLDER, type ContextBlock } from '../llm/context-builder'
+import {
+  buildFragmentContextLanes,
+  canReadFragments,
+  fragmentCatalogBlock,
+  fragmentFullContextBlocksBySource,
+  isBuiltinContextFragmentType,
+  proseWindowBlock,
+  storySummaryBlock,
+} from '../llm/fragment-context-blocks'
+import { selectAttentionContext } from '../llm/context-selection'
+import { renderContinuity } from '../librarian/continuity-view'
+import { renderSummaryProjection } from '../librarian/summary-projection'
 import type { AgentBlockContext } from '../agents/agent-block-context'
-import { getFragment } from '../fragments/storage'
-import { getFragmentsByTag } from '../fragments/associations'
 import {
   instructionsBlock,
-  systemFragmentsBlock,
   buildBasePreviewContext,
-  loadSystemPromptFragments,
 } from '../agents/block-helpers'
 
-export const DIRECTIONS_SYSTEM_PROMPT = `You are a creative writing assistant that suggests possible story directions. Given the full story context, propose distinct and compelling directions the narrative could take. Each suggestion should have a short evocative title, a brief description, and a detailed instruction prompt suitable for a writer.`
+export const DIRECTIONS_SYSTEM_PROMPT = `You are a story development editor. Propose distinct, compelling directions the narrative could take next. Give each direction a short evocative title, a brief description, and a detailed instruction prompt a prose writer could follow directly.`
 
 export function createDirectionsSuggestBlocks(ctx: AgentBlockContext): ContextBlock[] {
   const blocks: ContextBlock[] = []
+  const lanes = buildFragmentContextLanes(ctx)
+  const selection = selectAttentionContext(lanes, {
+    runner: 'directions.suggest',
+    // A direction that only ever engages what the last few passages happened to
+    // mention is a direction that can never reintroduce anyone. The catalog is
+    // the story's cast and lore by name — enough to propose bringing something
+    // back, not enough to invent its details.
+    catalogScope: 'available',
+  })
 
   blocks.push(instructionsBlock('directions.system', ctx))
 
-  const sysFrags = systemFragmentsBlock(ctx)
-  if (sysFrags) blocks.push(sysFrags)
-
-  blocks.push({
+  blocks.push(storySummaryBlock(renderSummaryProjection(ctx.summaryProjection, 'directions.suggest') ?? undefined, {
     id: 'story-summary',
-    role: 'user',
-    content: `## Story Summary\n${ctx.story.summary || '(No summary yet.)'}`,
     order: 100,
-    source: 'builtin',
-  })
+    placeholder: STORY_SUMMARY_PLACEHOLDER,
+  })!)
 
-  if (ctx.stickyCharacters.length > 0 || ctx.characterShortlist.length > 0) {
-    const chars = [...ctx.stickyCharacters, ...ctx.characterShortlist]
-    const unique = chars.filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i)
-    if (unique.length > 0) {
-      blocks.push({
-        id: 'characters',
-        role: 'user',
-        content: `## Characters\n${unique.map(c => `### ${c.name}\n${c.content}`).join('\n\n')}`,
-        order: 200,
-        source: 'builtin',
-      })
-    }
+  const customLanes = lanes.filter((lane) => !isBuiltinContextFragmentType(lane.type))
+  const contextTypeOrder = ['guideline', 'character', 'knowledge', ...customLanes.map((lane) => lane.type)]
+  const orderedSelection = {
+    ...selection,
+    lanes: contextTypeOrder
+      .map((type) => selection.lanes.find((lane) => lane.type === type))
+      .filter((lane): lane is NonNullable<typeof lane> => Boolean(lane)),
   }
 
-  if (ctx.proseFragments.length > 0) {
-    const recentProse = ctx.proseFragments.slice(-3)
+  blocks.push(...fragmentFullContextBlocksBySource({
+    selection: orderedSelection,
+    partitions: [
+      {
+        id: 'fragment-pinned',
+        heading: 'Pinned Fragments',
+        scope: 'pinned',
+        order: 150,
+        intro: 'These fragments are author-pinned standing context for any direction.',
+        matches: (sources) => sources.includes('sticky'),
+      },
+      {
+        id: 'fragment-recent',
+        heading: 'Recent Fragments',
+        scope: 'recent',
+        order: 160,
+        intro: 'These fragments are active continuity context from recent prose.',
+        matches: (sources) => sources.includes('recent-context'),
+      },
+    ],
+  }))
+
+  // Named, not detailed: these rows exist so a direction can reach past the
+  // recent window. Directions runs with no tools, so the note derived here is
+  // the one that does not point at a call it cannot make.
+  {
+    const catalog = fragmentCatalogBlock({
+      sections: orderedSelection.lanes.map((lane) => ({
+        type: lane.type,
+        label: lane.label,
+        fragments: lane.catalog,
+      })),
+      order: 250,
+      heading: 'Also In This Story',
+      scope: 'available',
+      canReadFragments: canReadFragments(ctx),
+    })
+    if (catalog) blocks.push(catalog)
+  }
+
+  // Directions set macro trajectory, so they must not be proposed against a
+  // less-informed picture than the Writer's: a direction generated without a
+  // record the following Writer holds will steer against it.
+  const continuity = renderContinuity(ctx, 'directions.suggest')
+  if (continuity) {
     blocks.push({
-      id: 'recent-prose',
+      id: 'continuity-observations',
       role: 'user',
-      content: `## Recent Prose\n${recentProse.map(f => f.content).join('\n\n---\n\n')}`,
-      order: 300,
+      content: continuity,
+      order: 200,
       source: 'builtin',
     })
+  }
+
+  // The author's configured prose window, which is the same window the Writer
+  // gets — the parity the continuity block above exists to preserve. A hardcoded
+  // slice(-3) here quietly broke it in the other direction: a no-op below three
+  // passages, a silent truncation above.
+  {
+    const prose = proseWindowBlock(ctx.proseFragments, { order: 300 })
+    if (prose) blocks.push(prose)
   }
 
   return blocks
 }
 
 export async function buildDirectionsPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
-  const base = await buildBasePreviewContext(dataDir, storyId)
-  const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
-  return { ...base, systemPromptFragments }
+  return buildBasePreviewContext(dataDir, storyId)
 }

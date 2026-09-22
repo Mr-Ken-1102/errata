@@ -3,7 +3,6 @@ import type { Elysia } from 'elysia'
 export interface StorySettings {
   outputFormat: 'plaintext' | 'markdown'
   enabledPlugins: string[]
-  summarizationThreshold: number
   maxSteps: number
   providerId: string | null
   modelId: string | null
@@ -15,7 +14,7 @@ export interface StoryMeta {
   id: string
   name: string
   description: string
-  summary: string
+  coverImage: string | null
   createdAt: string
   updatedAt: string
   settings: StorySettings
@@ -38,16 +37,49 @@ export interface Fragment {
   archived?: boolean
 }
 
+export interface SummaryProjectionItem {
+  kind: 'contribution' | 'gap' | 'rollup'
+  level: number
+  proseId: string
+  position: number
+  endPosition?: number
+  analysisId?: string
+  nodeId?: string
+  title?: string
+  text?: string
+  gapReason?: 'missing-analysis' | 'empty-summary' | 'unverified-source' | 'stale-source' | 'old-contract'
+  tokenCount: number
+}
+
+export interface SummaryProjection {
+  items: SummaryProjectionItem[]
+  authored: Array<{ id: string; name: string; text: string; validThrough?: string }>
+  firstRecentPosition?: number
+  firstRecentProseId?: string
+  omittedBefore?: { start: number; end: number }
+  targetRelative: boolean
+}
+
 export interface ContextBuildState {
   story: StoryMeta
   proseFragments: Fragment[]
   stickyGuidelines: Fragment[]
   stickyKnowledge: Fragment[]
   stickyCharacters: Fragment[]
-  guidelineShortlist: Fragment[]
-  knowledgeShortlist: Fragment[]
-  characterShortlist: Fragment[]
-  authorInput: string
+  guidelineCatalog: Fragment[]
+  knowledgeCatalog: Fragment[]
+  characterCatalog: Fragment[]
+  summaryProjection?: SummaryProjection
+  customFragmentCatalogs?: Array<{ type: string; name: string; fragments: Fragment[] }>
+  /** @deprecated Use guidelineCatalog. */
+  guidelineShortlist?: Fragment[]
+  /** @deprecated Use knowledgeCatalog. */
+  knowledgeShortlist?: Fragment[]
+  /** @deprecated Use characterCatalog. */
+  characterShortlist?: Fragment[]
+  /** @deprecated Use customFragmentCatalogs. */
+  customFragmentShortlists?: Array<{ type: string; name: string; fragments: Fragment[] }>
+  authorInput?: string
   modelId?: string
 }
 
@@ -99,7 +131,7 @@ export interface FragmentTypeDefinition {
   prefix: string
   stickyByDefault: boolean
   contextRenderer: (fragment: Fragment) => string
-  shortlistFields: Array<'id' | 'name' | 'description'>
+  catalogFields?: Array<'id' | 'name' | 'description'>
   llmTools?: boolean
 }
 

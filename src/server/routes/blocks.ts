@@ -5,21 +5,12 @@ import { createScriptHelpers } from '../blocks/script-context'
 import { ensureCoreAgentsRegistered } from '../agents/register-core'
 import { agentBlockRegistry } from '../agents/agent-block-registry'
 import { getAgentBlockConfig, saveAgentBlockConfig, type AgentBlockConfig } from '../agents/agent-block-storage'
+import { ImportConfigsPayloadSchema } from '@/contracts/block-config'
 
 /**
- * Block-related routes that are NOT scoped to a specific agent.
- *
- * Historical note: this module used to host the legacy generation-wide
- * block config (`GET /blocks`, `PATCH /blocks/config`, `POST/PUT/DELETE
- * /blocks/custom`, `GET /blocks/preview`). Those endpoints were deleted
- * when per-agent block configuration via `/agent-blocks/:agentName` became
- * the single source of truth for generation-writer blocks. The routes
- * that remain here are shared utilities:
- *
- *   - POST /blocks/eval-script — used by the script-block editor to
- *     evaluate a snippet against the current context
- *   - GET  /export-configs    — bundles every agent's block config
- *   - POST /import-configs    — restores agent block configs from a bundle
+ * Shared block utilities — the block routes that are not scoped to one agent.
+ * Per-agent block configuration lives at `/agent-blocks/:agentName`, which is
+ * the single source of truth for generation-writer blocks.
  */
 export function blockRoutes(dataDir: string) {
   return new Elysia({ detail: { tags: ['Blocks'] } })
@@ -85,12 +76,15 @@ export function blockRoutes(dataDir: string) {
         return { error: 'Story not found' }
       }
 
-      // Legacy payloads may carry a top-level `blockConfig`; it's silently
-      // ignored because the storage it targeted no longer exists.
-      const { agentBlockConfigs } = body as {
-        blockConfig?: unknown
-        agentBlockConfigs?: Record<string, AgentBlockConfig>
+      const parsed = ImportConfigsPayloadSchema.safeParse(body)
+      if (!parsed.success) {
+        set.status = 422
+        return { error: 'Invalid block configuration bundle', issues: parsed.error.issues }
       }
+
+      // Legacy blockConfig is accepted for archive compatibility, but there is
+      // no generation-wide destination after the per-agent migration.
+      const { agentBlockConfigs } = parsed.data
 
       if (agentBlockConfigs) {
         for (const [agentName, cfg] of Object.entries(agentBlockConfigs)) {

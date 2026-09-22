@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type StoryMeta } from '@/lib/api'
+import { qk, q, useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -48,26 +49,20 @@ function timeAgo(dateStr: string): string {
 
 export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDownloadStory, onExportProse }: StoryInfoPanelProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(story.name)
   const [description, setDescription] = useState(story.description)
-  const [summary, setSummary] = useState(story.summary ?? '')
   const [coverImage, setCoverImage] = useState<string | null>(story.coverImage ?? null)
   const coverInputRef = useRef<HTMLInputElement>(null)
 
   // Data queries for stats
-  const allFragmentsQuery = useQuery({
-    queryKey: ['fragments', storyId],
-    queryFn: () => api.fragments.list(storyId),
-  })
+  const allFragmentsQuery = useQuery(q.fragments(storyId, branchId))
 
-  const proseChainQuery = useQuery({
-    queryKey: ['proseChain', storyId],
-    queryFn: () => api.proseChain.get(storyId),
-  })
+  const proseChainQuery = useQuery(q.proseChain(storyId, branchId))
 
   const genLogsQuery = useQuery({
-    queryKey: ['generation-logs', storyId],
+    queryKey: qk.generationLogs(storyId, branchId),
     queryFn: () => api.generation.listLogs(storyId),
   })
 
@@ -117,7 +112,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
   }, [allFragmentsQuery.data, proseChainQuery.data, genLogsQuery.data])
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name: string; description: string; summary?: string; coverImage?: string | null }) =>
+    mutationFn: (data: { name: string; description: string; coverImage?: string | null }) =>
       api.stories.update(storyId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['story', storyId] })
@@ -127,13 +122,12 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
   })
 
   const handleSave = () => {
-    updateMutation.mutate({ name: name.trim(), description: description.trim(), summary: summary.trim(), coverImage })
+    updateMutation.mutate({ name: name.trim(), description: description.trim(), coverImage })
   }
 
   const handleCancel = () => {
     setName(story.name)
     setDescription(story.description)
-    setSummary(story.summary ?? '')
     setCoverImage(story.coverImage ?? null)
     setEditing(false)
   }
@@ -208,16 +202,6 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
             data-component-id="story-info-description"
           />
         </div>
-        <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Summary</label>
-          <Textarea
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            className="min-h-[120px] resize-none text-sm bg-transparent"
-            placeholder="Story summary..."
-            data-component-id="story-info-summary"
-          />
-        </div>
         <div className="flex gap-1.5">
           <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={updateMutation.isPending} data-component-id="story-info-save">
             {updateMutation.isPending ? 'Saving...' : 'Save'}
@@ -287,8 +271,16 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       {/* Divider */}
       <div className="mx-5 border-t border-border/40" />
 
-      {/* Summary */}
-      <SummarySection summary={story.summary} />
+      {/* Optional authored memory. Derived source-linked memory is assembled on
+          the server for each reader and is intentionally not stored as prose. */}
+      <SummarySection
+        summary={(allFragmentsQuery.data ?? [])
+          .filter((fragment) => fragment.type === 'summary' && !fragment.archived)
+          .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt))
+          .map((fragment) => fragment.content.trim())
+          .filter(Boolean)
+          .join('\n\n')}
+      />
 
       {/* Divider */}
       <div className="mx-5 border-t border-border/40" />
@@ -313,7 +305,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
         <ActionTile
           icon={Pencil}
           label="Edit"
-          description="Name, description & summary"
+          description="Name & description"
           onClick={() => setEditing(true)}
           dataComponentId="story-info-edit-action"
         />
@@ -390,7 +382,7 @@ const SOURCE_LABELS: Record<string, string> = {
   'generation.writer': 'Writer',
   'generation.prewriter': 'Prewriter',
   'librarian.analyze': 'Librarian',
-  'librarian.summary-compaction': 'Summary compaction',
+  'librarian.rollup': 'Memory roll-up',
   'librarian.chat': 'Librarian chat',
   'librarian.refine': 'Librarian refine',
   'librarian.prose-transform': 'Prose transform',
@@ -508,15 +500,15 @@ function SummarySection({ summary }: { summary: string | undefined }) {
   if (!summary) {
     return (
       <div className="px-5 py-4">
-        <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Summary</label>
-        <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">No summary yet</p>
+        <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Authored memory</label>
+        <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">No authored memory</p>
       </div>
     )
   }
 
   return (
     <div className="px-5 py-4">
-      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Summary</label>
+      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Authored memory</label>
       <div className="relative">
         <div
           ref={contentRef}

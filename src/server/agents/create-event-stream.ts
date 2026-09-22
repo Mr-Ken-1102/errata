@@ -1,4 +1,5 @@
 import type { AgentStreamEvent, AgentStreamCompletion, AgentStreamResult } from './stream-types'
+import { drainAgentStream } from './drain-agent-stream'
 
 /**
  * Converts an AI SDK v6 fullStream into an NDJSON event stream + completion promise.
@@ -7,10 +8,14 @@ import type { AgentStreamEvent, AgentStreamCompletion, AgentStreamResult } from 
  * @param onCancel - invoked when the returned stream is cancelled (client
  *   disconnect). Wire this to an AbortController so the underlying LLM call
  *   stops instead of running to completion against a dead consumer.
+ * @param abortSignal - identifies an explicit server-side stop. Unlike a
+ *   disconnected consumer, an attached client can receive a final stopped
+ *   event and distinguish cancellation from successful completion.
  */
 export function createEventStream(
   fullStream: AsyncIterable<unknown>,
   onCancel?: () => void,
+  abortSignal?: AbortSignal,
 ): AgentStreamResult {
   let completionResolve: (val: AgentStreamCompletion) => void
   let completionReject: (err: unknown) => void
@@ -18,98 +23,59 @@ export function createEventStream(
     completionResolve = resolve
     completionReject = reject
   })
-
-  let fullText = ''
-  let fullReasoning = ''
-  const toolCalls: Array<{ toolName: string; args: Record<string, unknown>; result: unknown }> = []
-  // Correlate a tool-result back to the args from its tool-call event.
-  const toolCallArgs = new Map<string, Record<string, unknown>>()
-  let lastFinishReason = 'unknown'
-  let stepCount = 0
+  let consumerCancelled = false
 
   const eventStream = new ReadableStream<string>({
-    async start(controller) {
-      try {
-        for await (const part of fullStream) {
-          let event: AgentStreamEvent | null = null
-          const p = part as Record<string, unknown>
-          const type = (p as { type?: string }).type
-
-          switch (type) {
-            case 'text-delta': {
-              const text = (p.text ?? '') as string
-              fullText += text
-              event = { type: 'text', text }
-              break
-            }
-            case 'reasoning-delta': {
-              const text = (p.text ?? '') as string
-              fullReasoning += text
-              event = { type: 'reasoning', text }
-              break
-            }
-            case 'tool-call': {
-              const input = (p.input ?? {}) as Record<string, unknown>
-              const toolCallId = p.toolCallId as string
-              toolCallArgs.set(toolCallId, input)
-              event = {
-                type: 'tool-call',
-                id: toolCallId,
-                toolName: p.toolName as string,
-                args: input,
-              }
-              break
-            }
-            case 'tool-result': {
-              const toolCallId = p.toolCallId as string
-              const toolName = (p.toolName as string) ?? ''
-              toolCalls.push({ toolName, args: toolCallArgs.get(toolCallId) ?? {}, result: p.output })
-              event = {
-                type: 'tool-result',
-                id: toolCallId,
-                toolName,
-                result: p.output,
-              }
-              break
-            }
-            // `finish-step` fires once per LLM step; `finish` fires once for the
-            // whole generation. Count steps, capture the final reason.
-            case 'finish-step':
-              stepCount++
-              break
-            case 'finish':
-              lastFinishReason = (p.finishReason as string) ?? 'unknown'
-              break
-          }
-
-          if (event) {
+    start(controller) {
+      // Do not return the drain promise from start(): the Streams API waits for
+      // it before invoking cancel(), which can deadlock a provider stalled in
+      // iterator.next(). Cancellation must be able to abort that pending read.
+      void (async () => {
+        try {
+          const drained = await drainAgentStream(fullStream, (event) => {
             controller.enqueue(JSON.stringify(event) + '\n')
+          }, { abortSignal })
+
+          // Emit final finish event
+          const finishEvent: AgentStreamEvent = {
+            type: 'finish',
+            finishReason: drained.finishReason,
+            stepCount: drained.stepCount,
           }
-        }
+          controller.enqueue(JSON.stringify(finishEvent) + '\n')
+          controller.close()
 
-        // Emit final finish event
-        const finishEvent: AgentStreamEvent = {
-          type: 'finish',
-          finishReason: lastFinishReason,
-          stepCount,
+          completionResolve!({
+            text: drained.fullText,
+            reasoning: drained.fullReasoning,
+            toolCalls: drained.toolCalls,
+            toolErrors: drained.toolErrors,
+            stepCount: drained.stepCount,
+            finishReason: drained.finishReason,
+            servedModelId: drained.servedModelId,
+          })
+        } catch (err) {
+          if (abortSignal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+            if (!consumerCancelled) {
+              const finishEvent: AgentStreamEvent = {
+                type: 'finish',
+                finishReason: 'stop',
+                stepCount: 0,
+                stopped: true,
+              }
+              controller.enqueue(JSON.stringify(finishEvent) + '\n')
+              controller.close()
+            }
+          } else if (!consumerCancelled) {
+            controller.error(err)
+          }
+          completionReject!(err)
         }
-        controller.enqueue(JSON.stringify(finishEvent) + '\n')
-        controller.close()
-
-        completionResolve!({
-          text: fullText,
-          reasoning: fullReasoning,
-          toolCalls,
-          stepCount,
-          finishReason: lastFinishReason,
-        })
-      } catch (err) {
-        controller.error(err)
-        completionReject!(err)
-      }
+      })()
     },
     cancel() {
       // Consumer (HTTP client) went away — stop the underlying LLM call.
+      consumerCancelled = true
       onCancel?.()
     },
   })

@@ -14,7 +14,6 @@ function makeStory(): StoryMeta {
     name: 'Host Story',
     description: 'Story that receives an installed pack',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -219,6 +218,35 @@ describe('installFragmentBundle', () => {
       pack: '@author/starter',
       version: '1.2.3',
     })
+  })
+
+  it('uses exclusive provenance when switching between local presets and ErrataNet', async () => {
+    const presetBundle = makeBundle()
+    presetBundle.fragments[0].meta = {
+      erratanet: { pack: '@old/source', version: '0.1.0' },
+      note: 'preserve',
+    }
+    const fromPreset = await installFragmentBundle(dataDir, STORY_ID, presetBundle, {
+      pack: 'preset-local1',
+      version: '0.0.0',
+      kind: 'preset',
+      presetName: 'Local Cast',
+    })
+    const presetAlice = fromPreset.find((fragment) => fragment.name === 'Alice')!
+    expect(presetAlice.meta.preset).toMatchObject({ id: 'preset-local1', name: 'Local Cast' })
+    expect(presetAlice.meta.erratanet).toBeUndefined()
+    expect(presetAlice.meta.note).toBe('preserve')
+
+    const hubBundle = makeBundle()
+    hubBundle.fragments[0].meta = {
+      preset: { id: 'preset-old', name: 'Old Local' },
+      note: 'preserve',
+    }
+    const fromHub = await installFragmentBundle(dataDir, STORY_ID, hubBundle, PROVENANCE)
+    const hubAlice = fromHub.find((fragment) => fragment.name === 'Alice')!
+    expect(hubAlice.meta.erratanet).toMatchObject({ pack: '@author/starter', version: '1.2.3' })
+    expect(hubAlice.meta.preset).toBeUndefined()
+    expect(hubAlice.meta.note).toBe('preserve')
   })
 
   it('preserves sticky / placement / order from the bundle entry', async () => {

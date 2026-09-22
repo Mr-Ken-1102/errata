@@ -1,9 +1,8 @@
 import { createLogger } from '../logging'
 import { agentRegistry } from './registry'
 import { ensureCoreAgentsRegistered } from './register-core'
-import { recordAgentRun } from './traces'
-import { registerActiveAgent, unregisterActiveAgent } from './active-registry'
-import type { AgentInvocationContext, AgentTraceEntry } from './types'
+import { beginAgentRun, type AgentRunHandle } from './agent-run'
+import type { AgentInvocationContext, AgentRunStatus } from './types'
 import type { AgentStreamResult, AgentStreamCompletion } from './stream-types'
 
 /**
@@ -23,10 +22,6 @@ export interface AgentInstance<K extends string = string> {
   fail(error: unknown): void
 }
 
-function makeRunId(): string {
-  return `ai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 function safeSerialize(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   try {
@@ -38,7 +33,7 @@ function safeSerialize(value: unknown): Record<string, unknown> | undefined {
 
 export function createAgentInstance<K extends string>(
   agentName: K,
-  context: { dataDir: string; storyId: string },
+  context: { dataDir: string; storyId: string; runId?: string },
 ): AgentInstance<K> {
   ensureCoreAgentsRegistered()
 
@@ -48,90 +43,56 @@ export function createAgentInstance<K extends string>(
   }
 
   let settled = false
-  let activityId: string | undefined
-  let startedAt: string | undefined
-  let startMs: number | undefined
-  let serializedInput: Record<string, unknown> | undefined
-  const runId = makeRunId()
+  let handle: AgentRunHandle | undefined
   const logger = createLogger(agentName).child({ storyId: context.storyId })
 
-  function finish(status: 'success' | 'error', resultOrError: unknown): void {
-    if (settled) return
+  // Translate the agent's completion/error into the shared run handle. The handle
+  // owns the active marker and the activity-history record; this just serializes
+  // the agent-specific output.
+  function finish(status: AgentRunStatus, resultOrError: unknown): void {
+    if (settled || !handle) return
     settled = true
-
-    if (activityId) {
-      unregisterActiveAgent(activityId)
-    }
-
-    const finishedAt = new Date().toISOString()
-    const durationMs = startMs ? Date.now() - startMs : 0
-
-    let serializedOutput: Record<string, unknown> | undefined
-    let errorMessage: string | undefined
 
     if (status === 'success') {
       const completion = resultOrError as AgentStreamCompletion
-      serializedOutput = safeSerialize({
-        text: completion.text,
-        reasoning: completion.reasoning,
-        toolCalls: completion.toolCalls,
-        stepCount: completion.stepCount,
-        finishReason: completion.finishReason,
+      handle.finish('success', {
+        output: safeSerialize({
+          text: completion.text,
+          reasoning: completion.reasoning,
+          toolCalls: completion.toolCalls,
+          toolErrors: completion.toolErrors,
+          stepCount: completion.stepCount,
+          finishReason: completion.finishReason,
+        }),
       })
     } else {
-      errorMessage = resultOrError instanceof Error
-        ? resultOrError.message
-        : String(resultOrError)
+      handle.finish(status, {
+        error: resultOrError instanceof Error ? resultOrError.message : String(resultOrError),
+      })
     }
-
-    const traceEntry: AgentTraceEntry = {
-      runId,
-      parentRunId: null,
-      rootRunId: runId,
-      agentName,
-      startedAt: startedAt ?? finishedAt,
-      finishedAt,
-      durationMs,
-      status,
-      ...(status === 'error' ? { error: errorMessage } : {}),
-      ...(serializedOutput ? { output: serializedOutput } : {}),
-    }
-
-    recordAgentRun(context.storyId, {
-      rootRunId: runId,
-      runId,
-      storyId: context.storyId,
-      agentName,
-      status,
-      startedAt: startedAt ?? finishedAt,
-      finishedAt,
-      durationMs,
-      ...(errorMessage ? { error: errorMessage } : {}),
-      input: serializedInput,
-      output: serializedOutput,
-      trace: [traceEntry],
-    })
   }
 
   return {
     agentName,
 
     async execute(input: AgentInput<K>): Promise<AgentStreamResult> {
+      // Begin the run before parsing so a validation error is still recorded.
+      const abortController = new AbortController()
+      handle = beginAgentRun(context.storyId, agentName, safeSerialize(input), {
+        runId: context.runId,
+        abortController,
+      })
       const parsedInput = definition.inputSchema.parse(input)
-      serializedInput = safeSerialize(parsedInput)
-
-      startedAt = new Date().toISOString()
-      startMs = Date.now()
-      activityId = registerActiveAgent(context.storyId, agentName)
 
       const invocationContext: AgentInvocationContext = {
         dataDir: context.dataDir,
         storyId: context.storyId,
         logger,
-        runId,
+        runId: handle.runId,
         parentRunId: null,
-        rootRunId: runId,
+        rootRunId: handle.runId,
         depth: 0,
+        abortSignal: abortController.signal,
         invokeAgent: async () => {
           throw new Error('Nested agent calls not supported via createAgentInstance')
         },
@@ -140,22 +101,79 @@ export function createAgentInstance<K extends string>(
       const rawOutput = await definition.run(invocationContext, parsedInput)
       const { eventStream, completion } = rawOutput as AgentStreamResult
 
+      // Observe events in the caller's stream instead of teeing it. A tee keeps
+      // its source alive until both branches are cancelled, which meant the
+      // activity-trace branch could accidentally keep an LLM run alive after
+      // the HTTP client disconnected.
+      const forCaller = tapActivityTrace(eventStream, handle)
+
       const wrappedCompletion = completion.then(
         (result) => {
           finish('success', result)
           return result
         },
         (err) => {
-          finish('error', err)
+          finish(err instanceof Error && err.name === 'AbortError' ? 'aborted' : 'error', err)
           throw err
         },
       )
 
-      return { eventStream, completion: wrappedCompletion }
+      return { eventStream: forCaller, completion: wrappedCompletion }
     },
 
     fail(error: unknown): void {
-      finish('error', error)
+      finish(error instanceof Error && error.name === 'AbortError' ? 'aborted' : 'error', error)
     },
   }
+}
+
+/** Tap an agent's NDJSON stream into its activity trace without becoming a
+ * second stream consumer. Cancelling the returned stream cancels the source,
+ * allowing disconnects to reach the underlying model AbortController. */
+function tapActivityTrace(stream: ReadableStream<string>, handle: AgentRunHandle): ReadableStream<string> {
+  const reader = stream.getReader()
+  let released = false
+
+  const release = () => {
+    if (released) return
+    released = true
+    reader.releaseLock()
+  }
+
+  const traceChunk = (value: string) => {
+      for (const line of value.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        try {
+          handle.pushEvent(JSON.parse(trimmed))
+        } catch {
+          // Ignore malformed lines.
+        }
+      }
+  }
+
+  return new ReadableStream<string>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          release()
+          controller.close()
+          return
+        }
+        traceChunk(value)
+        controller.enqueue(value)
+      } catch (error) {
+        release()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason)
+      } finally {
+        release()
+      }
+    },
+  })
 }

@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { streamText } from 'ai'
-import { createTempDir, makeTestSettings } from '../setup'
+import { createTempDir, makeTestSettings, makeTestGlobalConfig, seedTestProvider } from '../setup'
 import { createStory } from '@/server/fragments/storage'
 import { saveGlobalConfig } from '@/server/config/storage'
-import { getModel } from '@/server/llm/client'
+import {
+  getModel,
+  resolveAgentRuntime,
+  resolveGenerationGuards,
+  translateOpenAICompatibleTopK,
+} from '@/server/llm/client'
 import type { StoryMeta } from '@/server/fragments/schema'
 
 function makeStory(): StoryMeta {
@@ -13,12 +18,25 @@ function makeStory(): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings({ librarianProviderId: null, librarianModelId: null }),
   }
 }
+
+describe('resolveGenerationGuards', () => {
+  it('delegates output length to the provider when unset', () => {
+    expect(resolveGenerationGuards(undefined)).toEqual({
+      maxOutputTokens: undefined,
+    })
+  })
+
+  it('lets story settings override the token cap', () => {
+    expect(resolveGenerationGuards({ maxOutputTokens: 2048 })).toEqual({
+      maxOutputTokens: 2048,
+    })
+  })
+})
 
 describe('llm client model resolution', () => {
   let dataDir: string
@@ -35,7 +53,7 @@ describe('llm client model resolution', () => {
   })
 
   it('uses librarian-specific provider/model when configured', async () => {
-    await saveGlobalConfig(dataDir, {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'gen',
       providers: [
         {
@@ -63,7 +81,7 @@ describe('llm client model resolution', () => {
           createdAt: new Date().toISOString(),
         },
       ],
-    })
+    }))
 
     const story = makeStory()
     story.settings.providerId = 'gen'
@@ -78,7 +96,7 @@ describe('llm client model resolution', () => {
   })
 
   it('falls back to generation provider/model when librarian settings are unset', async () => {
-    await saveGlobalConfig(dataDir, {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'gen',
       providers: [
         {
@@ -94,7 +112,7 @@ describe('llm client model resolution', () => {
           createdAt: new Date().toISOString(),
         },
       ],
-    })
+    }))
 
     const story = makeStory()
     story.settings.providerId = 'gen'
@@ -107,7 +125,7 @@ describe('llm client model resolution', () => {
   })
 
   it('uses a model-only override with the inherited provider', async () => {
-    await saveGlobalConfig(dataDir, {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'openrouter',
       providers: [
         {
@@ -123,7 +141,7 @@ describe('llm client model resolution', () => {
           createdAt: new Date().toISOString(),
         },
       ],
-    })
+    }))
 
     const story = makeStory()
     story.settings.modelOverrides = {
@@ -137,7 +155,7 @@ describe('llm client model resolution', () => {
   })
 
   it('uses the native Google provider for Gemini presets', async () => {
-    await saveGlobalConfig(dataDir, {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'gemini',
       providers: [{
         id: 'gemini',
@@ -151,7 +169,7 @@ describe('llm client model resolution', () => {
         temperature: undefined,
         createdAt: new Date().toISOString(),
       }],
-    })
+    }))
     await createStory(dataDir, makeStory())
 
     const resolved = await getModel(dataDir, 'story-test')
@@ -162,7 +180,7 @@ describe('llm client model resolution', () => {
   })
 
   it('migrates Google OpenAI-compatible endpoints to the native Gemini provider', async () => {
-    await saveGlobalConfig(dataDir, {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'legacy-gemini',
       providers: [{
         id: 'legacy-gemini',
@@ -176,7 +194,7 @@ describe('llm client model resolution', () => {
         temperature: undefined,
         createdAt: new Date().toISOString(),
       }],
-    })
+    }))
     await createStory(dataDir, makeStory())
 
     const resolved = await getModel(dataDir, 'story-test')
@@ -185,8 +203,107 @@ describe('llm client model resolution', () => {
     expect(resolved.config.baseURL).toBe('https://generativelanguage.googleapis.com/v1beta')
   })
 
+  it('inherits top-p and top-k independently through the role chain', async () => {
+    await seedTestProvider(dataDir)
+    const story = makeStory()
+    story.settings.modelOverrides = {
+      generation: { topP: 0.9, topK: 64 },
+      librarian: { topK: 20 },
+    }
+    await createStory(dataDir, story)
+
+    const writer = await getModel(dataDir, story.id, { role: 'generation.writer' })
+    const analyze = await getModel(dataDir, story.id, { role: 'librarian.analyze' })
+
+    expect(writer).toMatchObject({ topP: 0.9, topK: 64 })
+    expect(analyze).toMatchObject({ topP: 0.9, topK: 20 })
+  })
+
+  it('prefers canonical role overrides to legacy aliases regardless of property order', async () => {
+    await seedTestProvider(dataDir)
+    const story = makeStory()
+    story.settings.modelOverrides = {
+      prewriter: { topK: 64 },
+      'generation.prewriter': { topK: 20 },
+    }
+    await createStory(dataDir, story)
+
+    const resolved = await getModel(dataDir, story.id, { role: 'generation.prewriter' })
+
+    expect(resolved.topK).toBe(20)
+  })
+
+  it('translates canonical topK only at the OpenAI-compatible provider boundary', async () => {
+    const params = {
+      prompt: [],
+      topK: 64,
+      providerOptions: { Test: { reasoning_effort: 'high' } },
+    } as Parameters<typeof translateOpenAICompatibleTopK>[0]
+
+    expect(translateOpenAICompatibleTopK(params, 'Test')).toMatchObject({
+      topK: undefined,
+      providerOptions: { Test: { reasoning_effort: 'high', top_k: 64 } },
+    })
+  })
+
+  it('rebuilds an OpenAI-compatible provider when its options namespace changes', async () => {
+    const provider = {
+      id: 'rename-test',
+      name: 'Before Rename',
+      preset: 'custom',
+      baseURL: 'https://example.com/v1',
+      apiKey: 'test-key',
+      defaultModel: 'test-model',
+      enabled: true,
+      customHeaders: {},
+      temperature: undefined,
+      createdAt: new Date().toISOString(),
+    }
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
+      defaultProviderId: provider.id,
+      providers: [provider],
+    }))
+    await createStory(dataDir, makeStory())
+
+    const before = await getModel(dataDir, 'story-test')
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
+      defaultProviderId: provider.id,
+      providers: [{ ...provider, name: 'After Rename' }],
+    }))
+    const after = await getModel(dataDir, 'story-test')
+
+    expect((before.model as unknown as { provider: string }).provider).toBe('Before Rename.chat')
+    expect((after.model as unknown as { provider: string }).provider).toBe('After Rename.chat')
+  })
+
+  it('uses the SDK top-k field for native Gemini providers', async () => {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
+      defaultProviderId: 'gemini',
+      providers: [{
+        id: 'gemini',
+        name: 'Google Gemini',
+        preset: 'gemini',
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'test-gemini-key',
+        defaultModel: 'gemini-3.5-flash',
+        enabled: true,
+        customHeaders: {},
+        temperature: undefined,
+        createdAt: new Date().toISOString(),
+      }],
+    }))
+    const story = makeStory()
+    story.settings.modelOverrides = { generation: { topK: 20 } }
+    await createStory(dataDir, story)
+
+    const runtime = await resolveAgentRuntime(dataDir, story.id, 'generation.writer', story)
+
+    expect(runtime.topK).toBe(20)
+    expect(runtime.providerOptions).toBeUndefined()
+  })
+
   it('extracts inline <think> tags into reasoning parts for OpenAI-compatible providers', async () => {
-    await saveGlobalConfig(dataDir, {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'local',
       providers: [{
         id: 'local',
@@ -200,41 +317,34 @@ describe('llm client model resolution', () => {
         temperature: undefined,
         createdAt: new Date().toISOString(),
       }],
-    })
+    }))
     await createStory(dataDir, makeStory())
-
     const resolved = await getModel(dataDir, 'story-test')
 
-    // Simulate a local thinking model that emits <think>...</think> inside
-    // ordinary content deltas (no separate reasoning field).
-    const chunk = (content: string) =>
-      `data: ${JSON.stringify({
-        id: 'chatcmpl-1',
-        object: 'chat.completion.chunk',
-        created: 1,
-        model: 'qwen3-think',
-        choices: [{ index: 0, delta: { role: 'assistant', content }, finish_reason: null }],
-      })}\n\n`
-    const sseBody =
-      chunk('<think>planning the ') +
-      chunk('scene</think>') +
-      chunk('Once upon a time.') +
-      `data: ${JSON.stringify({
+    const chunk = (content: string) => `data: ${JSON.stringify({
+      id: 'chatcmpl-1',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'qwen3-think',
+      choices: [{ index: 0, delta: { role: 'assistant', content }, finish_reason: null }],
+    })}\n\n`
+    const sseBody = chunk('<think>planning the ')
+      + chunk('scene</think>')
+      + chunk('Once upon a time.')
+      + `data: ${JSON.stringify({
         id: 'chatcmpl-1',
         object: 'chat.completion.chunk',
         created: 1,
         model: 'qwen3-think',
         choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
         usage: { prompt_tokens: 1, completion_tokens: 8, total_tokens: 9 },
-      })}\n\n` +
-      'data: [DONE]\n\n'
+      })}\n\n`
+      + 'data: [DONE]\n\n'
 
-    vi.stubGlobal('fetch', vi.fn(async () =>
-      new Response(sseBody, {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-      }),
-    ))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(sseBody, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })))
 
     try {
       const result = streamText({ model: resolved.model, prompt: 'Write.' })
@@ -244,7 +354,6 @@ describe('llm client model resolution', () => {
         if (part.type === 'text-delta') text += part.text
         if (part.type === 'reasoning-delta') reasoning += part.text
       }
-
       expect(text).not.toContain('<think>')
       expect(text.trim()).toBe('Once upon a time.')
       expect(reasoning).toContain('planning the scene')

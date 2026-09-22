@@ -1,8 +1,9 @@
 import { createLogger } from '../logging'
 import { agentRegistry } from './registry'
 import { ensureCoreAgentsRegistered } from './register-core'
-import { recordAgentRun } from './traces'
+import { recordAgentRun, makeAgentRunId } from './traces'
 import { registerActiveAgent, unregisterActiveAgent } from './active-registry'
+import { getScopedBranchId } from '../fragments/branches'
 import type {
   AgentCallOptions,
   AgentInvocationContext,
@@ -24,19 +25,17 @@ interface RuntimeState {
   stack: string[]
   callCount: number
   options: Required<AgentCallOptions>
+  abortController: AbortController
 }
 
 const runnerLogger = createLogger('agent-runner')
 
-function makeRunId(): string {
-  return `ar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, agentName: string): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, agentName: string, abortController: AbortController): Promise<T> {
   if (timeoutMs <= 0) return promise
   let timer: ReturnType<typeof setTimeout> | null = null
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
+      abortController.abort()
       reject(new Error(`Agent timed out: ${agentName} (${timeoutMs}ms)`))
     }, timeoutMs)
   })
@@ -84,7 +83,7 @@ async function invokeInternal<TOutput>(args: {
   args.runtime.callCount += 1
   args.runtime.stack.push(args.agentName)
 
-  const runId = makeRunId()
+  const runId = makeAgentRunId()
   const startedAt = new Date().toISOString()
   const startedMs = Date.now()
   const logger = runnerLogger.child({ storyId: args.storyId })
@@ -106,6 +105,7 @@ async function invokeInternal<TOutput>(args: {
       parentRunId: args.parentRunId,
       rootRunId: args.runtime.rootRunId,
       depth: args.depth,
+      abortSignal: args.runtime.abortController.signal,
       invokeAgent: async <_TInput, TNestedOutput>(name: string, input: _TInput) => {
         const nested = await invokeInternal<TNestedOutput>({
           dataDir: args.dataDir,
@@ -124,6 +124,7 @@ async function invokeInternal<TOutput>(args: {
       Promise.resolve(definition.run(context, parsedInput)),
       args.runtime.options.timeoutMs,
       args.agentName,
+      args.runtime.abortController,
     )
     const output = definition.outputSchema ? definition.outputSchema.parse(rawOutput) : rawOutput
     const finishedAt = new Date().toISOString()
@@ -166,7 +167,7 @@ async function invokeInternal<TOutput>(args: {
       startedAt,
       finishedAt,
       durationMs,
-      status: 'error',
+      status: args.runtime.abortController.signal.aborted ? 'aborted' : 'error',
       error: errorMessage,
     })
     logger.error('Agent run failed', {
@@ -193,18 +194,25 @@ export async function invokeAgent<TOutput = unknown>(args: {
   const options: Required<AgentCallOptions> = {
     maxDepth: args.options?.maxDepth ?? 3,
     maxCalls: args.options?.maxCalls ?? 20,
-    timeoutMs: args.options?.timeoutMs ?? 60000 * 5, 
+    // A caller may still opt into a wall-clock deadline. By default, rely on
+    // cancellation and provider termination rather than aborting long reasoning.
+    timeoutMs: args.options?.timeoutMs ?? 0,
   }
 
   const runtime: RuntimeState = {
-    rootRunId: makeRunId(),
+    rootRunId: makeAgentRunId(),
     trace: [],
     stack: [],
     callCount: 0,
     options,
+    abortController: new AbortController(),
   }
 
-  const activityId = registerActiveAgent(args.storyId, args.agentName)
+  const activityId = registerActiveAgent(args.storyId, args.agentName, {
+    runId: runtime.rootRunId,
+    branchId: getScopedBranchId(args.storyId),
+    cancel: () => runtime.abortController.abort(),
+  })
 
   try {
     const result = await invokeInternal<TOutput>({
@@ -247,7 +255,7 @@ export async function invokeAgent<TOutput = unknown>(args: {
       runId: first?.runId ?? runtime.rootRunId,
       storyId: args.storyId,
       agentName: args.agentName,
-      status: 'error',
+      status: runtime.abortController.signal.aborted ? 'aborted' : 'error',
       startedAt: first?.startedAt ?? new Date().toISOString(),
       finishedAt: last?.finishedAt ?? new Date().toISOString(),
       durationMs: computeTraceDurationMs(first?.startedAt, last?.finishedAt),

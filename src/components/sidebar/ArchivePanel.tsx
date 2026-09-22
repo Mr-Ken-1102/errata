@@ -9,6 +9,7 @@ import { Spinner, EmptyState } from '@/components/ui/async-view'
 import { Undo2, Trash2, Archive } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 
 interface ArchivePanelProps {
   storyId: string
@@ -18,12 +19,10 @@ interface ArchivePanelProps {
 export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
   const queryClient = useQueryClient()
   const confirm = useConfirm()
+  const branchId = useActiveBranchId(storyId)
   const [search, setSearch] = useState('')
 
-  const { data: archivedFragments, isLoading } = useQuery({
-    queryKey: ['fragments-archived', storyId],
-    queryFn: () => api.fragments.listArchived(storyId),
-  })
+  const { data: archivedFragments, isLoading } = useQuery(q.fragmentsArchived(storyId, branchId))
 
   const restoreMutation = useMutation({
     mutationFn: (fragmentId: string) => api.fragments.restore(storyId, fragmentId),
@@ -59,7 +58,7 @@ export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
         />
       </div>
 
-      <ScrollArea className="flex-1" data-component-id="archive-scroll">
+      <ScrollArea className="flex-1 min-h-0" data-component-id="archive-scroll">
         <div className="px-3 pb-3 space-y-1">
           {isLoading && (
             <div className="flex items-center justify-center py-8">

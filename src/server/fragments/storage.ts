@@ -1,10 +1,10 @@
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import type { Fragment, FragmentVersion, StoryMeta } from './schema'
+import { StoryMetaSchema, type Fragment, type FragmentVersion, type StoryMeta } from './schema'
 import { getContentRoot, initBranches } from './branches'
 import { createLogger } from '../logging'
-import { writeJsonAtomic } from '../fs-utils'
+import { readJsonFile, writeJsonAtomic, withStorageLock } from '../fs-utils'
 
 const requestLogger = createLogger('fragment-storage')
 
@@ -35,37 +35,71 @@ async function fragmentPath(dataDir: string, storyId: string, fragmentId: string
 // --- JSON read/write helpers ---
 
 async function readJson<T>(path: string): Promise<T | null> {
-  if (!existsSync(path)) return null
-  const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as T
+  return (await readJsonFile<T>(path)) ?? null
 }
 
 async function writeJson(path: string, data: unknown): Promise<void> {
   await writeJsonAtomic(path, data)
 }
 
+const STORAGE_READ_CONCURRENCY = 32
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const runners = Array.from(
+    { length: Math.min(Math.max(1, limit), items.length) },
+    async () => {
+      while (true) {
+        const index = cursor++
+        if (index >= items.length) return
+        results[index] = await worker(items[index], index)
+      }
+    },
+  )
+  await Promise.all(runners)
+  return results
+}
+
 function normalizeFragment(fragment: Fragment | null): Fragment | null {
   if (!fragment) return null
+  const version = fragment.version ?? 1
+  const rawVersions = Array.isArray(fragment.versions) ? fragment.versions : []
+  // Invariant: the live content is always represented as a version, so switching
+  // between versions is a pointer move (no new snapshot). Legacy fragments stored
+  // history as past-only with the current content outside the array — fold the
+  // current content in as its own version here, idempotently.
+  const versions = rawVersions.some((v) => v.version === version)
+    ? rawVersions
+    : [
+        ...rawVersions,
+        {
+          version,
+          name: fragment.name,
+          description: fragment.description,
+          content: fragment.content,
+          createdAt: fragment.updatedAt ?? fragment.createdAt ?? new Date().toISOString(),
+        },
+      ]
   return {
     ...fragment,
     archived: fragment.archived ?? false,
-    version: fragment.version ?? 1,
-    versions: Array.isArray(fragment.versions) ? fragment.versions : [],
-  }
-}
-
-function makeVersionSnapshot(fragment: Fragment, reason?: string): FragmentVersion {
-  return {
-    version: fragment.version ?? 1,
-    name: fragment.name,
-    description: fragment.description,
-    content: fragment.content,
-    createdAt: new Date().toISOString(),
-    ...(reason ? { reason } : {}),
+    version,
+    versions,
   }
 }
 
 // --- Story CRUD ---
+
+/** Keep persisted story metadata on the current schema contract. */
+export function normalizeStoryMeta(story: StoryMeta): StoryMeta {
+  return StoryMetaSchema.parse(story)
+}
 
 export async function createStory(
   dataDir: string,
@@ -74,7 +108,7 @@ export async function createStory(
   const dir = storyDir(dataDir, story.id)
   await mkdir(dir, { recursive: true })
   await initBranches(dataDir, story.id)
-  await writeJson(storyMetaPath(dataDir, story.id), story)
+  await writeJson(storyMetaPath(dataDir, story.id), normalizeStoryMeta(story))
 }
 
 export async function getStory(
@@ -88,24 +122,22 @@ export async function listStories(dataDir: string): Promise<StoryMeta[]> {
   const dir = storiesDir(dataDir)
   if (!existsSync(dir)) return []
 
-  const entries = await readdir(dir, { withFileTypes: true })
-  const stories: StoryMeta[] = []
+  const entries = (await readdir(dir, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory())
+  const stories = await mapWithConcurrency(
+    entries,
+    STORAGE_READ_CONCURRENCY,
+    entry => getStory(dataDir, entry.name),
+  )
 
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const meta = await getStory(dataDir, entry.name)
-      if (meta) stories.push(meta)
-    }
-  }
-
-  return stories
+  return stories.filter((story): story is StoryMeta => story !== null)
 }
 
 export async function updateStory(
   dataDir: string,
   story: StoryMeta
 ): Promise<void> {
-  await writeJson(storyMetaPath(dataDir, story.id), story)
+  await writeJson(storyMetaPath(dataDir, story.id), normalizeStoryMeta(story))
 }
 
 export async function deleteStory(
@@ -119,6 +151,29 @@ export async function deleteStory(
 }
 
 // --- Fragment CRUD ---
+
+/**
+ * An id of `type` that no fragment in the story holds yet.
+ *
+ * Generation alone is not enough to assume uniqueness: the suffixes alternate
+ * consonants and vowels to stay pronounceable, so the space is 13^3 * 5^3 =
+ * 274,625 per type and the chance a fresh id is taken grows with the story.
+ * `createFragment` refuses to overwrite, so an unchecked id turns a collision
+ * into a failed write rather than silent loss — this is how callers avoid it.
+ */
+export async function generateUnusedFragmentId(
+  dataDir: string,
+  storyId: string,
+  type: string,
+  attempts = 10,
+): Promise<string> {
+  const { generateFragmentId } = await import('@/lib/fragment-ids')
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const id = generateFragmentId(type)
+    if (!existsSync(await fragmentPath(dataDir, storyId, id))) return id
+  }
+  throw new Error(`Failed to generate an unused ${type} fragment id after ${attempts} attempts`)
+}
 
 export async function createFragment(
   dataDir: string,
@@ -157,23 +212,19 @@ export async function listFragments(
   if (!existsSync(dir)) return []
 
   const includeArchived = opts?.includeArchived ?? false
-  const entries = await readdir(dir)
-  const fragments: Fragment[] = []
+  const entries = (await readdir(dir)).filter(entry => entry.endsWith('.json'))
+  const fragments = await mapWithConcurrency(
+    entries,
+    STORAGE_READ_CONCURRENCY,
+    async (entry) => normalizeFragment(await readJson<Fragment>(join(dir, entry))),
+  )
 
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-
-    const rawFragment = await readJson<Fragment>(join(dir, entry))
-    const fragment = normalizeFragment(rawFragment)
-    if (fragment) {
-      if (type && fragment.type !== type) continue
-      // Skip archived fragments unless caller opts in
-      if (!includeArchived && fragment.archived) continue
-      fragments.push(fragment)
-    }
-  }
-
-  return fragments
+  return fragments.filter((fragment): fragment is Fragment => {
+    if (!fragment) return false
+    if (type && fragment.type !== type) return false
+    if (!includeArchived && fragment.archived) return false
+    return true
+  })
 }
 
 export async function archiveFragment(
@@ -181,15 +232,11 @@ export async function archiveFragment(
   storyId: string,
   fragmentId: string
 ): Promise<Fragment | null> {
-  const fragment = await getFragment(dataDir, storyId, fragmentId)
-  if (!fragment) return null
-  const updated: Fragment = {
+  return mutateFragment(dataDir, storyId, fragmentId, (fragment) => ({
     ...fragment,
     archived: true,
     updatedAt: new Date().toISOString(),
-  }
-  await writeJson(await fragmentPath(dataDir, storyId, fragmentId), updated)
-  return updated
+  }))
 }
 
 export async function restoreFragment(
@@ -197,15 +244,29 @@ export async function restoreFragment(
   storyId: string,
   fragmentId: string
 ): Promise<Fragment | null> {
-  const fragment = await getFragment(dataDir, storyId, fragmentId)
-  if (!fragment) return null
-  const updated: Fragment = {
+  return mutateFragment(dataDir, storyId, fragmentId, (fragment) => ({
     ...fragment,
     archived: false,
     updatedAt: new Date().toISOString(),
-  }
-  await writeJson(await fragmentPath(dataDir, storyId, fragmentId), updated)
-  return updated
+  }))
+}
+
+/** Run a fragment read-modify-write as one path-keyed transaction. */
+export async function mutateFragment(
+  dataDir: string,
+  storyId: string,
+  fragmentId: string,
+  mutate: (fragment: Fragment) => Fragment,
+): Promise<Fragment | null> {
+  const path = await fragmentPath(dataDir, storyId, fragmentId)
+  return withStorageLock(path, async () => {
+    const existing = normalizeFragment(await readJson<Fragment>(path))
+    if (!existing) return null
+    const updated = normalizeFragment(mutate(existing))
+    if (!updated) return null
+    await writeJson(path, updated)
+    return updated
+  })
 }
 
 export async function updateFragment(
@@ -216,8 +277,13 @@ export async function updateFragment(
   const normalized = normalizeFragment(fragment)
   const path = await fragmentPath(dataDir, storyId, fragment.id)
   requestLogger.info('Updating fragment', { path })
-  await writeJson(path, normalized)
+  await withStorageLock(path, () => writeJson(path, normalized))
 }
+
+// How long an autosave stays "open" for coalescing. Consecutive autosaves within
+// this window fold into one version; a longer pause seals it and the next edit
+// starts a new version. Roughly "one version per editing session."
+const AUTOSAVE_COALESCE_WINDOW_MS = 2 * 60_000
 
 export async function updateFragmentVersioned(
   dataDir: string,
@@ -225,6 +291,18 @@ export async function updateFragmentVersioned(
   fragmentId: string,
   updates: Partial<Pick<Fragment, 'name' | 'description' | 'content'>>,
   opts?: { reason?: string }
+): Promise<Fragment | null> {
+  const path = await fragmentPath(dataDir, storyId, fragmentId)
+  return withStorageLock(path, () => updateFragmentVersionedUnlocked(dataDir, storyId, fragmentId, path, updates, opts))
+}
+
+async function updateFragmentVersionedUnlocked(
+  dataDir: string,
+  storyId: string,
+  fragmentId: string,
+  path: string,
+  updates: Partial<Pick<Fragment, 'name' | 'description' | 'content'>>,
+  opts?: { reason?: string },
 ): Promise<Fragment | null> {
   const existing = await getFragment(dataDir, storyId, fragmentId)
   if (!existing) return null
@@ -237,26 +315,82 @@ export async function updateFragmentVersioned(
     nextDescription !== existing.description ||
     nextContent !== existing.content
 
-  const now = new Date().toISOString()
-  const updated: Fragment = hasVersionedChange
-    ? {
-        ...existing,
-        name: nextName,
-        description: nextDescription,
-        content: nextContent,
-        updatedAt: now,
-        version: (existing.version ?? 1) + 1,
-        versions: [...(existing.versions ?? []), makeVersionSnapshot(existing, opts?.reason)],
-      }
-    : {
-        ...existing,
-        name: nextName,
-        description: nextDescription,
-        content: nextContent,
-        updatedAt: now,
-      }
+  const nowMs = Date.now()
+  const now = new Date(nowMs).toISOString()
+  const versions = existing.versions ?? []
+  // existing.versions already contains the current version (normalizeFragment).
+  const maxVersion = versions.reduce((m, v) => Math.max(m, v.version), 0)
 
-  await updateFragment(dataDir, storyId, updated)
+  // Autosave coalescing: a debounced autosave fires after every typing pause, so
+  // appending a version each time would flood history with keystroke-level snapshots.
+  // While actively editing (the tip version is itself a recent autosave or the freshly
+  // 'created' seed), fold new content into it instead of appending. Folding into
+  // 'created' keeps a new fragment's first session at v1; a reason-less original v1
+  // still snapshots a v2 on first edit, staying revertable. A pause past the window or
+  // any non-'autosave' save seals the session and starts fresh.
+  const currentIdx = versions.findIndex((v) => v.version === existing.version)
+  const current = currentIdx >= 0 ? versions[currentIdx] : undefined
+  const canCoalesce =
+    opts?.reason === 'autosave' &&
+    (current?.reason === 'autosave' || current?.reason === 'created') &&
+    existing.version === maxVersion &&
+    nowMs - Date.parse(current.createdAt) < AUTOSAVE_COALESCE_WINDOW_MS
+
+  let updated: Fragment
+  if (!hasVersionedChange) {
+    updated = {
+      ...existing,
+      name: nextName,
+      description: nextDescription,
+      content: nextContent,
+      updatedAt: now,
+    }
+  } else if (canCoalesce && current) {
+    // Fold into the current session's version in place; createdAt bumps to now so
+    // the coalescing window is measured from the most recent keystroke.
+    const nextVersions = versions.slice()
+    nextVersions[currentIdx] = {
+      ...current,
+      name: nextName,
+      description: nextDescription,
+      content: nextContent,
+      createdAt: now,
+    }
+    updated = {
+      ...existing,
+      name: nextName,
+      description: nextDescription,
+      content: nextContent,
+      updatedAt: now,
+      version: current.version,
+      versions: nextVersions,
+    }
+  } else {
+    // Append a fresh version and point at it; numbering is max+1 so it never
+    // collides even when editing after switching to an older one.
+    const newVersion = maxVersion + 1
+    updated = {
+      ...existing,
+      name: nextName,
+      description: nextDescription,
+      content: nextContent,
+      updatedAt: now,
+      version: newVersion,
+      versions: [
+        ...versions,
+        {
+          version: newVersion,
+          name: nextName,
+          description: nextDescription,
+          content: nextContent,
+          createdAt: now,
+          ...(opts?.reason ? { reason: opts.reason } : {}),
+        },
+      ],
+    }
+  }
+
+  await writeJson(path, normalizeFragment(updated))
   return updated
 }
 
@@ -270,6 +404,12 @@ export async function listFragmentVersions(
   return [...(fragment.versions ?? [])]
 }
 
+/**
+ * Make a stored version current. This is a pointer move: the version history is
+ * unchanged, only which version is active. With no targetVersion it steps back to
+ * the previous version (the highest number below the current) — the "undo" path.
+ * Returns null if the fragment, the target, or (for undo) a previous version is absent.
+ */
 export async function revertFragmentToVersion(
   dataDir: string,
   storyId: string,
@@ -280,26 +420,51 @@ export async function revertFragmentToVersion(
   if (!fragment) return null
 
   const versions = fragment.versions ?? []
-  const snapshot = targetVersion === undefined
-    ? versions.at(-1)
-    : versions.find((v) => v.version === targetVersion)
+  const resolvedTarget = targetVersion === undefined
+    ? versions
+        .map((v) => v.version)
+        .filter((n) => n < (fragment.version ?? 1))
+        .reduce<number | null>((max, n) => (max === null || n > max ? n : max), null)
+    : targetVersion
+  if (resolvedTarget === null || resolvedTarget === undefined) return null
+
+  const snapshot = versions.find((v) => v.version === resolvedTarget)
   if (!snapshot) return null
 
-  const now = new Date().toISOString()
-  const nextVersion = (fragment.version ?? 1) + 1
   const updated: Fragment = {
     ...fragment,
     name: snapshot.name,
     description: snapshot.description,
     content: snapshot.content,
-    updatedAt: now,
-    version: nextVersion,
-    versions: [
-      ...versions,
-      makeVersionSnapshot(fragment, targetVersion === undefined
-        ? `revert-to-${snapshot.version}`
-        : `revert-to-${targetVersion}`),
-    ],
+    updatedAt: new Date().toISOString(),
+    version: resolvedTarget,
+  }
+
+  await updateFragment(dataDir, storyId, updated)
+  return updated
+}
+
+/**
+ * Remove a single snapshot from a fragment's version history (for tidying up).
+ * The current version cannot be deleted — switch to another version first.
+ * Returns null if the fragment is absent, the version is missing, or it is current.
+ */
+export async function deleteFragmentVersion(
+  dataDir: string,
+  storyId: string,
+  fragmentId: string,
+  targetVersion: number
+): Promise<Fragment | null> {
+  const fragment = await getFragment(dataDir, storyId, fragmentId)
+  if (!fragment) return null
+
+  const versions = fragment.versions ?? []
+  if (!versions.some((v) => v.version === targetVersion)) return null
+  if ((fragment.version ?? 1) === targetVersion) return null
+
+  const updated: Fragment = {
+    ...fragment,
+    versions: versions.filter((v) => v.version !== targetVersion),
   }
 
   await updateFragment(dataDir, storyId, updated)
@@ -315,71 +480,4 @@ export async function deleteFragment(
   if (existsSync(path)) {
     await rm(path)
   }
-}
-
-/**
- * @deprecated TRANSITIONAL. Delete alongside `StoryMeta.summary` once all
- * live stories have been migrated.
- *
- * One-shot migration for the summary-fragments feature. Converts any
- * non-empty `story.summary` string into a single summary fragment, then
- * clears the field. Idempotent — running again with no `story.summary`
- * is a no-op. Existing summary fragments are never overwritten.
- *
- * Called at the top of `buildContextState` and `applyDeferredSummaries`
- * so legacy content surfaces through the new fragment path on first use.
- */
-export async function migrateStoryToSummaryFragments(
-  dataDir: string,
-  storyId: string,
-): Promise<{ migrated: boolean; fragmentId?: string }> {
-  const story = await getStory(dataDir, storyId)
-  if (!story) return { migrated: false }
-
-  const legacy = typeof story.summary === 'string' ? story.summary.trim() : ''
-  if (!legacy) return { migrated: false }
-
-  const existing = await listFragments(dataDir, storyId, 'summary', { includeArchived: true })
-  if (existing.length > 0) {
-    // Already migrated or summaries exist from the new flow. Clear the
-    // legacy field so it doesn't drift further.
-    await updateStory(dataDir, { ...story, summary: '', updatedAt: new Date().toISOString() })
-    return { migrated: false }
-  }
-
-  const { generateFragmentId } = await import('@/lib/fragment-ids')
-  const now = new Date().toISOString()
-  const fragment: Fragment = {
-    id: generateFragmentId('summary'),
-    type: 'summary',
-    name: 'Story summary',
-    description: 'Rolling summary migrated from the legacy story.summary field.',
-    content: legacy,
-    tags: [],
-    refs: [],
-    sticky: false,
-    placement: 'system',
-    createdAt: now,
-    updatedAt: now,
-    order: 0,
-    meta: {
-      isEraSummary: true,
-      chapterId: null,
-      migratedFromLegacy: true,
-    },
-    archived: false,
-    version: 1,
-    versions: [],
-  }
-
-  await createFragment(dataDir, storyId, fragment)
-  await updateStory(dataDir, { ...story, summary: '', updatedAt: now })
-
-  requestLogger.info('Migrated legacy story.summary to summary fragment', {
-    storyId,
-    fragmentId: fragment.id,
-    length: legacy.length,
-  })
-
-  return { migrated: true, fragmentId: fragment.id }
 }

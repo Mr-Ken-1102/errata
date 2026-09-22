@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { createTempDir } from '../setup'
+import { createTempDir, makeTestSettings } from '../setup'
 import {
   getBranchesIndex,
   getContentRoot,
@@ -18,7 +18,8 @@ import {
 import { createStory, createFragment, getFragment, listFragments } from '../../src/server/fragments/storage'
 import { getProseChain, addProseSection } from '../../src/server/fragments/prose-chain'
 import { saveState, getState, saveAnalysis, getAnalysis, saveChatHistory, getChatHistory } from '../../src/server/librarian/storage'
-import type { LibrarianAnalysis, LibrarianState } from '../../src/server/librarian/storage'
+import type { LibrarianAnalysis } from '../../src/server/librarian/storage'
+import type { StoredLibrarianState } from '@/contracts/librarian'
 import type { StoryMeta, Fragment } from '../../src/server/fragments/schema'
 
 let dataDir: string
@@ -33,28 +34,9 @@ function makeStory(id: string = TEST_STORY_ID): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
-    settings: {
-      outputFormat: 'markdown',
-      enabledPlugins: [],
-      summarizationThreshold: 4,
-      maxSteps: 10,
-      modelOverrides: {},
-      generationMode: 'standard' as const,
-      clarifyBeforeGenerate: false,
-      prewriterReasoning: 'normal' as const,
-      autoApplyLibrarianSuggestions: false,
-      disableLibrarianDirections: false,
-      disableLibrarianSuggestions: false,
-      contextOrderMode: 'simple',
-      fragmentOrder: [],
-      customFragmentTypes: [],
-      contextCompact: { type: 'proseLimit', value: 10 },
-      summaryCompact: { maxCharacters: 12000, targetCharacters: 9000 },
-      enableHierarchicalSummary: false,
-    },
+    settings: makeTestSettings(),
   }
 }
 
@@ -160,6 +142,23 @@ describe('branches', () => {
       expect(root).toContain(join('branches', 'main'))
     })
 
+    it('never serves a stale cached root after create, switch, or delete', async () => {
+      await createStory(dataDir, makeStory())
+
+      // Prime the unscoped active-branch cache.
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', 'main'))
+
+      const branch = await createBranch(dataDir, TEST_STORY_ID, 'Cached Alt', 'main')
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', branch.id))
+
+      await switchActiveBranch(dataDir, TEST_STORY_ID, 'main')
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', 'main'))
+
+      await switchActiveBranch(dataDir, TEST_STORY_ID, branch.id)
+      await deleteBranch(dataDir, TEST_STORY_ID, branch.id)
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', 'main'))
+    })
+
     it('resolves to specific branch directory', async () => {
       await createStory(dataDir, makeStory())
 
@@ -217,6 +216,28 @@ describe('branches', () => {
       expect(index.branches).toHaveLength(1)
       expect(index.branches[0].id).toBe('main')
       expect(index.activeBranchId).toBe('main')
+      expect(index.rootBranchId).toBe('main')
+    })
+
+    it('repairs imported master indexes with an invalid main selection', async () => {
+      const storyDir = join(dataDir, 'stories', TEST_STORY_ID)
+      await mkdir(join(storyDir, 'branches', 'master', 'fragments'), { recursive: true })
+      await writeFile(join(storyDir, 'meta.json'), JSON.stringify(makeStory()))
+      await writeFile(join(storyDir, 'branches.json'), JSON.stringify({
+        branches: [
+          { id: 'master', name: 'Master', order: 0, createdAt: new Date().toISOString() },
+          { id: 'br-alt', name: 'Alt', order: 1, parentBranchId: 'master', createdAt: new Date().toISOString() },
+        ],
+        activeBranchId: 'main',
+      }))
+
+      const index = await getBranchesIndex(dataDir, TEST_STORY_ID)
+      expect(index.rootBranchId).toBe('master')
+      expect(index.activeBranchId).toBe('master')
+
+      const persisted = JSON.parse(await readFile(join(storyDir, 'branches.json'), 'utf-8'))
+      expect(persisted.rootBranchId).toBe('master')
+      expect(persisted.activeBranchId).toBe('master')
     })
 
     it('creates a branch by copying parent content', async () => {
@@ -246,6 +267,17 @@ describe('branches', () => {
       const chain = await getProseChain(dataDir, TEST_STORY_ID)
       expect(chain).not.toBeNull()
       expect(chain!.entries).toHaveLength(1)
+    })
+
+    it('serializes concurrent branch creation without losing index entries', async () => {
+      await createStory(dataDir, makeStory())
+      const [first, second] = await Promise.all([
+        createBranch(dataDir, TEST_STORY_ID, 'Concurrent A', 'main'),
+        createBranch(dataDir, TEST_STORY_ID, 'Concurrent B', 'main'),
+      ])
+      const index = await getBranchesIndex(dataDir, TEST_STORY_ID)
+      expect(index.branches.map((branch) => branch.id)).toEqual(expect.arrayContaining(['main', first.id, second.id]))
+      expect(index.branches).toHaveLength(3)
     })
 
     it('creates a branch with prose chain truncation', async () => {
@@ -315,7 +347,30 @@ describe('branches', () => {
       await createStory(dataDir, makeStory())
 
       await expect(deleteBranch(dataDir, TEST_STORY_ID, 'main'))
-        .rejects.toThrow("Cannot delete the 'main' branch")
+        .rejects.toThrow("Cannot delete the root branch 'main'")
+    })
+
+    it('protects a legacy master root and falls back to a deleted branch parent', async () => {
+      const storyDir = join(dataDir, 'stories', TEST_STORY_ID)
+      await mkdir(join(storyDir, 'branches', 'master', 'fragments'), { recursive: true })
+      await mkdir(join(storyDir, 'branches', 'br-parent', 'fragments'), { recursive: true })
+      await mkdir(join(storyDir, 'branches', 'br-child', 'fragments'), { recursive: true })
+      await writeFile(join(storyDir, 'meta.json'), JSON.stringify(makeStory()))
+      await writeFile(join(storyDir, 'branches.json'), JSON.stringify({
+        branches: [
+          { id: 'master', name: 'Master', order: 0, createdAt: new Date().toISOString() },
+          { id: 'br-parent', name: 'Parent', order: 1, parentBranchId: 'master', createdAt: new Date().toISOString() },
+          { id: 'br-child', name: 'Child', order: 2, parentBranchId: 'br-parent', createdAt: new Date().toISOString() },
+        ],
+        activeBranchId: 'br-child',
+      }))
+
+      await expect(deleteBranch(dataDir, TEST_STORY_ID, 'master'))
+        .rejects.toThrow("Cannot delete the root branch 'master'")
+
+      const index = await deleteBranch(dataDir, TEST_STORY_ID, 'br-child')
+      expect(index.rootBranchId).toBe('master')
+      expect(index.activeBranchId).toBe('br-parent')
     })
 
     it('switches to main when deleting active branch', async () => {
@@ -383,9 +438,8 @@ describe('branches', () => {
       await addProseSection(dataDir, TEST_STORY_ID, 'pr-bakite')
 
       // Save librarian state on main
-      const state: LibrarianState = {
+      const state: StoredLibrarianState = {
         lastAnalyzedFragmentId: 'pr-bakite',
-        summarizedUpTo: 'pr-bakite',
         recentMentions: { 'ch-alice': ['pr-bakite'] },
         timeline: [{ event: 'Alice arrives', fragmentId: 'pr-bakite' }],
       }
@@ -397,10 +451,10 @@ describe('branches', () => {
         createdAt: new Date().toISOString(),
         fragmentId: 'pr-bakite',
         summaryUpdate: 'Alice arrived at the castle.',
-        mentionedCharacters: ['ch-alice'],
+        mentions: [{ fragmentId: 'ch-alice', text: 'Alice' }],
         contradictions: [],
-        fragmentSuggestions: [],
-        timelineEvents: [{ event: 'Alice arrives', position: 'during' }],
+        fragmentChangeProposals: [],
+        timelineEvents: [{ event: 'Alice arrives', position: 'after' }],
       }
       await saveAnalysis(dataDir, TEST_STORY_ID, analysis)
 
@@ -515,7 +569,6 @@ describe('branches', () => {
       // Save initial librarian state on main
       await saveState(dataDir, TEST_STORY_ID, {
         lastAnalyzedFragmentId: 'pr-bakite',
-        summarizedUpTo: null,
         recentMentions: {},
         timeline: [{ event: 'Start', fragmentId: 'pr-bakite' }],
       })
@@ -526,7 +579,6 @@ describe('branches', () => {
       // Modify librarian state in the branch
       await saveState(dataDir, TEST_STORY_ID, {
         lastAnalyzedFragmentId: 'pr-bakite',
-        summarizedUpTo: 'pr-bakite',
         recentMentions: { 'ch-bob': ['pr-bakite'] },
         timeline: [
           { event: 'Start', fragmentId: 'pr-bakite' },

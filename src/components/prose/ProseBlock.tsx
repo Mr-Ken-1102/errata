@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Fragment, type ProseChainEntry } from '@/lib/api'
+import { api, type Fragment, type ProseChainResponseEntry } from '@/lib/api'
+import { startAndConsumeRun } from '@/lib/api/runs'
+import { copyText } from '@/lib/clipboard'
+import { invalidateStoryContent } from '@/lib/branch-cache'
+import { useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { StreamMarkdown } from '@/components/ui/stream-markdown'
 import { ChevronRail } from './ChevronRail'
@@ -10,7 +14,7 @@ import { GenerationThoughts } from './GenerationThoughts'
 import { ProseInlineEditor } from './ProseInlineEditor'
 import { anchorFromPoint, resolveCaretOffset } from '@/lib/prose-caret'
 import { type ThoughtStep } from './InlineGenerationInput'
-import { buildAnnotationHighlighter, formatDialogue, composeTextTransforms, stripEmphasisInDialogue, type Annotation } from '@/lib/character-mentions'
+import { buildAnnotationHighlighter, filterMentionAnnotations, formatDialogue, composeTextTransforms, stripEmphasisInDialogue, type Annotation } from '@/lib/fragment-mentions'
 import { RefreshCw, Undo2, PenLine, Bug, Trash2, GitBranch, MessageSquare, ChevronLeft, ChevronRight, Info, BookOpen, Volume2, Square } from 'lucide-react'
 import { Caption } from '@/components/ui/prose-text'
 import { useConfirm } from '@/components/ui/confirm-dialog'
@@ -21,21 +25,24 @@ interface ProseBlockProps {
   fragment: Fragment
   displayIndex: number
   sectionIndex: number
-  chainEntry: ProseChainEntry | null
+  chainEntry: ProseChainResponseEntry | null
   isLast: boolean
   isFirst?: boolean
   onSelect: (fragment: Fragment) => void
   onDebugLog?: (logId: string) => void
   onBranchFrom?: (sectionIndex: number) => void
   onEdit?: (fragmentId: string, selectedText?: string) => void
-  onAskLibrarian?: (fragmentId: string, prefill?: string) => void
+  onAskLibrarian?: (fragmentId: string, prefill?: string, options?: { capturePov?: boolean }) => void
   onAnalyze?: (fragmentId: string) => void
   hasAnalysis?: boolean
   quickSwitch: boolean
-  mentionsEnabled?: boolean
+  enabledMentionTypes?: ReadonlySet<string>
+  mentionFragmentTypesById?: ReadonlyMap<string, string>
   mentionColors?: Map<string, string>
   onClickMention?: (fragmentId: string) => void
   mediaById?: Map<string, Fragment>
+  scrollAnchorId?: string
+  expandThoughtsByDefault?: boolean
 }
 
 /** Gap between the click point and the toolbar edge, so the cursor never sits on it. */
@@ -43,10 +50,7 @@ const TOOLBAR_GAP = 12
 /** Below this offset there's no room above the click, so the toolbar opens beneath it. */
 const TOOLBAR_CLEARANCE = 120
 
-/**
- * The toolbar sits just above the click point (never on top of it) so a second
- * click lands on the prose again — double-click still opens the inline editor.
- */
+/** Keep the action toolbar away from the click point so double-click still reaches prose. */
 export function toolbarPlacement(clickY: number): React.CSSProperties {
   if (clickY > TOOLBAR_CLEARANCE) return { top: clickY - TOOLBAR_GAP, transform: 'translateY(-100%)' }
   return { top: clickY + TOOLBAR_GAP }
@@ -127,21 +131,19 @@ export const ProseBlock = memo(function ProseBlock({
   onAnalyze,
   hasAnalysis,
   quickSwitch,
-  mentionsEnabled,
+  enabledMentionTypes,
+  mentionFragmentTypesById,
   mentionColors,
   onClickMention,
   mediaById,
+  scrollAnchorId,
+  expandThoughtsByDefault = true,
 }: ProseBlockProps) {
   // isFirst/isLast are part of the interface for future use
   void isFirst
   void isLast
   const queryClient = useQueryClient()
-  // select keeps this subscription from re-rendering the memo'd block on unrelated story-cache updates
-  const { data: expandThoughtsByDefault } = useQuery({
-    queryKey: ['story', storyId],
-    queryFn: () => api.stories.get(storyId),
-    select: (s) => s.settings.expandThoughtsByDefault,
-  })
+  const branchId = useActiveBranchId(storyId)
   const confirm = useConfirm()
   const [actionMode, setActionMode] = useState<'regenerate' | null>(null)
   const [showUndo, setShowUndo] = useState(false)
@@ -183,7 +185,7 @@ export const ProseBlock = memo(function ProseBlock({
     return () => document.removeEventListener('mousedown', handler)
   }, [showActions, actionMode, editingPrompt])
 
-  // Inline passage edit — double-click the prose to open, Ctrl+Enter to save
+  // Inline passage edit — double-click prose to open, Ctrl/Cmd+Enter to save.
   const saveContentMutation = useMutation({
     mutationFn: (content: string) =>
       api.fragments.update(storyId, fragment.id, {
@@ -210,19 +212,12 @@ export const ProseBlock = memo(function ProseBlock({
   const switchMutation = useMutation({
     mutationFn: (fragmentId: string) =>
       api.proseChain.switchVariation(storyId, sectionIndex, fragmentId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-    },
+    onSuccess: () => invalidateStoryContent(queryClient, storyId),
   })
 
   const deleteMutation = useMutation({
     mutationFn: () => api.proseChain.removeSection(storyId, sectionIndex),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['fragments', storyId, 'prose'] })
-      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-    },
+    onSuccess: () => invalidateStoryContent(queryClient, storyId),
   })
 
   const variationCount = chainEntry?.proseFragments.length ?? 0
@@ -243,8 +238,89 @@ export const ProseBlock = memo(function ProseBlock({
     switchMutation.mutate(chainEntry.proseFragments[nextIdx].id)
   }
 
+  const runRegeneration = async (prompt: string): Promise<boolean> => {
+    if (branchId === undefined) return false
+
+    let accumulated = ''
+    let accumulatedReasoning = ''
+    let rejection: string | undefined
+    const steps: ThoughtStep[] = []
+    let stepsDirty = false
+    let rafScheduled = false
+
+    const result = await startAndConsumeRun(
+      storyId,
+      (clientRequestId) => api.generation.regenerate(
+        storyId,
+        fragment.id,
+        prompt,
+        undefined,
+        { clientRequestId, ...(branchId ? { branchId } : {}) },
+      ),
+      (event) => {
+        if (event.type === 'text') {
+          accumulated += event.text
+        } else if (event.type === 'reasoning') {
+          accumulatedReasoning += event.text
+          const last = steps[steps.length - 1]
+          if (last && last.type === 'reasoning') last.text = accumulatedReasoning
+          else steps.push({ type: 'reasoning', text: accumulatedReasoning })
+          stepsDirty = true
+        } else if (event.type === 'tool-call') {
+          accumulatedReasoning = ''
+          steps.push({
+            type: 'tool-call',
+            id: event.id,
+            toolName: event.toolName,
+            args: event.args,
+          })
+          stepsDirty = true
+        } else if (event.type === 'tool-result') {
+          steps.push({
+            type: 'tool-result',
+            id: event.id,
+            toolName: event.toolName,
+            result: event.result,
+          })
+          stepsDirty = true
+        } else if (event.type === 'generation-rejected') {
+          rejection = event.reason
+        }
+
+        if (!rafScheduled) {
+          rafScheduled = true
+          const textSnapshot = accumulated
+          const stepsSnapshot = stepsDirty ? [...steps] : null
+          stepsDirty = false
+          requestAnimationFrame(() => {
+            setStreamedActionText(textSnapshot)
+            if (stepsSnapshot) setActionThoughtSteps(stepsSnapshot)
+            rafScheduled = false
+          })
+        }
+      },
+      { branchId },
+    )
+
+    setStreamedActionText(accumulated)
+    if (steps.length > 0) setActionThoughtSteps([...steps])
+
+    if (rejection || result.status === 'error' || result.status === 'cancelled') {
+      return false
+    }
+
+    await invalidateStoryContent(queryClient, storyId)
+    return true
+  }
+
+  const resetFailedAction = () => {
+    setIsStreamingAction(false)
+    setStreamedActionText('')
+    setActionThoughtSteps([])
+  }
+
   const handleQuickRegenerate = async () => {
-    if (!canQuickRegenerate || isStreamingAction) return
+    if (!canQuickRegenerate || isStreamingAction || branchId === undefined) return
 
     setActionMode(null)
     setIsStreamingAction(true)
@@ -252,63 +328,15 @@ export const ProseBlock = memo(function ProseBlock({
     setActionThoughtSteps([])
 
     try {
-      const stream = await api.generation.regenerate(storyId, fragment.id, quickRegenerateInput)
-      const reader = stream.getReader()
-      let accumulated = ''
-      let accumulatedReasoning = ''
-      const steps: ThoughtStep[] = []
-      let stepsDirty = false
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-        } else if (value.type === 'reasoning') {
-          accumulatedReasoning += value.text
-          const last = steps[steps.length - 1]
-          if (last && last.type === 'reasoning') {
-            last.text = accumulatedReasoning
-          } else {
-            steps.push({ type: 'reasoning', text: accumulatedReasoning })
-          }
-          stepsDirty = true
-        } else if (value.type === 'tool-call') {
-          accumulatedReasoning = ''
-          steps.push({ type: 'tool-call', id: value.id, toolName: value.toolName, args: value.args })
-          stepsDirty = true
-        } else if (value.type === 'tool-result') {
-          steps.push({ type: 'tool-result', id: value.id, toolName: value.toolName, result: value.result })
-          stepsDirty = true
-        }
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = accumulated
-          const stepsSnapshot = stepsDirty ? [...steps] : null
-          stepsDirty = false
-          requestAnimationFrame(() => {
-            setStreamedActionText(snapshot)
-            if (stepsSnapshot) setActionThoughtSteps(stepsSnapshot)
-            rafScheduled = false
-          })
-        }
-      }
-
-      setStreamedActionText(accumulated)
-      if (steps.length > 0) setActionThoughtSteps([...steps])
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-      handleActionComplete()
+      if (await runRegeneration(quickRegenerateInput)) handleActionComplete()
+      else resetFailedAction()
     } catch {
-      setIsStreamingAction(false)
-      setStreamedActionText('')
-      setActionThoughtSteps([])
+      resetFailedAction()
     }
   }
 
   const handleActionSubmit = async () => {
-    if (!actionInput.trim() || isStreamingAction) return
+    if (!actionInput.trim() || isStreamingAction || branchId === undefined) return
 
     setActionMode(null)
     setShowActions(false)
@@ -317,59 +345,10 @@ export const ProseBlock = memo(function ProseBlock({
     setActionThoughtSteps([])
 
     try {
-      const stream = await api.generation.regenerate(storyId, fragment.id, actionInput)
-
-      const reader = stream.getReader()
-      let accumulated = ''
-      let accumulatedReasoning = ''
-      const steps: ThoughtStep[] = []
-      let stepsDirty = false
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-        } else if (value.type === 'reasoning') {
-          accumulatedReasoning += value.text
-          const last = steps[steps.length - 1]
-          if (last && last.type === 'reasoning') {
-            last.text = accumulatedReasoning
-          } else {
-            steps.push({ type: 'reasoning', text: accumulatedReasoning })
-          }
-          stepsDirty = true
-        } else if (value.type === 'tool-call') {
-          accumulatedReasoning = ''
-          steps.push({ type: 'tool-call', id: value.id, toolName: value.toolName, args: value.args })
-          stepsDirty = true
-        } else if (value.type === 'tool-result') {
-          steps.push({ type: 'tool-result', id: value.id, toolName: value.toolName, result: value.result })
-          stepsDirty = true
-        }
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = accumulated
-          const stepsSnapshot = stepsDirty ? [...steps] : null
-          stepsDirty = false
-          requestAnimationFrame(() => {
-            setStreamedActionText(snapshot)
-            if (stepsSnapshot) setActionThoughtSteps(stepsSnapshot)
-            rafScheduled = false
-          })
-        }
-      }
-
-      setStreamedActionText(accumulated)
-      if (steps.length > 0) setActionThoughtSteps([...steps])
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-      handleActionComplete()
+      if (await runRegeneration(actionInput)) handleActionComplete()
+      else resetFailedAction()
     } catch {
-      setIsStreamingAction(false)
-      setStreamedActionText('')
-      setActionThoughtSteps([])
+      resetFailedAction()
     }
   }
 
@@ -385,7 +364,7 @@ export const ProseBlock = memo(function ProseBlock({
   }
 
   const handlePromptSubmit = async () => {
-    if (!actionInput.trim() || isStreamingAction) return
+    if (!actionInput.trim() || isStreamingAction || branchId === undefined) return
     setEditingPrompt(false)
     setShowActions(false)
     setIsStreamingAction(true)
@@ -393,58 +372,10 @@ export const ProseBlock = memo(function ProseBlock({
     setActionThoughtSteps([])
 
     try {
-      const stream = await api.generation.regenerate(storyId, fragment.id, actionInput)
-      const reader = stream.getReader()
-      let accumulated = ''
-      let accumulatedReasoning = ''
-      const steps: ThoughtStep[] = []
-      let stepsDirty = false
-      let rafScheduled = false
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-        } else if (value.type === 'reasoning') {
-          accumulatedReasoning += value.text
-          const last = steps[steps.length - 1]
-          if (last && last.type === 'reasoning') {
-            last.text = accumulatedReasoning
-          } else {
-            steps.push({ type: 'reasoning', text: accumulatedReasoning })
-          }
-          stepsDirty = true
-        } else if (value.type === 'tool-call') {
-          accumulatedReasoning = ''
-          steps.push({ type: 'tool-call', id: value.id, toolName: value.toolName, args: value.args })
-          stepsDirty = true
-        } else if (value.type === 'tool-result') {
-          steps.push({ type: 'tool-result', id: value.id, toolName: value.toolName, result: value.result })
-          stepsDirty = true
-        }
-        if (!rafScheduled) {
-          rafScheduled = true
-          const snapshot = accumulated
-          const stepsSnapshot = stepsDirty ? [...steps] : null
-          stepsDirty = false
-          requestAnimationFrame(() => {
-            setStreamedActionText(snapshot)
-            if (stepsSnapshot) setActionThoughtSteps(stepsSnapshot)
-            rafScheduled = false
-          })
-        }
-      }
-
-      setStreamedActionText(accumulated)
-      if (steps.length > 0) setActionThoughtSteps([...steps])
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-      handleActionComplete()
+      if (await runRegeneration(actionInput)) handleActionComplete()
+      else resetFailedAction()
     } catch {
-      setIsStreamingAction(false)
-      setStreamedActionText('')
-      setActionThoughtSteps([])
+      resetFailedAction()
     }
   }
 
@@ -455,12 +386,24 @@ export const ProseBlock = memo(function ProseBlock({
   // Build text transform: dialogue italics + optional mention highlighting
   const annotations = fragment.meta?.annotations as Annotation[] | undefined
   const textTransform = useMemo(() => {
-    const mentionHighlighter = mentionsEnabled && annotations && onClickMention
-      ? buildAnnotationHighlighter(annotations, onClickMention, mentionColors)
+    const filteredAnnotations = filterMentionAnnotations(
+      annotations,
+      enabledMentionTypes ?? new Set<string>(),
+      mentionFragmentTypesById,
+    )
+    const hasAnyMentions = (enabledMentionTypes?.size ?? 0) > 0
+    const mentionHighlighter = hasAnyMentions && filteredAnnotations && filteredAnnotations.length > 0 && onClickMention
+      ? buildAnnotationHighlighter(filteredAnnotations, onClickMention, mentionColors)
       : null
     if (mentionHighlighter) return composeTextTransforms(formatDialogue, mentionHighlighter)
     return formatDialogue
-  }, [mentionsEnabled, annotations, onClickMention, mentionColors])
+  }, [enabledMentionTypes, mentionFragmentTypesById, annotations, onClickMention, mentionColors])
+
+  const textTransformKey = useMemo(() => {
+    const types = enabledMentionTypes ? Array.from(enabledMentionTypes).sort().join(',') : ''
+    const anns = annotations ? annotations.map(a => `${a.fragmentId}:${a.type}:${a.text}`).join(',') : ''
+    return `${types}::${anns}`
+  }, [enabledMentionTypes, annotations])
 
   // Resolve a linked image for the passage header (first image visual ref).
   const headerImage = useMemo(
@@ -503,7 +446,7 @@ export const ProseBlock = memo(function ProseBlock({
                       setEditingPrompt(false)
                       setActionInput('')
                     }
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                       e.preventDefault()
                       handlePromptSubmit()
                     }
@@ -516,7 +459,7 @@ export const ProseBlock = memo(function ProseBlock({
                   </span>
                   <button
                     className="ml-auto text-[0.625rem] px-1.5 py-0.5 rounded text-primary/70 hover:text-primary hover:bg-primary/10 transition-colors font-medium disabled:opacity-30"
-                    disabled={!actionInput.trim()}
+                    disabled={!actionInput.trim() || branchId === undefined}
                     onClick={handlePromptSubmit}
                   >
                     Regenerate
@@ -602,8 +545,6 @@ export const ProseBlock = memo(function ProseBlock({
         }}
         onDoubleClick={(e: React.MouseEvent<HTMLDivElement>) => {
           if (isStreamingAction) return
-          // Place the caret on the word under the pointer, and clear the
-          // word selection the double-click left behind.
           const anchor = anchorFromPoint(e.currentTarget, e.clientX, e.clientY)
           window.getSelection()?.removeAllRanges()
           setEditCaret(resolveCaretOffset(fragment.content, anchor))
@@ -618,7 +559,7 @@ export const ProseBlock = memo(function ProseBlock({
             if (!isStreamingAction) setShowActions(v => !v)
           }
         }}
-        className={`text-left w-full rounded-lg p-4 -mx-4 transition-all duration-150 cursor-default ${
+        className={`text-left rounded-lg p-4 -mx-4 transition-all duration-150 cursor-default ${
           showActions ? 'bg-card/50 ring-1 ring-primary/10' : 'hover:bg-card/40'
         }`}
         data-component-id={`prose-${fragment.id}-select`}
@@ -628,7 +569,7 @@ export const ProseBlock = memo(function ProseBlock({
             steps={actionThoughtSteps}
             streaming={isStreamingAction}
             hasText={!!streamedActionText}
-            defaultExpanded={expandThoughtsByDefault ?? true}
+            defaultExpanded={expandThoughtsByDefault}
           />
         )}
         <StreamMarkdown
@@ -638,7 +579,9 @@ export const ProseBlock = memo(function ProseBlock({
           }
           streaming={isStreamingAction}
           variant="prose"
-          textTransform={!isStreamingAction && !streamedActionText ? textTransform : undefined}
+          textTransform={textTransform}
+          textTransformKey={textTransformKey}
+          anchorId={scrollAnchorId}
         />
 
       </div>
@@ -665,7 +608,7 @@ export const ProseBlock = memo(function ProseBlock({
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') { setActionMode(null); setActionInput('') }
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleActionSubmit() }
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); handleActionSubmit() }
                 }}
               />
               <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/20">
@@ -681,7 +624,7 @@ export const ProseBlock = memo(function ProseBlock({
                   </button>
                   <button
                     className="px-2.5 py-0.5 rounded-md text-[0.6875rem] font-medium bg-foreground/[0.07] hover:bg-foreground/[0.12] text-foreground disabled:opacity-30 transition-all"
-                    disabled={!actionInput.trim()}
+                    disabled={!actionInput.trim() || branchId === undefined}
                     onClick={handleActionSubmit}
                   >
                     Regenerate
@@ -696,7 +639,7 @@ export const ProseBlock = memo(function ProseBlock({
               <div className="flex items-center gap-1.5 px-2.5 py-1 min-w-0">
                 <button
                   className="text-[0.625rem] font-mono text-muted-foreground/60 hover:text-foreground transition-colors shrink-0 select-all"
-                  onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(fragment.id) }}
+                  onClick={(e) => { e.stopPropagation(); void copyText(fragment.id) }}
                   title="Copy ID"
                 >
                   {fragment.id}
@@ -790,7 +733,7 @@ export const ProseBlock = memo(function ProseBlock({
                     setShowActions(false)
                     handleQuickRegenerate()
                   }}
-                  disabled={!canQuickRegenerate}
+                  disabled={!canQuickRegenerate || branchId === undefined}
                   data-component-id={`prose-${fragment.id}-regenerate`}
                 >
                   <RefreshCw className="size-3.5" />
@@ -800,7 +743,7 @@ export const ProseBlock = memo(function ProseBlock({
                   <>
                     <button
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.6875rem] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-all"
-                      onClick={() => { onAskLibrarian(fragment.id, `refine ${fragment.id}: `); setShowActions(false) }}
+                      onClick={() => { onAskLibrarian(fragment.id, `refine ${fragment.id}: `, { capturePov: true }); setShowActions(false) }}
                       data-component-id={`prose-${fragment.id}-refine`}
                     >
                       <MessageSquare className="size-3.5" />

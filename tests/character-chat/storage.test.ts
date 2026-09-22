@@ -39,7 +39,6 @@ describe('character-chat storage', () => {
       name: 'Test Story',
       description: 'For character chat tests',
     coverImage: null,
-      summary: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       settings: makeTestSettings(),
@@ -152,6 +151,25 @@ describe('character-chat storage', () => {
       const heroOnly = await listConversations(dataDir, storyId, 'ch-hero')
       expect(heroOnly).toHaveLength(1)
       expect(heroOnly[0].characterId).toBe('ch-hero')
+    })
+
+    it('keeps every summary when many conversations are listed concurrently', async () => {
+      await Promise.all(Array.from({ length: 24 }, (_, index) => (
+        saveConversation(dataDir, storyId, makeConversation({
+          id: `cc-batch-${index}`,
+          characterId: index % 2 === 0 ? 'ch-hero' : 'ch-villain',
+          updatedAt: `2025-01-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+        }))
+      )))
+
+      const all = await listConversations(dataDir, storyId)
+      expect(all).toHaveLength(24)
+      expect(all[0].id).toBe('cc-batch-23')
+      expect(all.at(-1)?.id).toBe('cc-batch-0')
+
+      const hero = await listConversations(dataDir, storyId, 'ch-hero')
+      expect(hero).toHaveLength(12)
+      expect(hero.every(conversation => conversation.characterId === 'ch-hero')).toBe(true)
     })
 
     it('returns empty list when no conversations exist', async () => {

@@ -13,27 +13,24 @@ import { importStoryFromZip } from '../story-archive'
 import type { Fragment, StoryMeta } from '../fragments/schema'
 
 /**
- * Server-side install path for the shared "@tealios/erratapack" format.
+ * Server-side install path for the shared "@tealios/erratapack" format: fragment
+ * and story packs only. Agent-config packs are valid but belong to a separate
+ * pipeline — see {@link assertSafeManifest}.
  *
- * Three pieces:
- *  - {@link unwrapPack} reads a pack (zip bytes or pure-JSON) into a validated
- *    manifest + payload, re-inlining `asset://` references as data URLs.
- *  - {@link installFragmentBundle} is the ref-aware batch importer for a
- *    fragment-pack payload. It pre-allocates ids so cross-fragment refs survive.
- *  - {@link installStoryPack} feeds a story payload into the existing
- *    story-archive importer and stamps provenance on the new story.
- *
- * Trust: MVP packs carry fragments + assets only. A non-empty
- * `manifest.capabilities` is refused here (defence in depth alongside the
- * manifest-level `isManifestSafeForMvp`). blockConfig / agentBlockConfigs that
- * may ride along in a bundle are ignored, never applied.
+ * Trust: these packs carry fragments + assets, nothing executable. blockConfig
+ * and agentBlockConfigs that may ride along in a bundle are ignored, never
+ * applied.
  */
 
 export interface PackProvenance {
-  /** Global pack id, e.g. `@handle/slug`. */
+  /** Global pack id, e.g. `@handle/slug`; preset id when kind is 'preset'. */
   pack: string
-  /** Pack version (semver). */
+  /** Pack version (semver). Ignored for local preset provenance. */
   version: string
+  /** Existing callers are ErrataNet installs unless stated otherwise. */
+  kind?: 'erratanet' | 'preset'
+  /** Human-readable preset name, used only for local preset provenance. */
+  presetName?: string
 }
 
 export type UnwrappedPack =
@@ -109,8 +106,8 @@ function reinlineBundleAssets(
 /**
  * Read and validate a pack from zip bytes (or a pure-JSON erratapack).
  *
- * Refuses any pack whose manifest declares non-empty `capabilities`. For a
- * fragment-pack, attachment contents stored as `asset://<hash>` are re-inlined
+ * Gated by {@link assertSafeManifest}. For a fragment-pack, attachment contents
+ * stored as `asset://<hash>` are re-inlined
  * as data URLs from the zip's `assets/` directory (or from `assetsInline` for
  * the pure-JSON form). For a story pack, the `payload/story/` subtree is
  * returned as a path -> bytes map for the story-archive importer.
@@ -247,19 +244,46 @@ interface VisualRef {
   boundary?: { x: number; y: number; width: number; height: number }
 }
 
+/** Build one exclusive source stamp: local preset copies never masquerade as hub content. */
+function provenanceMeta(
+  provenance: PackProvenance,
+  sourceLocalId?: string,
+): Record<string, unknown> {
+  if (provenance.kind === 'preset') {
+    return {
+      preset: {
+        id: provenance.pack,
+        name: provenance.presetName ?? provenance.pack,
+        appliedAt: new Date().toISOString(),
+      },
+    }
+  }
+  return {
+    erratanet: {
+      pack: provenance.pack,
+      version: provenance.version,
+      ...(sourceLocalId ? { sourceLocalId } : {}),
+    },
+  }
+}
+
+function replaceTransportProvenance(
+  meta: Record<string, unknown>,
+  provenance: PackProvenance,
+  sourceLocalId?: string,
+): Record<string, unknown> {
+  const next = { ...meta }
+  delete next.erratanet
+  delete next.preset
+  return { ...next, ...provenanceMeta(provenance, sourceLocalId) }
+}
+
 /**
  * Ref-aware batch importer for a fragment bundle. Unlike the per-entry client
- * importer, this pre-allocates every fragment id up front so that cross-fragment
- * refs, meta.previousFragmentId, meta.variationOf, and visualRefs survive the
- * import instead of dangling.
- *
- * Steps:
- *  (a) Pre-allocate an idMap: keep `entry.id` when it is free in the story,
- *      otherwise mint a fresh id of the same type.
- *  (b) Create attachment image/icon fragments first and build visualRefs.
- *  (c) Remap each entry's refs[] and meta id references through the idMap.
- *  (d) Stamp meta.erratanet provenance.
- *  (e) Create each fragment with its pre-assigned id.
+ * importer, this pre-allocates every fragment id up front — keeping `entry.id`
+ * where the story leaves it free — so that cross-fragment refs,
+ * meta.previousFragmentId, meta.variationOf, and visualRefs can be remapped
+ * through that map instead of dangling.
  *
  * Server-side only: uses createFragment / getFragment directly, never the
  * client api. blockConfig / agentBlockConfigs on the bundle are ignored.
@@ -363,15 +387,8 @@ export async function installFragmentBundle(
     // The visualRefs we just minted already point at the new media ids; the
     // remap helper would leave them unchanged (no idMap entry), which is correct.
 
-    // (d) Stamp provenance.
-    const meta: Record<string, unknown> = {
-      ...remapped.meta,
-      erratanet: {
-        pack: provenance.pack,
-        version: provenance.version,
-        sourceLocalId: entry.id,
-      },
-    }
+    // (d) Stamp exactly one transport provenance source.
+    const meta = replaceTransportProvenance(remapped.meta, provenance, entry.id)
 
     // (e) Create with the pre-assigned id and original placement/sticky/order.
     const fragment: Fragment = {
@@ -414,13 +431,7 @@ function buildFragment(args: BuildFragmentArgs): Fragment {
     createdAt: args.now,
     updatedAt: args.now,
     order: 0,
-    meta: {
-      erratanet: {
-        pack: args.provenance.pack,
-        version: args.provenance.version,
-        ...(args.sourceLocalId ? { sourceLocalId: args.sourceLocalId } : {}),
-      },
-    },
+    meta: provenanceMeta(args.provenance, args.sourceLocalId),
     archived: false,
     version: 1,
     versions: [],

@@ -1,27 +1,124 @@
-import { getStory, listFragments, getFragment, migrateStoryToSummaryFragments } from '../fragments/storage'
-import { registry } from '../fragments/registry'
+import { getStory, listFragments, getFragment } from '../fragments/storage'
 import { instructionRegistry } from '../instructions'
 import { createLogger } from '../logging'
-import { getActiveProseIds, findSectionIndex, getProseChain } from '../fragments/prose-chain'
-import type { Fragment, StoryMeta } from '../fragments/schema'
+import { getActiveProseIds, findSectionIndex } from '../fragments/prose-chain'
+import { type Fragment, type StoryMeta } from '../fragments/schema'
+import {
+  buildFragmentContextLanes,
+  canReadFragments,
+  customContextFragmentTypes,
+  findFragmentContextLane,
+  fragmentCatalogBlock,
+  fragmentFullContextBlock,
+  isBuiltinContextFragmentType,
+  fragmentTypeLabel,
+  markdownSection,
+  proseWindowBlock,
+  renderContextFragment,
+  storyHeaderContent,
+  storySummaryBlock,
+  type FragmentContextLane,
+  type FragmentContextMetadata,
+} from './fragment-context-blocks'
+import { collectRecentContextSignals } from './context-selection'
+import { fragmentTagPattern } from './fragment-tag'
+import {
+  buildContinuityLedger,
+  projectContinuityView,
+  renderContinuity,
+  type ContinuityLedger,
+  type ContinuityView,
+} from '../librarian/continuity-view'
+import {
+  buildSummaryProjection,
+  renderSummaryProjection,
+  type SummaryProjection,
+} from '../librarian/summary-projection'
+import { getAnalysisIndex } from '../librarian/storage'
+import { queueSummaryRollupMaintenance } from '../librarian/summary-rollup-maintenance'
 import type { ModelMessage } from 'ai'
+
+export {
+  buildFragmentContextLanes,
+  canReadFragments,
+  customContextFragmentTypes,
+  findFragmentContextLane,
+  fragmentCatalogBlock,
+  fragmentCatalogContent,
+  fragmentContextBlock,
+  fragmentContextBlocks,
+  fragmentFullContextBlock,
+  fragmentFullContextContent,
+  fragmentSummaryIndexHeading,
+  fragmentSummaryList,
+  fragmentTypeLabel,
+  groupFragmentsByType,
+  isBuiltinContextFragmentType,
+  joinMarkdownBlocks,
+  markdownHeading,
+  markdownSection,
+  proseWindowBlock,
+  renderContextFragment,
+  renderFragmentContextGroup,
+  storyHeaderContent,
+  storySummaryBlock,
+  STORY_SUMMARY_HEADING,
+  type FragmentContextGroup,
+  type FragmentContextLane,
+  type FragmentContextMetadata,
+  type FragmentContextMode,
+  type FragmentContextScope,
+} from './fragment-context-blocks'
+
+export interface CustomFragmentGroup {
+  type: string
+  name: string
+  fragments: Fragment[]
+}
+
+/** Resolved author-controlled voice notes for the selected POV character. */
+export interface PovVoice {
+  characterName: string
+  content?: string
+}
 
 export interface ContextBuildState {
   story: StoryMeta
+  /** The single active-fragment snapshot this state was derived from. */
+  allFragments?: Fragment[]
   proseFragments: Fragment[]
-  chapterSummaries: Array<{
-    markerId: string
-    name: string
-    summary: string
-  }>
   stickyGuidelines: Fragment[]
   stickyKnowledge: Fragment[]
   stickyCharacters: Fragment[]
-  guidelineShortlist: Fragment[]
-  knowledgeShortlist: Fragment[]
-  characterShortlist: Fragment[]
-  authorInput: string
+  // Pinned custom fragments are author intent and can be injected with other sticky context.
+  stickyCustomFragments?: Fragment[]
+  guidelineCatalog: Fragment[]
+  knowledgeCatalog: Fragment[]
+  characterCatalog: Fragment[]
+  // Catalog candidates for broad-context agents, mirroring knowledge/character catalog rows.
+  customFragmentCatalogs?: CustomFragmentGroup[]
+  recentCharacters?: Fragment[]
+  recentKnowledge?: Fragment[]
+  // Recently mentioned custom fragments can be injected like recent characters/knowledge.
+  recentCustomFragments?: CustomFragmentGroup[]
+  /** Source-linked observations older than the raw prose window. */
+  continuityView?: ContinuityView
+  /** Complete fold retained outside prompt-budget projections. */
+  continuityLedger?: ContinuityLedger
+  /** Source-current chronological memory older than the raw prose window. */
+  summaryProjection?: SummaryProjection
+  authorInput?: string
+  /** Selected character perspective for this generation; undefined = narrator. */
+  povVoice?: PovVoice
   modelId?: string
+  /**
+   * Tool names the model will actually be offered, for blocks whose wording
+   * depends on them — a catalog telling a reader to expand a row is wrong if it
+   * cannot. Lives here rather than on AgentBlockContext alone because the Writer
+   * renders straight from this state, same as `modelId`. Undefined means the
+   * caller did not say; see `canReadFragments`.
+   */
+  enabledTools?: string[]
 }
 
 export interface ContextMessage {
@@ -36,6 +133,7 @@ export interface ContextBlock {
   content: string
   order: number
   source: 'builtin' | string
+  fragmentContext?: FragmentContextMetadata
 }
 
 // --- Block manipulation utilities (pure, immutable) ---
@@ -70,6 +168,7 @@ export function reorderBlock(blocks: ContextBlock[], id: string, newOrder: numbe
 
 const DEFAULT_PROSE_LIMIT = 10
 const logger = createLogger('context-builder')
+export const STORY_SUMMARY_PLACEHOLDER = '(summary will appear here)'
 
 export type ContextCompactType = 'proseLimit' | 'maxTokens' | 'maxCharacters'
 
@@ -85,10 +184,52 @@ export interface BuildContextOptions {
   excludeFragmentId?: string
   /** Only include prose that comes before this fragment in the active prose chain */
   proseBeforeFragmentId?: string
-  /** Build summary only from librarian updates before this fragment */
-  summaryBeforeFragmentId?: string
   /** Exclude story summary from context */
   excludeStorySummary?: boolean
+  /** Character whose perspective/voice should drive the generated prose. */
+  povCharacterId?: string
+}
+
+export function getFragmentVoice(fragment: Fragment): string | undefined {
+  const raw = fragment.meta?.voice
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return trimmed ? trimmed : undefined
+}
+
+/** Add the editable POV template as the last ordinary user instruction. */
+export function pushPovVoice(
+  blocks: ContextBlock[],
+  povVoice: PovVoice | undefined,
+  order = 650,
+): void {
+  if (!povVoice) return
+  blocks.push({
+    id: 'pov-voice',
+    role: 'user',
+    content: "Point of View: Write from {{characterName}}'s point of view, fully using {{characterName}}'s unique voice: {{voice}}",
+    order,
+    source: 'builtin',
+  })
+}
+
+/** Resolve POV tokens only after author block overrides have been applied. */
+export function resolvePovVoicePlaceholders(
+  blocks: ContextBlock[],
+  povVoice?: PovVoice,
+): ContextBlock[] {
+  if (!povVoice || !blocks.some(block => block.id === 'pov-voice')) return blocks
+  const voice = povVoice.content?.trim()
+    ? povVoice.content
+    : `match how ${povVoice.characterName} naturally speaks elsewhere in the story`
+  return blocks.map(block => block.id !== 'pov-voice'
+    ? block
+    : {
+        ...block,
+        content: block.content
+          .replace(/\{\{characterName\}\}/g, () => povVoice.characterName)
+          .replace(/\{\{voice\}\}/g, () => voice),
+      })
 }
 
 /**
@@ -127,56 +268,6 @@ function applyProseLimit(
   }
 }
 
-/**
- * Load and concatenate all active summary fragments (non-archived).
- * Era summaries come first (oldest coverage), then active chapter summaries.
- * Users who have placed or sticky-pinned summary fragments still see them
- * here — placement overrides only affect context position, not inclusion.
- */
-async function loadSummaryContent(
-  dataDir: string,
-  storyId: string,
-): Promise<string> {
-  const summaries = await listFragments(dataDir, storyId, 'summary')
-  if (summaries.length === 0) return ''
-  summaries.sort((a, b) => {
-    const aEra = a.meta?.isEraSummary ? 0 : 1
-    const bEra = b.meta?.isEraSummary ? 0 : 1
-    if (aEra !== bEra) return aEra - bEra
-    return a.createdAt.localeCompare(b.createdAt)
-  })
-  return summaries.map(f => f.content.trim()).filter(Boolean).join('\n\n')
-}
-
-/**
- * Load summary content for prose that appears in `proseIdsInWindow` — the
- * already-trimmed list of prose IDs that come before the regeneration
- * target. A summary fragment is relevant if its `meta.coverageEnd` falls
- * inside that window.
- */
-async function loadSummaryContentBefore(
-  dataDir: string,
-  storyId: string,
-  proseIdsInWindow: string[],
-): Promise<string> {
-  const summaries = await listFragments(dataDir, storyId, 'summary')
-  if (summaries.length === 0) return ''
-
-  const windowIds = new Set(proseIdsInWindow)
-  const relevant = summaries.filter(f => {
-    const cov = f.meta?.coverageEnd as string | undefined
-    if (!cov) return false
-    return windowIds.has(cov)
-  })
-  relevant.sort((a, b) => {
-    const aEra = a.meta?.isEraSummary ? 0 : 1
-    const bEra = b.meta?.isEraSummary ? 0 : 1
-    if (aEra !== bEra) return aEra - bEra
-    return a.createdAt.localeCompare(b.createdAt)
-  })
-  return relevant.map(f => f.content.trim()).filter(Boolean).join('\n\n')
-}
-
 async function resolveBeforeSectionIndex(
   dataDir: string,
   storyId: string,
@@ -205,15 +296,11 @@ export async function buildContextState(
     contextCompact: optsContextCompact,
     excludeFragmentId,
     proseBeforeFragmentId,
-    summaryBeforeFragmentId,
     excludeStorySummary,
+    povCharacterId,
   } = opts
   const requestLogger = logger.child({ storyId })
   requestLogger.info('Building context state...')
-
-  // One-shot migration of legacy story.summary → summary fragment. Idempotent.
-  // Runs before we read the story so the post-migration state is picked up.
-  await migrateStoryToSummaryFragments(dataDir, storyId)
 
   const story = await getStory(dataDir, storyId)
   if (!story) {
@@ -221,23 +308,36 @@ export async function buildContextState(
     throw new Error(`Story not found: ${storyId}`)
   }
 
-  // Load all fragments by type
-  requestLogger.debug('Loading fragments by type...')
-  const allGuidelines = await listFragments(dataDir, storyId, 'guideline')
-  const allKnowledge = await listFragments(dataDir, storyId, 'knowledge')
-  const allCharacters = await listFragments(dataDir, storyId, 'character')
+  // One storage snapshot, then cheap in-memory grouping. `listFragments(type)`
+  // still scans and parses every file, so doing that once per type multiplied
+  // context-build latency as custom fragment types accumulated.
+  requestLogger.debug('Loading fragment snapshot...')
+  const allFragments = await listFragments(dataDir, storyId)
+  const fragmentById = new Map(allFragments.map((fragment) => [fragment.id, fragment]))
+  const fragmentsOfType = (type: string) => allFragments.filter((fragment) => fragment.type === type)
+  const allGuidelines = fragmentsOfType('guideline')
+  const allKnowledge = fragmentsOfType('knowledge')
+  const allCharacters = fragmentsOfType('character')
+  const customFragmentGroups: CustomFragmentGroup[] = []
+  for (const def of customContextFragmentTypes(story)) {
+    const fragments = fragmentsOfType(def.type)
+    if (fragments.length > 0) {
+      customFragmentGroups.push({ ...def, fragments })
+    }
+  }
 
   // Load prose from chain - get active prose fragment IDs
   // If no chain exists (empty array), fall back to listing all prose fragments
   let activeProseIds = await getActiveProseIds(dataDir, storyId)
   let proseFragments: Fragment[] = []
+  const proseSegmentById = new Map<string, string>()
 
   if (activeProseIds.length === 0) {
     requestLogger.debug('No prose chain found, falling back to listing all prose')
-    proseFragments = await listFragments(dataDir, storyId, 'prose')
+    proseFragments = fragmentsOfType('prose')
 
     if (proseBeforeFragmentId) {
-      const beforeFragment = await getFragment(dataDir, storyId, proseBeforeFragmentId)
+      const beforeFragment = fragmentById.get(proseBeforeFragmentId)
       if (beforeFragment) {
         proseFragments = proseFragments.filter(f =>
           f.order < beforeFragment.order ||
@@ -266,15 +366,21 @@ export async function buildContextState(
     }
 
     // Load the actual prose fragments from chain, excluding the specified fragment
+    let segment = 0
     for (const proseId of activeProseIds) {
+      const fragment = fragmentById.get(proseId)
+      if (fragment?.type === 'marker') {
+        segment += 1
+        continue
+      }
       // Skip the excluded fragment
       if (excludeFragmentId && proseId === excludeFragmentId) {
         requestLogger.debug('Excluding fragment from context', { excludedId: excludeFragmentId })
         continue
       }
-      const fragment = await getFragment(dataDir, storyId, proseId)
-      if (fragment && !fragment.archived && fragment.type !== 'marker') {
+      if (fragment && !fragment.archived) {
         proseFragments.push(fragment)
+        proseSegmentById.set(fragment.id, String(segment))
       } else if (!fragment) {
         requestLogger.warn('Prose fragment not found in chain', { proseId })
       }
@@ -286,6 +392,8 @@ export async function buildContextState(
     guidelineCount: allGuidelines.length,
     knowledgeCount: allKnowledge.length,
     characterCount: allCharacters.length,
+    customContextTypeCount: customFragmentGroups.length,
+    customFragmentCount: customFragmentGroups.reduce((sum, group) => sum + group.fragments.length, 0),
   })
 
   // Sort prose by order, then createdAt
@@ -303,64 +411,38 @@ export async function buildContextState(
   // Apply the prose limit
   const recentProse = applyProseLimit(sortedProse, effectiveCompact)
 
-  let chapterSummaries: Array<{ markerId: string; name: string; summary: string }> = []
-  if (story.settings.enableHierarchicalSummary && activeProseIds.length > 0 && recentProse.length > 0) {
-    const chain = await getProseChain(dataDir, storyId)
-    if (chain) {
-      const sectionByFragmentId = new Map(activeProseIds.map((id, idx) => [id, idx]))
-      const recentSectionIndexes = recentProse
-        .map((p) => sectionByFragmentId.get(p.id))
-        .filter((idx): idx is number => idx !== undefined)
-
-      if (recentSectionIndexes.length > 0) {
-        const start = Math.min(...recentSectionIndexes)
-        const end = Math.max(...recentSectionIndexes)
-        const markerIndexes: number[] = []
-
-        for (let i = 0; i < chain.entries.length; i++) {
-          const entry = chain.entries[i]
-          const activeId = entry.active
-          const fragment = await getFragment(dataDir, storyId, activeId)
-          if (fragment?.type === 'marker') {
-            markerIndexes.push(i)
-          }
-        }
-
-        for (let i = 0; i < markerIndexes.length; i++) {
-          const markerIndex = markerIndexes[i]
-          const nextMarkerIndex = markerIndexes[i + 1] ?? chain.entries.length
-          const chapterStart = markerIndex + 1
-          const chapterEnd = nextMarkerIndex - 1
-
-          if (chapterEnd < chapterStart) continue
-          if (chapterEnd < start || chapterStart > end) continue
-
-          const markerId = chain.entries[markerIndex].active
-          const marker = await getFragment(dataDir, storyId, markerId)
-          if (!marker || marker.type !== 'marker') continue
-          const summary = marker.content.trim()
-          if (!summary) continue
-
-          chapterSummaries.push({
-            markerId: marker.id,
-            name: marker.name,
-            summary,
-          })
-        }
-      }
-    }
+  // Both derived views consume the same analysis index. Read it once so a cold
+  // context build does not perform duplicate filesystem work before rendering.
+  const analysisIndex = await getAnalysisIndex(dataDir, storyId)
+  const [continuityLedger, summaryProjection] = await Promise.all([
+    buildContinuityLedger({
+      dataDir,
+      storyId,
+      activeProseFragments: sortedProse,
+      analysisIndex,
+    }),
+    excludeStorySummary
+      ? Promise.resolve(undefined)
+      : buildSummaryProjection({
+          dataDir,
+          storyId,
+          activeProseFragments: sortedProse,
+          recentProseFragments: recentProse,
+          summaryFragments: fragmentsOfType('summary'),
+          targetRelative: Boolean(proseBeforeFragmentId),
+          analysisIndex,
+          activeProseSegmentKeys: sortedProse.map((fragment) => proseSegmentById.get(fragment.id) ?? '0'),
+      }),
+  ])
+  const continuityView = projectContinuityView(continuityLedger)
+  if (summaryProjection?.omittedBefore) {
+    // Projection marks the branch-scoped demand; releasing it here also covers
+    // an idle Context Preview, where no later Analyze transition would do so.
+    queueSummaryRollupMaintenance(dataDir, storyId)
   }
+  const effectiveSummary = renderSummaryProjection(summaryProjection, 'generation.writer') ?? ''
 
-  let effectiveSummary: string
-  if (excludeStorySummary) {
-    effectiveSummary = ''
-  } else if (summaryBeforeFragmentId && activeProseIds.length > 0) {
-    effectiveSummary = await loadSummaryContentBefore(dataDir, storyId, activeProseIds)
-  } else {
-    effectiveSummary = await loadSummaryContent(dataDir, storyId)
-  }
-
-  // Split guidelines, knowledge, and characters into sticky (full) vs shortlist
+  // Split guidelines, knowledge, and characters into sticky full context vs catalog rows.
   const sortByOrder = (a: Fragment, b: Fragment) => a.order - b.order || a.createdAt.localeCompare(b.createdAt)
   const stickyGuidelines = allGuidelines.filter((f) => f.sticky).sort(sortByOrder)
   const nonStickyGuidelines = allGuidelines.filter((f) => !f.sticky)
@@ -368,18 +450,63 @@ export async function buildContextState(
   const nonStickyKnowledge = allKnowledge.filter((f) => !f.sticky)
   const stickyCharacters = allCharacters.filter((f) => f.sticky).sort(sortByOrder)
   const nonStickyCharacters = allCharacters.filter((f) => !f.sticky)
+  const stickyCustomFragments = customFragmentGroups
+    .flatMap((group) => group.fragments.filter((f) => f.sticky))
+    .sort(sortByOrder)
+
+  // Fragments known to be active in recent prose ride along in full, so the
+  // writer continues them from their current sheets rather than one-line
+  // summaries. The immediately preceding receipt also supplies a one-turn
+  // bridge for explicit reads/tags while background mention analysis catches up.
+  const recentSignals = collectRecentContextSignals(recentProse)
+  const recentContextIds = new Set(recentSignals.keys())
+  const recentCharacters = nonStickyCharacters.filter((f) => recentContextIds.has(f.id)).sort(sortByOrder)
+  const characterCatalog = nonStickyCharacters.filter((f) => !recentContextIds.has(f.id))
+  const recentKnowledge = nonStickyKnowledge.filter((f) => recentContextIds.has(f.id)).sort(sortByOrder)
+  const knowledgeCatalog = nonStickyKnowledge.filter((f) => !recentContextIds.has(f.id))
+  const recentCustomFragments: CustomFragmentGroup[] = []
+  const customFragmentCatalogs: CustomFragmentGroup[] = []
+  for (const group of customFragmentGroups) {
+    const nonSticky = group.fragments.filter((f) => !f.sticky)
+    const recent = nonSticky.filter((f) => recentContextIds.has(f.id)).sort(sortByOrder)
+    const catalog = nonSticky.filter((f) => !recentContextIds.has(f.id)).sort(sortByOrder)
+    if (recent.length > 0) recentCustomFragments.push({ ...group, fragments: recent })
+    if (catalog.length > 0) customFragmentCatalogs.push({ ...group, fragments: catalog })
+  }
+
+  let povVoice: PovVoice | undefined
+  if (povCharacterId) {
+    const povCharacter = allCharacters.find(fragment => fragment.id === povCharacterId && !fragment.archived)
+    if (povCharacter) {
+      povVoice = {
+        characterName: povCharacter.name,
+        content: getFragmentVoice(povCharacter),
+      }
+    } else {
+      requestLogger.warn('POV character not found on active timeline; using narrator', { povCharacterId })
+    }
+  }
 
   const state = {
     story: { ...story, summary: effectiveSummary },
+    allFragments,
     proseFragments: recentProse,
-    chapterSummaries,
     stickyGuidelines,
     stickyKnowledge,
     stickyCharacters,
-    guidelineShortlist: nonStickyGuidelines,
-    knowledgeShortlist: nonStickyKnowledge,
-    characterShortlist: nonStickyCharacters,
+    stickyCustomFragments,
+    recentCharacters,
+    recentKnowledge,
+    recentCustomFragments,
+    continuityLedger,
+    continuityView,
+    summaryProjection,
+    guidelineCatalog: nonStickyGuidelines,
+    knowledgeCatalog,
+    characterCatalog,
+    customFragmentCatalogs,
     authorInput,
+    povVoice,
   }
 
   requestLogger.info('Context state built', {
@@ -387,40 +514,42 @@ export async function buildContextState(
     stickyGuidelines: stickyGuidelines.length,
     stickyKnowledge: stickyKnowledge.length,
     stickyCharacters: stickyCharacters.length,
-    guidelineShortlist: nonStickyGuidelines.length,
-    knowledgeShortlist: nonStickyKnowledge.length,
-    characterShortlist: nonStickyCharacters.length,
+    stickyCustomFragments: stickyCustomFragments.length,
+    recentCharacters: recentCharacters.length,
+    recentKnowledge: recentKnowledge.length,
+    recentCustomFragments: recentCustomFragments.reduce((sum, group) => sum + group.fragments.length, 0),
+    continuityState: continuityView?.currentState.length ?? 0,
+    continuityStateStored: continuityLedger?.currentState.length ?? 0,
+    continuityThreads: continuityView?.liveThreads.length ?? 0,
+    continuityKnowledge: continuityView?.characterKnowledge.length ?? 0,
+    guidelineCatalog: nonStickyGuidelines.length,
+    knowledgeCatalog: knowledgeCatalog.length,
+    characterCatalog: characterCatalog.length,
+    customFragmentCatalogs: customFragmentCatalogs.reduce((sum, group) => sum + group.fragments.length, 0),
   })
 
   return state
 }
 
-export interface AssembleOptions {
-  /** Extra tool descriptions to include in the context (e.g. plugin tools) */
-  extraTools?: Array<{ name: string; description: string; pluginName?: string }>
-}
-
-/** Renders a single fragment with a source marker */
-function renderFragment(f: Fragment): string {
-  return `[@fragment=${f.id}]\n${registry.renderContext(f)}`
-}
-
-/**
- * Renders sticky fragments grouped by type into content parts.
- */
-function renderTypeGrouped(fragments: Fragment[], label: string): string[] {
-  if (fragments.length === 0) return []
-  const parts: string[] = [`\n[@section=${label}]\n## ${label}`]
-  for (const f of fragments) {
-    parts.push(renderFragment(f))
+function fragmentFullSectionsByType(fragments: Fragment[], story: StoryMeta): Array<{ type: string; label: string; fragments: Fragment[] }> {
+  const groups = new Map<string, Fragment[]>()
+  for (const fragment of fragments) {
+    const group = groups.get(fragment.type)
+    if (group) {
+      group.push(fragment)
+    } else {
+      groups.set(fragment.type, [fragment])
+    }
   }
-  return parts
+
+  return [...groups.entries()].map(([type, group]) => ({
+      type,
+      label: fragmentTypeLabel(story, type),
+      fragments: group,
+    }))
 }
 
-/**
- * Renders sticky fragments in a custom order under a single heading.
- */
-function renderAdvancedOrder(fragments: Fragment[], fragmentOrder: string[]): string[] {
+function orderFragments(fragments: Fragment[], fragmentOrder: string[]): Fragment[] {
   if (fragments.length === 0) return []
 
   // Build a map for quick lookup
@@ -442,11 +571,24 @@ function renderAdvancedOrder(fragments: Fragment[], fragmentOrder: string[]): st
     }
   }
 
-  const parts: string[] = ['\n[@section=Context]\n## Context']
-  for (const f of ordered) {
-    parts.push(renderFragment(f))
+  return ordered
+}
+
+function stickyFragmentSections(
+  fragments: Fragment[],
+  story: StoryMeta,
+  contextOrderMode: string,
+  fragmentOrder: string[],
+): Array<{ type: string; label: string; fragments: Fragment[] }> {
+  if (contextOrderMode === 'advanced') {
+    return [{
+      type: 'mixed',
+      label: 'Context',
+      fragments: orderFragments(fragments, fragmentOrder),
+    }]
   }
-  return parts
+
+  return fragmentFullSectionsByType(fragments, story)
 }
 
 /**
@@ -454,46 +596,27 @@ function renderAdvancedOrder(fragments: Fragment[], fragmentOrder: string[]): st
  * Each section of the LLM prompt becomes a discrete, addressable block.
  * Blocks can be manipulated (find, replace, remove, insert, reorder) before compilation.
  */
-export function createDefaultBlocks(state: ContextBuildState, opts: AssembleOptions = {}): ContextBlock[] {
+export function createDefaultBlocks(state: ContextBuildState): ContextBlock[] {
   const {
     story,
     proseFragments,
-    chapterSummaries,
-    stickyGuidelines,
-    stickyKnowledge,
-    stickyCharacters,
-    guidelineShortlist,
-    knowledgeShortlist,
-    characterShortlist,
-    authorInput,
+    authorInput = '',
   } = state
 
   const contextOrderMode = story.settings.contextOrderMode ?? 'simple'
   const fragmentOrder = story.settings.fragmentOrder ?? []
+  const lanes = buildFragmentContextLanes(state)
+  const lane = (type: string): FragmentContextLane | undefined => findFragmentContextLane(lanes, type)
 
   // Partition sticky fragments by placement
-  const allSticky = [...stickyGuidelines, ...stickyKnowledge, ...stickyCharacters]
+  const allSticky = lanes.flatMap((entry) => entry.sticky)
   const systemPlaced = allSticky.filter(f => (f.placement ?? 'user') === 'system')
   const userPlaced = allSticky.filter(f => (f.placement ?? 'user') === 'user')
 
-  // Build tool lines (only for types with llmTools enabled)
-  const toolLines: string[] = []
-  const types = registry.listTypes()
-  for (const t of types) {
-    if (t.llmTools === false) continue
-    const cap = t.type.charAt(0).toUpperCase() + t.type.slice(1)
-    const plural = ['prose', 'knowledge'].includes(t.type) ? cap : cap + 's'
-    toolLines.push(`- get${cap}(id): Get full content of a ${t.type} fragment`)
-    toolLines.push(`- list${plural}(): List all ${t.type} fragments`)
-  }
-  toolLines.push('- listFragmentTypes(): List all available fragment types')
-  if (opts.extraTools) {
-    for (const t of opts.extraTools) {
-      toolLines.push(`[@plugin=${t.pluginName ?? t.name}]\n- ${t.name}: ${t.description}`)
-    }
-  }
-
   const blocks: ContextBlock[] = []
+  const pushFragmentBlock = (block: ContextBlock | null) => {
+    if (block) blocks.push(block)
+  }
 
   // --- System blocks ---
 
@@ -505,39 +628,25 @@ export function createDefaultBlocks(state: ContextBuildState, opts: AssembleOpti
     source: 'builtin',
   })
 
+  // Tools reach the model via the SDK schema, so this block holds usage policy
+  // only — never a catalog that could drift from the enabled tools.
   blocks.push({
     id: 'tools',
     role: 'system',
-    content: [
-      '## Available Tools',
-      'You have access to the following tools:',
-      toolLines.join('\n'),
-      '\n' + instructionRegistry.resolve('generation.tools-suffix', state.modelId),
-    ].join('\n'),
+    content: instructionRegistry.resolve('generation.tools-suffix', state.modelId),
     order: 200,
     source: 'builtin',
   })
 
   if (systemPlaced.length > 0) {
-    let parts: string[]
-    if (contextOrderMode === 'advanced') {
-      parts = renderAdvancedOrder(systemPlaced, fragmentOrder)
-    } else {
-      parts = []
-      const sysGuidelines = systemPlaced.filter(f => f.type === 'guideline')
-      const sysKnowledge = systemPlaced.filter(f => f.type === 'knowledge')
-      const sysCharacters = systemPlaced.filter(f => f.type === 'character')
-      parts.push(...renderTypeGrouped(sysGuidelines, 'Guidelines'))
-      parts.push(...renderTypeGrouped(sysKnowledge, 'Knowledge'))
-      parts.push(...renderTypeGrouped(sysCharacters, 'Characters'))
-    }
-    blocks.push({
+    pushFragmentBlock(fragmentFullContextBlock({
       id: 'system-fragments',
       role: 'system',
-      content: parts.join('\n').replace(/^\n+/, ''),
+      heading: 'System Fragments',
+      scope: 'all',
       order: 300,
-      source: 'builtin',
-    })
+      sections: stickyFragmentSections(systemPlaced, story, contextOrderMode, fragmentOrder),
+    }))
   }
 
   // --- User blocks ---
@@ -545,132 +654,95 @@ export function createDefaultBlocks(state: ContextBuildState, opts: AssembleOpti
   blocks.push({
     id: 'story-info',
     role: 'user',
-    content: [
-      `## Story: ${story.name}`,
-      `${story.description}`,
-    ].join('\n'),
+    // The story title is the one h1 in the prompt — the document the writer is
+    // continuing; every section beneath it is `##`.
+    content: storyHeaderContent(story),
     order: 100,
     source: 'builtin',
   })
 
-  if (story.summary) {
-    blocks.push({
-      id: 'summary',
-      role: 'user',
-      content: `## Story Summary So Far\n${story.summary}`,
-      order: 400,
-      source: 'builtin',
-    })
+  {
+    const summary = storySummaryBlock(
+      renderSummaryProjection(state.summaryProjection, 'generation.writer') ?? undefined,
+      { order: 400 },
+    )
+    if (summary) blocks.push(summary)
   }
 
-  if (chapterSummaries.length > 0) {
+  const continuity = renderContinuity(state, 'generation.writer')
+  if (continuity) {
     blocks.push({
-      id: 'chapter-summaries',
+      id: 'continuity-observations',
       role: 'user',
-      content: [
-        '## Chapter/Arc Summaries',
-        ...chapterSummaries.map((c) => `[@chapter=${c.markerId}]\n### ${c.name}\n${c.summary}`),
-      ].join('\n\n'),
-      order: 410,
+      content: continuity,
+      order: 420,
       source: 'builtin',
     })
   }
 
   if (userPlaced.length > 0) {
-    let parts: string[]
-    if (contextOrderMode === 'advanced') {
-      parts = renderAdvancedOrder(userPlaced, fragmentOrder)
-    } else {
-      parts = []
-      const userGuidelines = userPlaced.filter(f => f.type === 'guideline')
-      const userKnowledge = userPlaced.filter(f => f.type === 'knowledge')
-      const userCharacters = userPlaced.filter(f => f.type === 'character')
-      parts.push(...renderTypeGrouped(userGuidelines, 'Guidelines'))
-      parts.push(...renderTypeGrouped(userKnowledge, 'Knowledge'))
-      parts.push(...renderTypeGrouped(userCharacters, 'Characters'))
-    }
-    blocks.push({
+    pushFragmentBlock(fragmentFullContextBlock({
       id: 'user-fragments',
       role: 'user',
-      content: parts.join('\n').replace(/^\n+/, ''),
+      heading: 'User Fragments',
+      scope: 'all',
       order: 200,
-      source: 'builtin',
-    })
+      sections: stickyFragmentSections(userPlaced, story, contextOrderMode, fragmentOrder),
+    }))
   }
 
-  if (guidelineShortlist.length > 0) {
-    blocks.push({
-      id: 'shortlist-guidelines',
-      role: 'user',
-      content: [
-        '## Available Guidelines use getFragment(gl-xxxxxx) tool to retrieve full content',
-        ...guidelineShortlist.map(g => `- ${g.id}: ${g.name} — ${g.description}`),
-      ].join('\n'),
-      order: 300,
-      source: 'builtin',
-    })
-  }
+  // Fragments active in recent prose ride along in full so the writer
+  // continues from their current sheets. One aggregate block keeps the full
+  // context structured by type, matching the compact catalog shape below.
+  pushFragmentBlock(fragmentFullContextBlock({
+    id: 'fragment-recent',
+    heading: 'Recent Fragments',
+    scope: 'recent',
+    order: 308,
+    sections: [
+      { type: 'knowledge', label: 'Knowledge', fragments: lane('knowledge')?.recent ?? [] },
+      { type: 'character', label: 'Characters', fragments: lane('character')?.recent ?? [] },
+      ...lanes
+        .filter((entry) => !isBuiltinContextFragmentType(entry.type))
+        .map((entry) => ({ type: entry.type, label: entry.label, fragments: entry.recent })),
+    ],
+  }))
 
-  if (knowledgeShortlist.length > 0) {
-    blocks.push({
-      id: 'shortlist-knowledge',
-      role: 'user',
-      content: [
-        '## Available Knowledge use getFragment(kn-xxxxxx) tool to retrieve full content',
-        ...knowledgeShortlist.map(k => `- ${k.id}: ${k.name} — ${k.description}`),
-      ].join('\n'),
-      order: 310,
-      source: 'builtin',
-    })
-  }
+  pushFragmentBlock(fragmentCatalogBlock({
+    sections: [
+      { type: 'guideline', label: 'Guidelines', fragments: lane('guideline')?.available ?? [] },
+      { type: 'knowledge', label: 'Knowledge', fragments: lane('knowledge')?.available ?? [] },
+      { type: 'character', label: 'Characters', fragments: lane('character')?.available ?? [] },
+      ...lanes
+        .filter((entry) => !isBuiltinContextFragmentType(entry.type))
+        .map((entry) => ({ type: entry.type, label: entry.label, fragments: entry.available })),
+    ],
+    order: 330,
+    canReadFragments: canReadFragments(state),
+  }))
 
-  if (characterShortlist.length > 0) {
-    blocks.push({
-      id: 'shortlist-characters',
-      role: 'user',
-      content: [
-        '## Available Characters  use getFragment(ch-xxxxxx) tool to retrieve full content',
-        ...characterShortlist.map(c => `- ${c.id}: ${c.name} — ${c.description}`),
-      ].join('\n'),
-      order: 320,
-      source: 'builtin',
-    })
-  }
-
-  if (proseFragments.length > 0) {
-    blocks.push({
-      id: 'prose',
-      role: 'user',
-      content: [
-        '## Recent Prose',
-        ...proseFragments.map(p => renderFragment(p)),
-        '\n## End of Recent Prose',
-      ].join('\n'),
+  {
+    const prose = proseWindowBlock(proseFragments, {
       order: 500,
-      source: 'builtin',
+      newStoryGuidance: 'Establish the opening scene — setting, tone, and any initial characters — based on the author\'s direction below.',
     })
-  } else {
+    if (prose) blocks.push(prose)
+  }
+
+  // Only frame an explicit direction when the author gave one; a bare "continue"
+  // (empty input) leaves the model to continue from the prose without a dangling
+  // instruction label.
+  if (authorInput.trim()) {
     blocks.push({
-      id: 'new-story',
+      id: 'author-input',
       role: 'user',
-      content: [
-        '## New Story',
-        'There is no existing prose yet. You are writing the very beginning of this story.',
-        'Establish the opening scene — setting, tone, and any initial characters — based on the author\'s direction below.',
-        'Do NOT reference or continue from any prior narrative; start fresh.',
-      ].join('\n'),
-      order: 500,
+      content: markdownSection(2, 'Author Direction', authorInput),
+      order: 600,
       source: 'builtin',
     })
   }
 
-  blocks.push({
-    id: 'author-input',
-    role: 'user',
-    content: `The author wants the following to happen next: ${authorInput}`,
-    order: 600,
-    source: 'builtin',
-  })
+  pushPovVoice(blocks, state.povVoice, 650)
 
   return blocks
 }
@@ -715,11 +787,11 @@ export function compileBlocks(blocks: ContextBlock[]): ContextMessage[] {
  * Assembles the final LLM message array from the context state.
  * Thin wrapper over createDefaultBlocks + compileBlocks.
  */
-export function assembleMessages(state: ContextBuildState, opts: AssembleOptions = {}): ContextMessage[] {
+export function assembleMessages(state: ContextBuildState): ContextMessage[] {
   const requestLogger = logger.child({ storyId: state.story.id })
   requestLogger.info('Assembling messages...')
 
-  const blocks = createDefaultBlocks(state, opts)
+  const blocks = resolvePovVoicePlaceholders(createDefaultBlocks(state), state.povVoice)
   const messages = compileBlocks(blocks)
 
   requestLogger.info('Messages assembled', {
@@ -747,13 +819,6 @@ export async function buildContext(
 
 const ANTHROPIC_CACHE_CONTROL = { anthropic: { cacheControl: { type: 'ephemeral' } } }
 
-/**
- * Regex for fragment tag references: <@ch-bafego> or <@ch-bafego:short>
- * Matches valid fragment IDs (2-4 char prefix, hyphen, 6 lowercase alpha chars)
- * with an optional :short modifier.
- */
-const FRAGMENT_TAG_RE = /<@([a-z]{2,4}-[a-z]{6})(?::(short))?>/g
-
 export interface ExpandFragmentTagsOptions {
   /** Maximum recursion depth for expanding tags within expanded content. Default 0 (no recursion). */
   maxDepth?: number
@@ -761,7 +826,7 @@ export interface ExpandFragmentTagsOptions {
 
 /**
  * Expands fragment reference tags in a string.
- * - `<@ch-bafego>` → full rendered content via registry.renderContext()
+ * - `<@ch-bafego>` → full rendered fragment context
  * - `<@ch-bafego:short>` → `{name}: {description}`
  * - Unknown fragment → `[unknown fragment: {id}]`
  *
@@ -781,9 +846,8 @@ export async function expandFragmentTags(
   // Collect all matches first to avoid async issues with replace
   const matches: Array<{ full: string; id: string; modifier?: string }> = []
   let match: RegExpExecArray | null
-  // Reset lastIndex since we reuse the global regex
-  FRAGMENT_TAG_RE.lastIndex = 0
-  while ((match = FRAGMENT_TAG_RE.exec(content)) !== null) {
+  const tagPattern = fragmentTagPattern()
+  while ((match = tagPattern.exec(content)) !== null) {
     matches.push({ full: match[0], id: match[1], modifier: match[2] })
   }
 
@@ -817,7 +881,7 @@ export async function expandFragmentTags(
     } else if (m.modifier === 'short') {
       replacement = `${fragment.name}: ${fragment.description}`
     } else {
-      replacement = registry.renderContext(fragment)
+      replacement = renderContextFragment(fragment)
       // Recurse into expanded content if depth allows
       if (maxDepth > 0) {
         const childAncestors = new Set(ancestors)
@@ -862,7 +926,7 @@ export async function expandMessagesFragmentTags(
  * - System message: adds providerOptions with Anthropic cache control so the
  *   entire system prompt is treated as a cacheable prefix.
  * - User message: splits at the [@block=author-input] marker into two TextParts.
- *   The stable prefix (story info, fragments, shortlists, summary, prose) gets
+ *   The stable prefix (story info, fragments, catalogs, summary, prose) gets
  *   cache control; the volatile suffix (author input) does not.
  * - Other messages: passed through unchanged.
  *
@@ -888,6 +952,12 @@ export function addCacheBreakpoints(messages: ContextMessage[]): ModelMessage[] 
       // prefix. Split there so the prose prefix still gets a cache breakpoint.
       if (splitIndex === -1) {
         splitIndex = msg.content.indexOf('[@block=writing-brief]')
+      }
+
+      // The prewriter prompt has a stable full-context prefix and a volatile
+      // planning request suffix.
+      if (splitIndex === -1) {
+        splitIndex = msg.content.indexOf('[@block=planning-request]')
       }
 
       if (splitIndex === -1) {

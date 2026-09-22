@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { api, type Fragment } from '@/lib/api'
+import { consumeRun } from '@/lib/api/runs'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -174,6 +176,7 @@ export function ProseWritingPanel({
   onFragmentChange,
 }: ProseWritingPanelProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [isTransformingSelection, setIsTransformingSelection] = useState(false)
   const [selectionTransformMode, setSelectionTransformMode] = useState<SelectionTransformMode | null>(null)
   const [selectionTransformReasoning, setSelectionTransformReasoning] = useState('')
@@ -191,20 +194,11 @@ export function ProseWritingPanel({
   const transformUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Queries
-  const { data: proseChain } = useQuery({
-    queryKey: ['proseChain', storyId],
-    queryFn: () => api.proseChain.get(storyId),
-  })
+  const { data: proseChain } = useQuery(q.proseChain(storyId, branchId))
 
-  const { data: proseFragments = [] } = useQuery({
-    queryKey: ['fragments', storyId, 'prose'],
-    queryFn: () => api.fragments.list(storyId, 'prose'),
-  })
+  const { data: proseFragments = [] } = useQuery(q.fragments(storyId, branchId, 'prose'))
 
-  const { data: markerFragments = [] } = useQuery({
-    queryKey: ['fragments', storyId, 'marker'],
-    queryFn: () => api.fragments.list(storyId, 'marker'),
-  })
+  const { data: markerFragments = [] } = useQuery(q.fragments(storyId, branchId, 'marker'))
 
   // Build combined fragment map
   const allFragmentsMap = useMemo(() => {
@@ -478,7 +472,7 @@ export function ProseWritingPanel({
 
   // Selection transform
   const applySelectionTransform = async (mode: SelectionTransformMode, instruction?: string, label?: string) => {
-    if (!editor || isTransformingSelection) return
+    if (!editor || isTransformingSelection || !branchId) return
     const { from, to, empty } = editor.state.selection
     if (empty || to <= from) return
 
@@ -506,21 +500,25 @@ export function ProseWritingPanel({
           contextBefore,
           contextAfter,
           instruction,
+          branchId,
         },
       )
 
-      const reader = stream.getReader()
       let transformed = ''
       let reasoning = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') transformed += value.text
-        if (value.type === 'reasoning') {
-          reasoning += value.text
+      const result = await consumeRun(storyId, stream, (event) => {
+        if (event.type === 'text') transformed += event.text
+        if (event.type === 'reasoning') {
+          reasoning += event.text
           setSelectionTransformReasoning(reasoning)
         }
+      }, { branchId })
+
+      if (result.status === 'error') {
+        setSelectionTransformReasoning(result.error ?? 'Transform failed')
+        return
       }
+      if (result.status === 'cancelled') return
 
       const compact = transformed.trim()
       if (!compact) return

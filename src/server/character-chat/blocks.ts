@@ -1,103 +1,86 @@
 import type { ContextBlock } from '../llm/context-builder'
+import {
+  fragmentFullContextBlock,
+  markdownSection,
+  renderFullFragmentSheet,
+} from '../llm/fragment-context-blocks'
 import type { AgentBlockContext } from '../agents/agent-block-context'
 import { instructionRegistry } from '../instructions'
 import { buildBasePreviewContext } from '../agents/block-helpers'
+import { renderContinuity } from '../librarian/continuity-view'
 
 export function createCharacterChatBlocks(ctx: AgentBlockContext): ContextBlock[] {
   const blocks: ContextBlock[] = []
+  const characterName = ctx.character?.name ?? 'the character'
+  const systemTemplate = instructionRegistry.resolve('character-chat.system', ctx.modelId)
+  const instructionsTemplate = instructionRegistry.resolve('character-chat.instructions', ctx.modelId)
+
+  blocks.push({
+    id: 'instructions',
+    role: 'system',
+    content: [
+      systemTemplate.replace(/\{\{characterName\}\}/g, characterName),
+      '',
+      instructionsTemplate.replace(/\{\{characterName\}\}/g, characterName),
+    ].join('\n'),
+    order: 100,
+    source: 'builtin',
+  })
 
   if (ctx.character) {
-    const systemTemplate = instructionRegistry.resolve('character-chat.system', ctx.modelId)
-    blocks.push({
+    const characterBlock = fragmentFullContextBlock({
       id: 'character',
-      role: 'system',
-      content: [
-        systemTemplate.replace(/\{\{characterName\}\}/g, ctx.character.name),
-        '',
-        '## Character Details',
-        ctx.character.content,
-        '',
-        '## Character Description',
-        ctx.character.description,
-      ].join('\n'),
+      heading: 'Character',
+      sections: [{
+        type: 'character',
+        label: 'Character',
+        fragments: [ctx.character],
+      }],
+      scope: 'all',
       order: 100,
-      source: 'builtin',
+      intro: 'This is the full character sheet for the person you are roleplaying.',
+      renderFragment: renderFullFragmentSheet,
     })
+    if (characterBlock) blocks.push(characterBlock)
   }
 
   if (ctx.personaDescription) {
     blocks.push({
       id: 'persona',
-      role: 'system',
-      content: [
-        '## Who You Are Speaking With',
-        ctx.personaDescription,
-      ].join('\n'),
+      role: 'user',
+      content: markdownSection(2, 'Who You Are Speaking With', ctx.personaDescription),
       order: 200,
       source: 'builtin',
     })
   }
 
-  // Story context + instructions
-  const storyContextParts: string[] = []
-  storyContextParts.push(`## Story: ${ctx.story.name}`)
-  storyContextParts.push(ctx.story.description)
-  if (ctx.story.summary) {
-    storyContextParts.push(`\n## Story Summary\n${ctx.story.summary}`)
+  // No global story summary, prose catalog, or fragment tools are routed here:
+  // the selected cutoff and folded self-knowledge are an access boundary, not
+  // merely an instruction to ignore authorial facts already in the prompt.
+  const awareness = renderContinuity(ctx, 'character-chat.chat')
+  if (awareness) {
+    blocks.push({
+      id: 'character-awareness',
+      role: 'user',
+      content: awareness,
+      order: 300,
+      source: 'builtin',
+    })
   }
-
-  // Prose summaries (inline — character chat bundles everything into one block)
-  if (ctx.proseFragments.length > 0) {
-    storyContextParts.push('\n## Story Events (use getFragment to read full prose)')
-    for (const p of ctx.proseFragments) {
-      if ((p.meta._librarian as { summary?: string })?.summary) {
-        storyContextParts.push(`- ${p.id}: ${(p.meta._librarian as { summary?: string }).summary}`)
-      } else if (p.content.length < 600) {
-        storyContextParts.push(`- ${p.id}: \n${p.content}`)
-      } else {
-        storyContextParts.push(`- ${p.id}: ${p.content.slice(0, 500).replace(/\n/g, ' ')}... [truncated]`)
-      }
-    }
-  }
-
-  // Sticky fragments
-  const stickyAll = [
-    ...ctx.stickyGuidelines,
-    ...ctx.stickyKnowledge,
-    ...ctx.stickyCharacters,
-  ]
-  if (stickyAll.length > 0) {
-    storyContextParts.push('\n## World Context')
-    for (const f of stickyAll) {
-      storyContextParts.push(`- ${f.id}: ${f.name} — ${f.description}`)
-    }
-  }
-
-  const characterName = ctx.character?.name ?? 'the character'
-  const instructionsTemplate = instructionRegistry.resolve('character-chat.instructions', ctx.modelId)
-
-  blocks.push({
-    id: 'story-context',
-    role: 'system',
-    content: [
-      '## Story Context',
-      storyContextParts.join('\n'),
-      '',
-      '## Instructions',
-      instructionsTemplate.replace(/\{\{characterName\}\}/g, characterName),
-    ].join('\n'),
-    order: 300,
-    source: 'builtin',
-  })
 
   return blocks
 }
 
 export async function buildCharacterChatPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
   const base = await buildBasePreviewContext(dataDir, storyId)
+  // A real character, not a blank: half this context — the sheet, the awareness
+  // boundary, which sheets the catalog then omits — only exists once one is
+  // chosen, and a preview that hides those blocks hides what the author came to
+  // inspect. Stories with no characters still preview, minus those blocks.
+  const character = base.stickyCharacters[0] ?? base.characterCatalog[0]
   return {
     ...base,
-    character: undefined,
+    character,
     personaDescription: 'You are speaking with a stranger you have just met. You do not know who they are.',
   }
 }

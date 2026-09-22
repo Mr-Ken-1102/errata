@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useActiveBranchId } from '@/lib/query-keys'
+import { consumeRun } from '@/lib/api/runs'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Sparkles, Square, X } from 'lucide-react'
@@ -22,55 +24,114 @@ export function RefinementPanel({
   onClose,
 }: RefinementPanelProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [instructions, setInstructions] = useState('')
   const [streamedText, setStreamedText] = useState('')
   const [isRefining, setIsRefining] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [cancelled, setCancelled] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
+  const runIdRef = useRef<string | null>(null)
+  const storyIdRef = useRef(storyId)
+  const branchIdRef = useRef(branchId)
+  storyIdRef.current = storyId
+  branchIdRef.current = branchId
+  const activeRef = useRef(false)
+  const cancelRequestedRef = useRef(false)
+  const mountedRef = useRef(true)
+
+  // Closing this panel is an explicit user stop, not a network disconnect.
+  // If the run-start event has not arrived yet, remember the intent and send
+  // the cancellation as soon as the server-issued run id is observed.
+  useEffect(() => () => {
+    mountedRef.current = false
+    if (!activeRef.current) return
+    cancelRequestedRef.current = true
+    const runId = runIdRef.current
+    if (runId) {
+      void api.runs.cancel(storyIdRef.current, runId, branchIdRef.current).catch(() => {})
+    }
+  }, [])
 
   const handleRefine = useCallback(async () => {
-    if (isRefining) return
+    if (activeRef.current || !branchId) return
 
+    activeRef.current = true
+    cancelRequestedRef.current = false
+    runIdRef.current = null
     setIsRefining(true)
     setStreamedText('')
     setError(null)
     setDone(false)
+    setCancelled(false)
+
+    const refreshFragments = () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['fragments', storyId] }),
+      queryClient.invalidateQueries({ queryKey: ['fragment', storyId] }),
+    ])
 
     try {
       const stream = await api.librarian.refine(
         storyId,
         fragmentId,
         instructions.trim() || undefined,
+        { branchId },
       )
 
-      const reader = stream.getReader()
       let accumulated = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-          setStreamedText(accumulated)
+      const result = await consumeRun(storyId, stream, (event) => {
+        if (event.type === 'run-start') {
+          runIdRef.current = event.runId
+          if (cancelRequestedRef.current) {
+            void api.runs.cancel(storyId, event.runId, branchId).catch(() => {})
+          }
+          return
         }
 
-        if (outputRef.current) {
+        if (event.type === 'text') {
+          accumulated += event.text
+          if (mountedRef.current) setStreamedText(accumulated)
+        }
+
+        if (mountedRef.current && outputRef.current) {
           outputRef.current.scrollTop = outputRef.current.scrollHeight
         }
+      }, { branchId })
+
+      // A cancelled write-enabled run may already have landed a tool call.
+      await refreshFragments()
+      if (!mountedRef.current) return
+
+      if (result.status === 'cancelled') {
+        setCancelled(true)
+        return
+      }
+      if (result.status === 'error') {
+        setError(result.error ?? 'Refinement failed')
+        return
       }
 
-      // Invalidate fragment queries to show updated content
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragmentId] })
       setDone(true)
       onComplete?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Refinement failed')
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : 'Refinement failed')
+      }
     } finally {
-      setIsRefining(false)
+      activeRef.current = false
+      runIdRef.current = null
+      cancelRequestedRef.current = false
+      if (mountedRef.current) setIsRefining(false)
     }
-  }, [instructions, isRefining, storyId, fragmentId, queryClient, onComplete])
+  }, [instructions, storyId, branchId, fragmentId, queryClient, onComplete])
+
+  const handleCancel = useCallback(() => {
+    if (!activeRef.current) return
+    cancelRequestedRef.current = true
+    const runId = runIdRef.current
+    if (runId) void api.runs.cancel(storyId, runId, branchId).catch(() => {})
+  }, [storyId, branchId])
 
   return (
     <div className="border border-border/40 rounded-lg bg-card/30" data-component-id="refinement-root">
@@ -95,7 +156,7 @@ export function RefinementPanel({
               placeholder="Optional: describe how to improve this fragment..."
               className="min-h-[60px] resize-none text-xs bg-transparent placeholder:italic placeholder:text-muted-foreground"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   handleRefine()
                 }
@@ -107,6 +168,7 @@ export function RefinementPanel({
                 size="sm"
                 className="h-7 text-xs gap-1.5"
                 onClick={handleRefine}
+                disabled={!branchId}
                 data-component-id="refinement-submit"
               >
                 <Sparkles className="size-3" />
@@ -134,12 +196,19 @@ export function RefinementPanel({
             size="sm"
             variant="outline"
             className="h-7 text-xs gap-1.5"
-            onClick={onClose}
+            onClick={handleCancel}
             data-component-id="refinement-stop"
           >
             <Square className="size-3" />
             Cancel
           </Button>
+        )}
+
+        {/* Cancelled */}
+        {cancelled && (
+          <div className="text-xs text-muted-foreground" data-component-id="refinement-cancelled">
+            Refinement stopped. Review the fragment before trying again.
+          </div>
         )}
 
         {/* Error */}

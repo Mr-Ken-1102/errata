@@ -1,29 +1,20 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, useCallback } from 'react'
 import { api, type Fragment } from '@/lib/api'
 import type { FragmentPrefill } from '@/components/fragments/FragmentEditor'
 import { Button } from '@/components/ui/button'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { FragmentEditor } from '@/components/fragments/FragmentEditor'
-import { FragmentExportPanel } from '@/components/fragments/FragmentExportPanel'
-import { DebugPanel } from '@/components/generation/DebugPanel'
-import { ProviderPanel } from '@/components/settings/ProviderManager'
 import { ProseChainView } from '@/components/prose/ProseChainView'
 import { ProseWritingPanel } from '@/components/prose/ProseWritingPanel'
-import { StoryWizard } from '@/components/wizard/StoryWizard'
 import { StorySidebar, type SidebarSection } from '@/components/sidebar/StorySidebar'
 import { DetailPanel } from '@/components/sidebar/DetailPanel'
 import { componentId } from '@/lib/dom-ids'
 import {
   deactivateAllClientPluginRuntimes,
   syncClientPluginRuntimes,
-  notifyPluginPanelOpen,
-  notifyPluginPanelClose,
 } from '@/lib/plugin-panels'
-import { FragmentImportDialog } from '@/components/fragments/FragmentImportDialog'
-import { TavernCardImportDialog } from '@/components/fragments/TavernCardImportDialog'
-import { CharacterCardImportDialog } from '@/components/fragments/CharacterCardImportDialog'
 import {
   parseErrataExport,
   readFileAsText,
@@ -34,7 +25,9 @@ import {
   isTavernCardPng,
   extractParsedCard,
   parseCardJson,
+  parseSillyTavernLorebook,
   type ParsedCharacterCard,
+  type ParsedLorebook,
 } from '@/lib/importers/tavern-card'
 import {
   Dialog,
@@ -46,12 +39,39 @@ import {
 } from '@/components/ui/dialog'
 import { Upload, BookOpen, MessageSquare, List } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useWindowFileDrop } from '@/hooks/use-window-file-drop'
 import { TimelineTabs } from '@/components/prose/TimelineTabs'
-import { CharacterChatView } from '@/components/character-chat/CharacterChatView'
 import { AgentActivityIndicator } from '@/components/AgentActivityIndicator'
 import { useTimelineBar } from '@/lib/theme'
 import { initClientPluginPanels } from '@/lib/plugin-panel-init'
-import { ErratanetIntroPrompt } from '@/components/erratanet/ErratanetIntroPrompt'
+import { AgentBlockConfigSchema, type AgentBlockConfig } from '@/contracts/block-config'
+import { q } from '@/lib/query-keys'
+import { useWorkspaceSurface } from '@/hooks/use-workspace-surface'
+import { useStorySetupController } from '@/components/wizard/use-story-setup-controller'
+
+const DebugPanel = lazy(() => import('@/components/generation/DebugPanel').then((module) => ({ default: module.DebugPanel })))
+const ProviderPanel = lazy(() => import('@/components/settings/ProviderManager').then((module) => ({ default: module.ProviderPanel })))
+const StoryWizard = lazy(() => import('@/components/wizard/StoryWizard').then((module) => ({ default: module.StoryWizard })))
+const FragmentExportPanel = lazy(() => import('@/components/fragments/FragmentExportPanel').then((module) => ({ default: module.FragmentExportPanel })))
+const FragmentImportDialog = lazy(() => import('@/components/fragments/FragmentImportDialog').then((module) => ({ default: module.FragmentImportDialog })))
+const TavernCardImportDialog = lazy(() => import('@/components/fragments/TavernCardImportDialog').then((module) => ({ default: module.TavernCardImportDialog })))
+const CharacterCardImportDialog = lazy(() => import('@/components/fragments/CharacterCardImportDialog').then((module) => ({ default: module.CharacterCardImportDialog })))
+const LorebookImportDialog = lazy(() => import('@/components/fragments/LorebookImportDialog').then((module) => ({ default: module.LorebookImportDialog })))
+const CharacterChatView = lazy(() => import('@/components/character-chat/CharacterChatView').then((module) => ({ default: module.CharacterChatView })))
+const ErratanetIntroPrompt = lazy(() => import('@/components/erratanet/ErratanetIntroPrompt').then((module) => ({ default: module.ErratanetIntroPrompt })))
+
+function fingerprintFragments(fragments: Fragment[]): string {
+  const source = fragments
+    .map(fragment => `${fragment.id}:${fragment.version}:${fragment.updatedAt}`)
+    .sort()
+    .join('|')
+  let hash = 2166136261
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `${fragments.length}-${(hash >>> 0).toString(36)}`
+}
 
 export const Route = createFileRoute('/story/$storyId')({
   component: StoryEditorPage,
@@ -64,11 +84,13 @@ function StoryEditorPage() {
   const pluginSidebarPrefsKey = `errata:plugin-sidebar:${storyId}`
   const [mainView, setMainView] = useState<'prose' | 'character-chat'>('prose')
   const [activeSection, setActiveSection] = useState<SidebarSection>(null)
-  const [selectedFragment, setSelectedFragment] = useState<Fragment | null>(null)
-  const [editorMode, setEditorMode] = useState<'view' | 'edit'>('view')
-  const [showWizard, setShowWizard] = useState<boolean | null>(null)
-  const [debugLogId, setDebugLogId] = useState<string | null>(null)
-  const [showProviders, setShowProviders] = useState(false)
+  const {
+    surface: workspaceSurface,
+    transition: transitionWorkspaceSurface,
+    updateFragment: updateWorkspaceFragment,
+    updateProseFragment: updateWorkspaceProseFragment,
+  } = useWorkspaceSurface(storyId)
+  const [wizardCheckedBranchId, setWizardCheckedBranchId] = useState<string | null>(null)
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importInitialData, setImportInitialData] = useState<ErrataExportData | null>(null)
   const [showTavernImport, setShowTavernImport] = useState(false)
@@ -76,15 +98,15 @@ function StoryEditorPage() {
   const [showCardImport, setShowCardImport] = useState(false)
   const [cardImportData, setCardImportData] = useState<ParsedCharacterCard | null>(null)
   const [cardImportImageUrl, setCardImportImageUrl] = useState<string | null>(null)
-  const [showExportPanel, setShowExportPanel] = useState(false)
+  const [showLorebookImport, setShowLorebookImport] = useState(false)
+  const [lorebookImportData, setLorebookImportData] = useState<ParsedLorebook | null>(null)
   const [pluginSidebarVisibility, setPluginSidebarVisibility] = useState<Record<string, boolean>>({})
   const [pluginCloseReturnSection, setPluginCloseReturnSection] = useState<SidebarSection>(null)
-  const [editingProseId, setEditingProseId] = useState<string | null>(null)
-  const [editSelectionText, setEditSelectionText] = useState<string | null>(null)
   const [askLibrarianFragmentId, setAskLibrarianFragmentId] = useState<string | null>(null)
   const [askLibrarianPrefill, setAskLibrarianPrefill] = useState<string | null>(null)
-  const [fileDragOver, setFileDragOver] = useState(false)
-  const [pendingAgentConfigImport, setPendingAgentConfigImport] = useState<{ agentName: string; displayName?: string; config: unknown } | null>(null)
+  const [askLibrarianCapturePov, setAskLibrarianCapturePov] = useState(false)
+  const [pendingAgentConfigImport, setPendingAgentConfigImport] = useState<{ agentName: string; displayName?: string; config: AgentBlockConfig } | null>(null)
+  const [agentConfigImportError, setAgentConfigImportError] = useState<string | null>(null)
   const [timelineBarVisible, setTimelineBarVisible] = useTimelineBar()
   const OUTLINE_OPEN_KEY = 'errata:passages-panel-open'
   const [outlineOpen, setOutlineOpen] = useState(() => {
@@ -103,27 +125,13 @@ function StoryEditorPage() {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     if (params.get('openrouter_oauth') === '1') {
-      setShowProviders(true)
-      notifyPluginPanelOpen({ panel: 'providers' }, { storyId })
+      transitionWorkspaceSurface({ kind: 'providers' })
     }
-  }, [storyId])
-
-  const dragCounter = useRef(0)
+  }, [storyId, transitionWorkspaceSurface])
 
   const { data: story, isLoading } = useQuery({
     queryKey: ['story', storyId],
     queryFn: () => api.stories.get(storyId),
-  })
-
-  // Only used to check if story has any fragments (for wizard auto-show).
-  // Uses a distinct query key to avoid being caught in fragment invalidation storms.
-  const { data: fragmentCount } = useQuery({
-    queryKey: ['fragment-count', storyId],
-    queryFn: async () => {
-      const list = await api.fragments.list(storyId)
-      return list.length
-    },
-    staleTime: 30_000,
   })
 
   const { data: plugins } = useQuery({
@@ -134,6 +142,23 @@ function StoryEditorPage() {
   const { data: branchesIndex } = useQuery({
     queryKey: ['branches', storyId],
     queryFn: () => api.branches.list(storyId),
+  })
+
+  // Share the normal branch-addressed fragment cache. Its invalidations also
+  // advance the Story setup session revision after ordinary editor changes.
+  const activeBranchId = branchesIndex?.activeBranchId
+  const { data: fragmentSnapshot } = useQuery({
+    ...q.fragments(storyId, activeBranchId ?? 'main'),
+    enabled: activeBranchId !== undefined,
+  })
+  const storySetupRevision = story && fragmentSnapshot
+    ? `${story.updatedAt}:${fingerprintFragments(fragmentSnapshot)}`
+    : undefined
+  const storySetupController = useStorySetupController({
+    storyId,
+    sessionScope: activeBranchId ?? 'main',
+    contentRevision: storySetupRevision,
+    active: workspaceSurface?.kind === 'story-setup',
   })
 
   useEffect(() => {
@@ -238,20 +263,27 @@ function StoryEditorPage() {
     return () => window.removeEventListener('errata:plugin:invalidate', handler)
   }, [queryClient])
 
-  // Auto-show wizard when story has no fragments
-  if (showWizard === null && fragmentCount !== undefined) {
-    if (fragmentCount === 0) {
-      setShowWizard(true)
-    } else {
-      setShowWizard(false)
+  // Auto-show wizard when the active timeline has no fragments. This is an
+  // effect rather than a render-time state update so React can commit the
+  // query result before navigation state changes.
+  useEffect(() => {
+    if (!activeBranchId || fragmentSnapshot === undefined) return
+    if (wizardCheckedBranchId === activeBranchId) return
+    setWizardCheckedBranchId(activeBranchId)
+    if (fragmentSnapshot.length === 0 && workspaceSurface === null) {
+      transitionWorkspaceSurface({ kind: 'story-setup' })
     }
-  }
+  }, [
+    activeBranchId,
+    fragmentSnapshot,
+    transitionWorkspaceSurface,
+    wizardCheckedBranchId,
+    workspaceSurface,
+  ])
 
   const handleSelectFragment = (fragment: Fragment) => {
-    setSelectedFragment(fragment)
-    setEditorMode('edit')
     if (isMobile) setActiveSection(null) // Close detail panel on mobile so editor is visible
-    notifyPluginPanelOpen({ panel: 'fragment-editor', fragment, mode: 'edit' }, { storyId })
+    transitionWorkspaceSurface({ kind: 'fragment-editor', fragment, mode: 'edit' })
   }
 
   const handleCreateFragment = async (type: string, prefill?: FragmentPrefill) => {
@@ -269,51 +301,29 @@ function StoryEditorPage() {
     queryClient.invalidateQueries({
       queryKey: ['fragments', storyId],
       predicate: (q) => {
-        const typeSlot = q.queryKey[2]
+        const typeSlot = q.queryKey[3]
         return typeSlot === undefined || typeSlot === type
       },
     })
-    setSelectedFragment(created)
-    setEditorMode('edit')
     if (isMobile) setActiveSection(null)
-    notifyPluginPanelOpen({ panel: 'fragment-editor', fragment: created, mode: 'edit' }, { storyId })
-  }
-
-  const handleEditorClose = () => {
-    setSelectedFragment(null)
-    setEditorMode('view')
-    notifyPluginPanelClose({ panel: 'fragment-editor' }, { storyId })
+    transitionWorkspaceSurface({ kind: 'fragment-editor', fragment: created, mode: 'edit' })
   }
 
   const handleDebugLog = (logId: string) => {
-    setDebugLogId(logId || '__browse__')
-    setSelectedFragment(null)
-    setEditorMode('view')
-    notifyPluginPanelOpen({ panel: 'debug' }, { storyId })
+    transitionWorkspaceSurface({ kind: 'debug', logId: logId || '__browse__' })
   }
 
-  const handleLaunchWizard = useCallback(() => {
-    setShowWizard(true)
-    notifyPluginPanelOpen({ panel: 'wizard' }, { storyId })
-  }, [storyId])
-
   const handleSectionChange = useCallback((section: SidebarSection) => {
+    transitionWorkspaceSurface(null)
     setPluginCloseReturnSection(null)
     setActiveSection(section)
-    if (section === null) {
-      setSelectedFragment((prev) => {
-        if (prev || editorMode !== 'view') {
-          notifyPluginPanelClose({ panel: 'fragment-editor' }, { storyId })
-        }
-        return null
-      })
-      setEditorMode('view')
-      setDebugLogId((prev) => {
-        if (prev) notifyPluginPanelClose({ panel: 'debug' }, { storyId })
-        return null
-      })
-    }
-  }, [editorMode, storyId])
+  }, [transitionWorkspaceSurface])
+
+  const handleLaunchWizard = useCallback(() => {
+    setPluginCloseReturnSection(null)
+    setActiveSection(null)
+    transitionWorkspaceSurface({ kind: 'story-setup' })
+  }, [transitionWorkspaceSurface])
 
   const handleOpenPluginPanelFromSettings = useCallback((pluginName: string) => {
     setPluginCloseReturnSection('settings')
@@ -337,6 +347,11 @@ function StoryEditorPage() {
   const handleOpenTavernImport = useCallback(() => {
     setTavernImportBuffers([])
     setShowTavernImport(true)
+  }, [])
+
+  const handleOpenLorebookImport = useCallback(() => {
+    setLorebookImportData(null)
+    setShowLorebookImport(true)
   }, [])
 
   const handleJsonCardDetected = useCallback((data: ParsedCharacterCard) => {
@@ -384,38 +399,7 @@ function StoryEditorPage() {
   }, [])
 
   // Global drag-and-drop for .json file import and PNG character card import
-  useEffect(() => {
-    const hasFiles = (e: DragEvent) => {
-      if (!e.dataTransfer) return false
-      for (let i = 0; i < e.dataTransfer.types.length; i++) {
-        if (e.dataTransfer.types[i] === 'Files') return true
-      }
-      return false
-    }
-
-    const handleDragEnter = (e: DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-      dragCounter.current++
-      if (dragCounter.current === 1) {
-        setFileDragOver(true)
-      }
-    }
-
-    const handleDragLeave = (e: DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-      dragCounter.current--
-      if (dragCounter.current === 0) {
-        setFileDragOver(false)
-      }
-    }
-
-    const handleDragOver = (e: DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-    }
-
+  const handleFileDrop = useCallback(async (files: File[]) => {
     // Parse JSON text once and route to the right importer based on shape
     const routeJsonImport = async (text: string) => {
       // Try tavern card JSON
@@ -424,6 +408,14 @@ function StoryEditorPage() {
         setCardImportData(cardParsed)
         setCardImportImageUrl(null)
         setShowCardImport(true)
+        return
+      }
+
+      // Try standalone SillyTavern lorebook/world-info JSON.
+      const lorebookParsed = parseSillyTavernLorebook(text)
+      if (lorebookParsed) {
+        setLorebookImportData(lorebookParsed)
+        setShowLorebookImport(true)
         return
       }
 
@@ -439,84 +431,75 @@ function StoryEditorPage() {
       try {
         const json = JSON.parse(text)
         if (json && typeof json.agentName === 'string' && json.config) {
-          setPendingAgentConfigImport(json)
+          const parsed = AgentBlockConfigSchema.safeParse(json.config)
+          if (!parsed.success) {
+            setAgentConfigImportError('The dropped agent configuration is invalid.')
+            return
+          }
+          setAgentConfigImportError(null)
+          setPendingAgentConfigImport({
+            agentName: json.agentName,
+            displayName: typeof json.displayName === 'string' ? json.displayName : undefined,
+            config: parsed.data,
+          })
         }
       } catch {
         // not valid JSON
       }
     }
 
-    const handleDrop = async (e: DragEvent) => {
-      e.preventDefault()
-      dragCounter.current = 0
-      setFileDragOver(false)
+    // Collect all PNG tavern card buffers from the drop
+    const cardBuffers: ArrayBuffer[] = []
+    let nonCardFile: File | null = null
 
-      const files = e.dataTransfer?.files
-      if (!files || files.length === 0) return
-
-      // Collect all PNG tavern card buffers from the drop
-      const cardBuffers: ArrayBuffer[] = []
-      let nonCardFile: File | null = null
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
-          try {
-            const buffer = await file.arrayBuffer()
-            if (isTavernCardPng(buffer)) {
-              cardBuffers.push(buffer)
-              continue
-            }
-          } catch {
-            // Not a valid tavern card PNG
-          }
-        }
-        if (!nonCardFile) nonCardFile = file
-      }
-
-      if (cardBuffers.length > 0) {
-        // Check if the first card has a character_book — route to full import dialog
-        const parsed = extractParsedCard(cardBuffers[0])
-        if (parsed && parsed.book && parsed.book.entries.length > 0) {
-          // PNG with lorebook → CharacterCardImportDialog
-          const bytes = new Uint8Array(cardBuffers[0])
-          let binary = ''
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i])
-          }
-          setCardImportImageUrl(`data:image/png;base64,${btoa(binary)}`)
-          setCardImportData(parsed)
-          setShowCardImport(true)
-        } else {
-          // PNG without lorebook → existing TavernCardImportDialog
-          setTavernImportBuffers(cardBuffers)
-          setShowTavernImport(true)
-        }
-        return
-      }
-
-      // Fall through to JSON/text file import
-      if (nonCardFile) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
         try {
-          const text = await readFileAsText(nonCardFile)
-          await routeJsonImport(text)
+          const buffer = await file.arrayBuffer()
+          if (isTavernCardPng(buffer)) {
+            cardBuffers.push(buffer)
+            continue
+          }
         } catch {
-          // Not a valid file, ignore
+          // Not a valid tavern card PNG
         }
       }
+      if (!nonCardFile) nonCardFile = file
     }
 
-    document.addEventListener('dragenter', handleDragEnter)
-    document.addEventListener('dragleave', handleDragLeave)
-    document.addEventListener('dragover', handleDragOver)
-    document.addEventListener('drop', handleDrop)
-    return () => {
-      document.removeEventListener('dragenter', handleDragEnter)
-      document.removeEventListener('dragleave', handleDragLeave)
-      document.removeEventListener('dragover', handleDragOver)
-      document.removeEventListener('drop', handleDrop)
+    if (cardBuffers.length > 0) {
+      // Check if the first card has a character_book — route to full import dialog
+      const parsed = extractParsedCard(cardBuffers[0])
+      if (parsed && parsed.book && parsed.book.entries.length > 0) {
+        // PNG with lorebook → CharacterCardImportDialog
+        const bytes = new Uint8Array(cardBuffers[0])
+        let binary = ''
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i])
+        }
+        setCardImportImageUrl(`data:image/png;base64,${btoa(binary)}`)
+        setCardImportData(parsed)
+        setShowCardImport(true)
+      } else {
+        // PNG without lorebook → existing TavernCardImportDialog
+        setTavernImportBuffers(cardBuffers)
+        setShowTavernImport(true)
+      }
+      return
     }
-  }, [storyId, queryClient])
+
+    // Fall through to JSON/text file import
+    if (nonCardFile) {
+      try {
+        const text = await readFileAsText(nonCardFile)
+        await routeJsonImport(text)
+      } catch {
+        // Not a valid file, ignore
+      }
+    }
+  }, [])
+  const isFileDragging = useWindowFileDrop(handleFileDrop)
 
   if (isLoading) {
     return (
@@ -537,14 +520,13 @@ function StoryEditorPage() {
     )
   }
 
-  const isEditingFragment = editorMode !== 'view' || selectedFragment
-
   return (
-    <SidebarProvider className="!min-h-svh !max-h-svh overflow-hidden" data-component-id="story-editor-root">
+    <SidebarProvider className="!min-h-dvh !max-h-dvh overflow-hidden" data-component-id="story-editor-root">
       <StorySidebar
         storyId={storyId}
         story={story}
         activeSection={activeSection}
+        storySetupActive={workspaceSurface?.kind === 'story-setup'}
         onSectionChange={handleSectionChange}
         onLaunchWizard={handleLaunchWizard}
         enabledPanelPlugins={sidebarPanelPlugins}
@@ -558,13 +540,12 @@ function StoryEditorPage() {
         onClose={handleDetailPanelClose}
         onSelectFragment={handleSelectFragment}
         onCreateFragment={handleCreateFragment}
-        selectedFragmentId={selectedFragment?.id}
+        selectedFragmentId={workspaceSurface?.kind === 'fragment-editor' ? workspaceSurface.fragment.id : undefined}
         onManageProviders={() => {
           // Close the settings overlay so the providers panel isn't stuck behind
           // its blurred backdrop.
           setActiveSection(null)
-          setShowProviders(true)
-          notifyPluginPanelOpen({ panel: 'providers' }, { storyId })
+          transitionWorkspaceSurface({ kind: 'providers' })
         }}
         onOpenPluginPanel={handleOpenPluginPanelFromSettings}
         onTogglePluginSidebar={setPluginSidebarVisible}
@@ -572,16 +553,21 @@ function StoryEditorPage() {
         onLaunchWizard={handleLaunchWizard}
         onImportFragment={handleOpenImport}
         onImportCard={handleOpenTavernImport}
+        onImportLorebook={handleOpenLorebookImport}
         onExport={() => {
-          setShowExportPanel(true)
-          notifyPluginPanelOpen({ panel: 'export' }, { storyId })
+          transitionWorkspaceSurface({ kind: 'export' })
         }}
         onDownloadStory={() => api.stories.exportAsZip(storyId)}
         onExportProse={handleExportProse}
         enabledPanelPlugins={enabledPanelPlugins}
         askLibrarianFragmentId={askLibrarianFragmentId}
         askLibrarianPrefill={askLibrarianPrefill}
-        onAskLibrarianConsumed={() => { setAskLibrarianFragmentId(null); setAskLibrarianPrefill(null) }}
+        askLibrarianCapturePov={askLibrarianCapturePov}
+        onAskLibrarianConsumed={() => {
+          setAskLibrarianFragmentId(null)
+          setAskLibrarianPrefill(null)
+          setAskLibrarianCapturePov(false)
+        }}
       />
 
       {/* Main Content */}
@@ -619,6 +605,7 @@ function StoryEditorPage() {
             storyId={storyId}
             branches={branchesIndex.branches}
             activeBranchId={branchesIndex.activeBranchId}
+            rootBranchId={branchesIndex.rootBranchId}
             onHide={() => setTimelineBarVisible(false)}
           />
         )}
@@ -708,96 +695,107 @@ function StoryEditorPage() {
         {/* Main view */}
         {mainView === 'prose' ? (
           <ProseChainView
+            key={branchesIndex?.activeBranchId ?? 'main'}
             storyId={storyId}
             coverImage={story.coverImage}
             outlineOpen={outlineOpen}
             onSelectFragment={handleSelectFragment}
             onEditProse={(fragmentId, selectedText) => {
-              setEditingProseId(fragmentId)
-              setEditSelectionText(selectedText ?? null)
+              transitionWorkspaceSurface({
+                kind: 'prose-editor',
+                fragmentId,
+                selectionText: selectedText ?? null,
+              })
             }}
             onDebugLog={handleDebugLog}
             onLaunchWizard={handleLaunchWizard}
-            onAskLibrarian={(fragmentId, prefill) => {
+            onAskLibrarian={(fragmentId, prefill, options) => {
               setActiveSection('agent-activity')
               setAskLibrarianFragmentId(fragmentId)
               setAskLibrarianPrefill(prefill ?? null)
+              setAskLibrarianCapturePov(options?.capturePov === true)
             }}
           />
         ) : (
-          <CharacterChatView
-            storyId={storyId}
-            onClose={() => setMainView('prose')}
-          />
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading chat…</div>}>
+            <CharacterChatView
+              storyId={storyId}
+              onClose={() => setMainView('prose')}
+            />
+          </Suspense>
         )}
 
         {/* Overlay panels render on top */}
-        {showWizard && (
+        {workspaceSurface?.kind === 'story-setup' && (
           <div className="absolute inset-0 z-30 bg-background" data-component-id="overlay-story-wizard">
-            <StoryWizard storyId={storyId} onComplete={() => {
-              setShowWizard(false)
-              notifyPluginPanelClose({ panel: 'wizard' }, { storyId })
-            }} />
+            <Suspense fallback={null}>
+              <StoryWizard
+                key={`${storyId}:${activeBranchId ?? 'main'}`}
+                controller={storySetupController}
+                onComplete={() => transitionWorkspaceSurface(null)}
+              />
+            </Suspense>
           </div>
         )}
-        {debugLogId && (
+        {workspaceSurface?.kind === 'debug' && (
           <div className="absolute inset-0 z-30 bg-background" data-component-id="overlay-debug-panel">
-            <DebugPanel
-              storyId={storyId}
-              fragmentId={debugLogId === '__browse__' ? undefined : debugLogId}
-              onClose={() => {
-                setDebugLogId(null)
-                notifyPluginPanelClose({ panel: 'debug' }, { storyId })
-              }}
-            />
+            <Suspense fallback={null}>
+              <DebugPanel
+                storyId={storyId}
+                fragmentId={workspaceSurface.logId === '__browse__' ? undefined : workspaceSurface.logId}
+                onClose={() => transitionWorkspaceSurface(null)}
+              />
+            </Suspense>
           </div>
         )}
-        {showProviders && (
+        {workspaceSurface?.kind === 'providers' && (
           <div className="absolute inset-0 z-30 bg-background" data-component-id="overlay-provider-panel">
-            <ProviderPanel onClose={() => {
-              setShowProviders(false)
-              notifyPluginPanelClose({ panel: 'providers' }, { storyId })
-            }} />
+            <Suspense fallback={null}>
+              <ProviderPanel onClose={() => transitionWorkspaceSurface(null)} />
+            </Suspense>
           </div>
         )}
-        {showExportPanel && (
+        {workspaceSurface?.kind === 'export' && (
           <div className="absolute inset-0 z-30 bg-background" data-component-id="overlay-export-panel">
-            <FragmentExportPanel
-              storyId={storyId}
-              storyName={story.name}
-              onClose={() => {
-                setShowExportPanel(false)
-                notifyPluginPanelClose({ panel: 'export' }, { storyId })
-              }}
-            />
+            <Suspense fallback={null}>
+              <FragmentExportPanel
+                storyId={storyId}
+                storyName={story.name}
+                onClose={() => transitionWorkspaceSurface(null)}
+              />
+            </Suspense>
           </div>
         )}
-        {editingProseId && (
+        {workspaceSurface?.kind === 'prose-editor' && (
           <div className="absolute inset-0 z-30 bg-background" data-component-id="overlay-prose-writing-panel">
             <ProseWritingPanel
               storyId={storyId}
-              fragmentId={editingProseId}
-              initialSelection={editSelectionText}
-              onClose={() => { setEditingProseId(null); setEditSelectionText(null) }}
-              onFragmentChange={setEditingProseId}
+              fragmentId={workspaceSurface.fragmentId}
+              initialSelection={workspaceSurface.selectionText}
+              onClose={() => transitionWorkspaceSurface(null)}
+              onFragmentChange={updateWorkspaceProseFragment}
             />
           </div>
         )}
-        {isEditingFragment && (
-          <div className="absolute inset-0 z-30 bg-background" data-component-id={componentId('overlay-fragment-editor', editorMode)}>
+        {workspaceSurface?.kind === 'fragment-editor' && (
+          <div className="absolute inset-0 z-30 bg-background" data-component-id={componentId('overlay-fragment-editor', workspaceSurface.mode)}>
             <FragmentEditor
               storyId={storyId}
-              fragment={selectedFragment}
-              mode={editorMode}
-              onClose={handleEditorClose}
+              fragment={workspaceSurface.fragment}
+              mode={workspaceSurface.mode}
+              onClose={() => transitionWorkspaceSurface(null)}
               onSaved={() => {}}
+              onFragmentChange={(fragment) => {
+                if (!fragment) return
+                updateWorkspaceFragment(fragment)
+              }}
             />
           </div>
         )}
       </SidebarInset>
 
       {/* Global file drag-drop overlay */}
-      {fileDragOver && (
+      {isFileDragging && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-16 py-12">
             <Upload className="size-8 text-primary/50" />
@@ -807,30 +805,55 @@ function StoryEditorPage() {
         </div>
       )}
 
-      <FragmentImportDialog
-        storyId={storyId}
-        open={showImportDialog}
-        onOpenChange={setShowImportDialog}
-        initialData={importInitialData}
-      />
+      {showImportDialog && (
+        <Suspense fallback={null}>
+          <FragmentImportDialog
+            storyId={storyId}
+            open
+            onOpenChange={setShowImportDialog}
+            initialData={importInitialData}
+          />
+        </Suspense>
+      )}
 
-      <TavernCardImportDialog
-        storyId={storyId}
-        open={showTavernImport}
-        onOpenChange={setShowTavernImport}
-        initialBuffers={tavernImportBuffers}
-        onJsonCardDetected={handleJsonCardDetected}
-      />
+      {showTavernImport && (
+        <Suspense fallback={null}>
+          <TavernCardImportDialog
+            storyId={storyId}
+            open
+            onOpenChange={setShowTavernImport}
+            initialBuffers={tavernImportBuffers}
+            onJsonCardDetected={handleJsonCardDetected}
+          />
+        </Suspense>
+      )}
 
-      <CharacterCardImportDialog
-        storyId={storyId}
-        open={showCardImport}
-        onOpenChange={setShowCardImport}
-        initialCardData={cardImportData}
-        imageDataUrl={cardImportImageUrl}
-      />
+      {showCardImport && (
+        <Suspense fallback={null}>
+          <CharacterCardImportDialog
+            storyId={storyId}
+            open
+            onOpenChange={setShowCardImport}
+            initialCardData={cardImportData}
+            imageDataUrl={cardImportImageUrl}
+          />
+        </Suspense>
+      )}
 
-      <ErratanetIntroPrompt />
+      {showLorebookImport && (
+        <Suspense fallback={null}>
+          <LorebookImportDialog
+            storyId={storyId}
+            open
+            onOpenChange={setShowLorebookImport}
+            initialData={lorebookImportData}
+          />
+        </Suspense>
+      )}
+
+      <Suspense fallback={null}>
+        <ErratanetIntroPrompt />
+      </Suspense>
 
       <Dialog open={!!pendingAgentConfigImport} onOpenChange={(open) => { if (!open) setPendingAgentConfigImport(null) }}>
         <DialogContent>
@@ -846,13 +869,26 @@ function StoryEditorPage() {
               if (!pendingAgentConfigImport) return
               const { agentName, config } = pendingAgentConfigImport
               try {
-                await api.agentBlocks.importConfig(storyId, agentName, config as any)
+                await api.agentBlocks.importConfig(storyId, agentName, config)
                 queryClient.invalidateQueries({ queryKey: ['agent-blocks', storyId, agentName] })
-              } catch {
-                // import failed silently
+              } catch (error) {
+                setAgentConfigImportError(error instanceof Error ? error.message : 'Agent configuration import failed.')
+                return
               }
               setPendingAgentConfigImport(null)
             }}>Import</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!agentConfigImportError} onOpenChange={(open) => { if (!open) setAgentConfigImportError(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import failed</DialogTitle>
+            <DialogDescription>{agentConfigImportError}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setAgentConfigImportError(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

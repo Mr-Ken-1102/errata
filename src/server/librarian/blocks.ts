@@ -1,153 +1,330 @@
-import type { ContextBlock } from '../llm/context-builder'
-import type { AgentBlockContext } from '../agents/agent-block-context'
-import type { Fragment } from '../fragments/schema'
-import { getStory, listFragments, getFragment } from '../fragments/storage'
+import {
+  STORY_SUMMARY_PLACEHOLDER,
+  buildContextState,
+  pushPovVoice,
+  type ContextBlock,
+  type CustomFragmentGroup,
+} from '../llm/context-builder'
+import {
+  buildFragmentContextLanes,
+  canReadFragments,
+  customContextFragmentTypes,
+  fragmentCatalogBlock,
+  fragmentFullContextBlocksBySource,
+  isBuiltinContextFragmentType,
+  markdownSection,
+  fragmentSummaryLine,
+  storySummaryBlock,
+} from '../llm/fragment-context-blocks'
+import { contextSignalMap, selectAttentionContext } from '../llm/context-selection'
+import { numberSentences } from '../llm/segments'
+import { baseBlockContext, type AgentBlockContext } from '../agents/agent-block-context'
+import type { Fragment, StoryMeta } from '../fragments/schema'
+import { getStory, getFragment, listFragments } from '../fragments/storage'
+import { getActiveProseIds } from '../fragments/prose-chain'
 import { getFragmentsByTag } from '../fragments/associations'
 import { instructionRegistry } from '../instructions'
+import { renderSummaryProjection } from './summary-projection'
+import { OPERATION_GUIDANCE } from '../fragments/change-operations'
 import {
   instructionsBlock,
   systemFragmentsBlock,
   storyInfoBlock,
-  stickyFragmentsBlock,
   recentProseBlock,
   proseSummariesBlock,
   targetFragmentBlock,
-  allCharactersBlock,
-  shortlistBlock,
   compactBlocks,
   buildBasePreviewContext,
   loadSystemPromptFragments,
 } from '../agents/block-helpers'
+import {
+  allCharactersCatalogBlock,
+  fragmentSummaryCatalogBlocks,
+  pinnedFragmentCatalogBlocks,
+} from '../agents/fragment-summary-blocks'
+import {
+  fragmentCandidateIds,
+  listRoutableMemoryFragments,
+  mergeFragmentCandidates,
+  writerProvenanceFragmentCandidates,
+} from './candidates'
+import { renderContinuity, type ContinuityReader } from './continuity-view'
+
+function continuityBlock(
+  ctx: AgentBlockContext,
+  reader: ContinuityReader,
+  id: string,
+  order: number,
+): ContextBlock | null {
+  const content = renderContinuity(ctx, reader)
+  return content ? {
+    id,
+    role: 'user',
+    content,
+    order,
+    source: 'builtin',
+  } : null
+}
+
+/**
+ * A full sheet whose body is sentence-numbered, so `proposeRecordCorrections`
+ * can name the assertion it is replacing. Asking the model to reproduce the
+ * target text instead is what stops a correction staying local; here the target
+ * is addressable, and the server resolves the exact span.
+ */
+function renderNumberedFragmentSheet(fragment: Fragment): string {
+  return markdownSection(3, fragmentSummaryLine(fragment), numberSentences(fragment.content))
+}
 
 // ─── Librarian Analyze ───
 
-export function buildAnalyzeSystemPrompt(opts?: { disableDirections?: boolean; disableSuggestions?: boolean }): string {
-  const toolLines: string[] = [
-    '1. updateSummary — Provide a concise summary of what happened in the new prose.',
-    '   - Also provide structured fields when possible: events[], stateChanges[], openThreads[].',
-    '   - If summary text is blank, structured fields are required.',
-    '2. reportMentions — Report each character reference by name, nickname, or title (not pronouns). Include the character ID and the exact text used.',
-    '3. reportContradictions — Flag when the new prose contradicts established facts in the summary, character descriptions, or knowledge. Only flag clear contradictions, not ambiguities.',
-  ]
+export function buildAnalyzeSystemPrompt(opts?: { 
+  disableDirections?: boolean; 
+  disableSuggestions?: boolean;
+  disabledTools?: Iterable<string>;
+  enabledTools?: Iterable<string>;
+  customFragmentTypes?: Array<{ type: string; name: string }>;
+}): string {
+  // An explicit, ordered procedure: it keeps the step-by-step robustness of a
+  // checklist while leaving each tool's parameters to its schema (no catalog to
+  // drift). Steps for disabled tools are omitted and the rest are worded as an
+  // ordered sequence, so the final enabled action is semantically terminal
+  // without adding a separate "say nothing" instruction.
+  const disabledTools = new Set(opts?.disabledTools ?? [])
+  const enabledTools = opts?.enabledTools ? new Set(opts.enabledTools) : null
+  const hasTool = (toolName: string): boolean => enabledTools
+    ? enabledTools.has(toolName)
+    : !disabledTools.has(toolName)
+  const canReport = hasTool('reportAnalysis')
+  const canCorrectRecords = opts?.disableSuggestions !== true && hasTool('proposeRecordCorrections')
+  const canCreateRecords = opts?.disableSuggestions !== true && hasTool('proposeNewRecords')
+  const canSuggest = canCorrectRecords || canCreateRecords
+  const canSuggestDirections = opts?.disableDirections !== true && hasTool('proposeDirections')
+  const canFinish = hasTool('finishAnalysis')
+  const actions: string[] = []
 
-  let toolNumber = 4
-
-  if (!opts?.disableSuggestions) {
-    toolLines.push(
-      `${toolNumber}. suggestFragment — Suggest creating new character/knowledge fragments based on new information.`,
-      '   - Only use this for truly new fragments that don\'t exist yet. Omit targetFragmentId.',
-      '   - Set type to "character" for characters or "knowledge" for world-building details, locations, items, or facts.',
-    )
-    toolNumber++
+  // Its own step, deliberately: buried mid-paragraph in the reportAnalysis step
+  // this instruction gets ignored and only the record the passage already names
+  // comes back. It also comes *before* reporting, so the one batched call
+  // carries the ripple IDs instead of needing a second round trip to add them.
+  if (canReport) {
+    actions.push('work out whether this passage directly contradicts any durable assertion in an existing reusable record, before you report anything. Ordinary story progression and current conditions are continuity, not canon contradictions. Your context lists every record as `id | name | desc`; use those descriptions to find records whose durable assertions may truly conflict, collect their IDs, and pass them as candidateFragmentIds in the next step so their full text comes back numbered for exact comparison.')
   }
 
-  toolLines.push(
-    `${toolNumber}. editFragment — Edit an existing character, knowledge, or guideline fragment by replacing a specific text span. Use this for precise corrections to avoid rewriting the whole fragment.`,
-    '   - Provide fragmentId, oldText, and newText.',
-  )
-  toolNumber++
-
-  toolLines.push(
-    `${toolNumber}. updateFragment — Directly update an existing fragment by ID. Use this when an existing character, knowledge, or guideline fragment needs full correction or enrichment.`,
-    '   - Provide the fragmentId and one or more of: name, description, content.',
-    '   - Retain important established facts when updating content.',
-  )
-  toolNumber++
-
-  toolLines.push(
-    `${toolNumber}. reportTimeline — Note significant events. "position" is relative to the previous prose: "before" for flashback, "during" for concurrent, "after" for sequential.`,
-  )
-  toolNumber++
-
-  if (!opts?.disableDirections) {
-    toolLines.push(
-      `${toolNumber}. suggestDirections — Suggest 3-5 possible directions the story could go next. Each direction needs a short title, a description of what would happen, and an instruction the writer could follow. Offer a mix: continue the current scene, introduce a twist, explore a character's inner thoughts, shift to a new setting, etc.`,
-    )
+  if (canReport) {
+    actions.push([
+      'scan the new prose against the provided context and call **reportAnalysis** with your findings. Keep each memory lane distinct: events describe what happened; state preserves conditions; threads track unresolved questions; knowledge records what a particular character learned.',
+      'Scene: report only changed or newly established frame fields, with citations. Preserve approximate time; never infer elapsed minutes from passage length.',
+      'State: retain conditions useful beyond recent prose. Each subject/facet/slot answers one stable question (location: where? attire: wearing what?). Reuse registry entries and keep replacements about that question. Separate independently changing conditions; avoid catch-all status. Use scene scope normally, cross-scene only for conditions that must survive a cut. Set replaces a value; clear ends it. Omit momentary poses, sensations, and completed actions.',
+      'Knowledge: retain useful learning with attribution and temporal limits. "She told him she wanted X during the examination" does not mean "She wants X". An interpretation remains the character\'s belief; an expression never establishes general willingness. Current feelings belong in state if worth retaining.',
+      'Threads: one key per unresolved question, resolved only when answered. Omission retains prominence; set dormant explicitly and allow dormant threads to remain unresolved indefinitely. Operations carry visibility; focus updates untouched threads.',
+      'Contradictions: compare newly asserted capabilities, knowledge transfers, consent, and authority against explicit record limits. Sensing physiology alone does not imply thought access. Changed behavior can be progression; violating an established limit needs evidence that the rule changed. Cite both incompatible assertions without assuming which is wrong. Flag unresolved conflicts and omit disputed state or knowledge. Supply recordCorrectionReason only if evidence establishes why the record itself is wrong; generated disagreement alone is insufficient.',
+      'Mentions: direct names, nicknames, titles, roles, or distinctive terms, copied exactly; pronouns alone do not identify a record. If a surface term is ambiguous, include identifying context.',
+      'Use numbered evidence: cite, never retype. Records returned under resolvedFragments are already available for subsequent work. On retry, repair only rejected or incomplete items; accepted data is retained. Follow the tool feedback to withdraw mistaken claims.',
+    ].join('\n\n'))
+  } else {
+    actions.push('scan the new prose against the provided context. The reportAnalysis tool is disabled, so do not invent a replacement reporting tool.')
   }
 
-  const alwaysCall = opts?.disableDirections
-    ? 'Always call updateSummary.'
-    : 'Always call updateSummary and suggestDirections.'
+  if (canSuggest) {
+    const customTypes = opts?.customFragmentTypes ?? []
+    const typeNamesList = ['characters', 'knowledge', ...customTypes.map(t => t.name.toLowerCase())].join(', ')
+    const proposalActions: string[] = []
+    if (canCorrectRecords) {
+      proposalActions.push('Use **proposeRecordCorrections** only for a numbered record sentence cited in a grounded finding with recordCorrectionReason establishing that the record itself is wrong. Leave prose errors and unresolved conflicts for review. Replace only the assertion; never summarize the scene. Corrections remain pending for author review. Read missing records before editing; never count sentences yourself.')
+    }
+    if (canCreateRecords) {
+      proposalActions.push(`Use **proposeNewRecords** only for genuinely new reusable named records in the allowed fragment types (${typeNamesList}). Cite the sentence numbers that establish it. A temporary scene label, unnamed scenery, episode recap, current condition, feeling, or interpretation is not a reusable record.`)
+    }
+    proposalActions.push('These tools are optional. Omit unneeded calls. If a call partly succeeds, retry only rejected items; abandon an unfinished attempt through the finish tool with a reason.')
+    actions.push(proposalActions.join(' '))
+  }
+  if (canSuggestDirections) {
+    actions.push('call **proposeDirections** with next directions for the story. This lane is required whenever the tool is available; when automatic directions are disabled, the tool and this instruction are both absent. Offer scene intents rather than conclusions: do not turn interpretation, temporary emotion, or an implied protagonist decision into settled psychology or canon.')
+  }
+  if (canFinish) {
+    actions.push('call **finishAnalysis** upon completion of all steps.')
+  }
+
+  const sentenceCase = (action: string): string => action.charAt(0).toUpperCase() + action.slice(1)
+  const steps = actions.map((action, index) => {
+    if (index === actions.length - 1) return `Finally, ${action}`
+    return sentenceCase(action)
+  })
+  const numbered = steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
 
   return `
-You are a librarian agent for a collaborative writing app.
-Your job is to analyze new prose fragments and maintain story continuity.
+You are the Librarian: you keep the records of an ongoing story accurate and its continuity intact. Analyze the new prose fragment against the story context provided.
 
-You have ${toolNumber - (opts?.disableDirections ? 1 : 0)} reporting tools. Use them to report your findings:
+## Steps
 
-${toolLines.join('\n')}
-
-In addition to the reporting tools, you have read-only lookup tools:
-- getCharacter(id), listCharacters() — Read character sheets.
-- getKnowledge(id), listKnowledge() — Read world knowledge.
-- getGuideline(id), listGuidelines() — Read story guidelines.
-- getFragment(id), listFragments(type?) — Read any fragment, or list fragments by type.
-- searchFragments(query, type?) — Search for text across all fragments.
-
-Instructions:
-1. Your context includes a story summary and fragment summaries (IDs, names, descriptions) — not full content. Use the appropriate get tool to read the full content of any fragment you need.
-2. Before editing or updating an existing character, knowledge, or guideline fragment, read it first using the appropriate get tool (e.g. getCharacter or getFragment). Its full content is not in your context, and updateFragment overwrites whatever you do not carry over.
-3. Prefer editFragment over updateFragment for small, precise corrections — it changes only the named span and leaves the rest of the sheet intact.
-
-${alwaysCall} Only call the other tools if there are relevant findings.
-If there are no contradictions, suggestions, mentions, or timeline events, don't call those tools.
-Only return 'Analysis complete' in your final output.
+Work through these steps in order:
+${numbered}
 `
 }
 
 export const ANALYZE_SYSTEM_PROMPT = buildAnalyzeSystemPrompt()
 
+/**
+ * Build the analyze agent's block context. Single source for both a real run and
+ * the context preview, so neither can drift from the other — the only difference
+ * is the input: the run passes the prose being analyzed, the preview passes the
+ * latest prose with a placeholder new-prose block.
+ */
+export async function buildAnalyzeContext(
+  dataDir: string,
+  storyId: string,
+  _story: StoryMeta,
+  input: { proseFragment: Fragment | null; newProse: { id: string; content: string } },
+): Promise<AgentBlockContext> {
+  const ctxState = await buildContextState(dataDir, storyId, '', {
+    excludeFragmentId: input.proseFragment?.id,
+    ...(input.proseFragment ? {
+      proseBeforeFragmentId: input.proseFragment.id,
+    } : {}),
+  })
+  const effectiveStory = ctxState.story
+  const allCharacters = (ctxState.allFragments ?? []).filter((fragment) => fragment.type === 'character')
+  const allKnowledge = (ctxState.allFragments ?? []).filter((fragment) => fragment.type === 'knowledge')
+  const allCustomFragments: CustomFragmentGroup[] = []
+  for (const def of customContextFragmentTypes(effectiveStory)) {
+    const fragments = (ctxState.allFragments ?? []).filter((fragment) => fragment.type === def.type)
+    if (fragments.length > 0) {
+      allCustomFragments.push({ ...def, fragments })
+    }
+  }
+  const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
+  return {
+    // Start from centralized story context so summary-fragment migration and
+    // summary loading cannot drift from the writer context.
+    ...baseBlockContext(ctxState, effectiveStory),
+    systemPromptFragments,
+    allCharacters,
+    allKnowledge,
+    allCustomFragments,
+    newProse: input.newProse,
+    // Author-pinned characters are always-relevant, so analyze loads them in full
+    // independent of what the prose context receipt recorded.
+    stickyCharacters: allCharacters.filter((c) => c.sticky),
+    stickyKnowledge: allKnowledge.filter((k) => k.sticky),
+    recentCharacters: ctxState.recentCharacters ?? [],
+    recentKnowledge: ctxState.recentKnowledge ?? [],
+    recentCustomFragments: ctxState.recentCustomFragments ?? [],
+  }
+}
+
 export function createLibrarianAnalyzeBlocks(ctx: AgentBlockContext): ContextBlock[] {
   const blocks: ContextBlock[] = []
-
-  blocks.push(instructionsBlock('librarian.analyze.system', ctx))
-
-  const sysFrags = systemFragmentsBlock(ctx)
-  if (sysFrags) blocks.push(sysFrags)
+  const pushFragmentBlock = (block: ContextBlock | null) => {
+    if (block) blocks.push(block)
+  }
 
   blocks.push({
-    id: 'story-summary',
-    role: 'user',
-    content: ['## Story Summary So Far', ctx.story.summary || '(No summary yet — this may be the beginning of the story.)'].join('\n'),
+    id: 'instructions',
+    role: 'system',
+    content: buildAnalyzeSystemPrompt({
+      disableDirections: ctx.story.settings?.disableLibrarianDirections === true,
+      disableSuggestions: ctx.story.settings?.disableLibrarianSuggestions === true,
+      disabledTools: ctx.disabledTools,
+      enabledTools: ctx.enabledTools,
+      customFragmentTypes: ctx.story.settings.customFragmentTypes,
+    }).trim(),
     order: 100,
     source: 'builtin',
   })
 
-  if (ctx.allCharacters && ctx.allCharacters.length > 0) {
-    blocks.push({
-      id: 'characters',
-      role: 'user',
-      content: [
-        '## Known Characters',
-        ...ctx.allCharacters.map(c => `- ${c.id}: ${c.name} — ${c.description}`),
-      ].join('\n'),
-      order: 200,
-      source: 'builtin',
-    })
+  const sysFrags = systemFragmentsBlock(ctx)
+  if (sysFrags) blocks.push(sysFrags)
+
+  pushFragmentBlock(storySummaryBlock(renderSummaryProjection(ctx.summaryProjection, 'librarian.analyze') ?? undefined, {
+    id: 'story-summary',
+    order: 100,
+    placeholder: STORY_SUMMARY_PLACEHOLDER,
+  }))
+
+  const continuityMemory = continuityBlock(ctx, 'librarian.analyze', 'continuity-memory', 150)
+  if (continuityMemory) blocks.push(continuityMemory)
+
+  const lanes = buildFragmentContextLanes(ctx)
+  const selection = selectAttentionContext(lanes, {
+    runner: 'librarian.analyze',
+    catalogScope: 'all',
+  },
+    contextSignalMap({
+      fragmentIds: ctx.attentionCandidateIds,
+      signals: ctx.attentionCandidateSignals,
+    }),
+  )
+  const contextTypeOrder = ['character', 'knowledge', ...lanes.filter((lane) => !isBuiltinContextFragmentType(lane.type)).map((lane) => lane.type)]
+  const orderedSelection = {
+    ...selection,
+    lanes: contextTypeOrder
+      .map((type) => selection.lanes.find((lane) => lane.type === type))
+      .filter((lane): lane is NonNullable<typeof lane> => Boolean(lane)),
   }
 
-  if (ctx.allKnowledge && ctx.allKnowledge.length > 0) {
-    blocks.push({
-      id: 'knowledge',
-      role: 'user',
-      content: [
-        '## Knowledge Base',
-        ...ctx.allKnowledge.map(k => `- ${k.id}: ${k.name} — ${k.content}`),
-      ].join('\n'),
-      order: 300,
-      source: 'builtin',
-    })
-  }
+  blocks.push(...fragmentFullContextBlocksBySource({
+    selection: orderedSelection,
+    // Analyze-only: numbering the body lets a correction address a sentence
+    // instead of retyping one. Other agents keep the plain sheet.
+    renderFragment: renderNumberedFragmentSheet,
+    partitions: [
+      {
+        id: 'fragment-pinned',
+        heading: 'Pinned Fragments',
+        scope: 'pinned',
+        order: 195,
+        intro: 'These fragments are author-pinned standing context. They are not evidence that the new prose mentions them.',
+        matches: (sources) => sources.includes('sticky'),
+      },
+      {
+        id: 'fragment-writer-context',
+        heading: 'Writer Context For This Passage',
+        scope: 'writer-context',
+        order: 200,
+        intro: 'These fragments were in the writer working set for this prose passage, either preloaded or read while drafting.',
+        matches: (sources) => sources.includes('writer-context'),
+      },
+      {
+        id: 'fragment-recent',
+        heading: 'Recent Fragments',
+        scope: 'recent',
+        order: 205,
+        intro: 'These fragments are active continuity context from the recent prose window.',
+        matches: (sources) => sources.includes('recent-context'),
+      },
+      {
+        id: 'fragment-candidates',
+        heading: 'Candidate Fragments',
+        scope: 'candidate',
+        order: 210,
+        intro: 'These fragments are candidate memory targets. Treat them as relevant context, not as confirmed prose mentions.',
+        matches: (sources) => sources.includes('current-observation'),
+      },
+    ],
+  }))
+
+  pushFragmentBlock(fragmentCatalogBlock({
+    sections: orderedSelection.lanes.map((lane) => ({
+      type: lane.type,
+      label: lane.label,
+      fragments: lane.catalog,
+    })),
+    order: 390,
+    editable: true,
+    canReadFragments: canReadFragments(ctx),
+  }))
 
   if (ctx.newProse) {
+    // Numbered so evidence can be a citation instead of a retyped quote.
     blocks.push({
-      id: 'new-prose',
+      id: 'prose-new',
       role: 'user',
-      content: [
-        '## New Prose Fragment',
+      content: markdownSection(2, 'New Prose Fragment', [
         `Fragment ID: ${ctx.newProse.id}`,
-        ctx.newProse.content,
-      ].join('\n'),
+        'Sentences are numbered. Cite them by number as evidence.',
+        numberSentences(ctx.newProse.content),
+      ]),
       order: 400,
       source: 'builtin',
     })
@@ -160,101 +337,106 @@ export async function buildAnalyzePreviewContext(dataDir: string, storyId: strin
   const story = await getStory(dataDir, storyId)
   if (!story) throw new Error(`Story ${storyId} not found`)
 
-  const allCharacters = await listFragments(dataDir, storyId, 'character')
-  const allKnowledge = await listFragments(dataDir, storyId, 'knowledge')
-  const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
+  // Use the latest prose as the preview stand-in; the new-prose block is a
+  // placeholder until a run fills it.
+  const activeProseIds = await getActiveProseIds(dataDir, storyId)
+  const latestProseId = activeProseIds.at(-1)
+  const latestProse = latestProseId ? await getFragment(dataDir, storyId, latestProseId) : null
 
-  return {
-    story,
-    proseFragments: [],
-    stickyGuidelines: [],
-    stickyKnowledge: [],
-    stickyCharacters: [],
-    guidelineShortlist: [],
-    knowledgeShortlist: [],
-    characterShortlist: [],
-    systemPromptFragments,
-    allCharacters,
-    allKnowledge,
-    newProse: { id: 'pr-preview', content: '(Preview — actual prose will appear here during analysis)' },
+  const context = await buildAnalyzeContext(dataDir, storyId, story, {
+    proseFragment: latestProse,
+    newProse: { id: '(the new fragment\'s ID)', content: '(the new prose passage will appear here)' },
+  })
+  if (latestProse) {
+    const routableFragments = await listRoutableMemoryFragments(dataDir, storyId, context.story)
+    const candidates = mergeFragmentCandidates(
+      writerProvenanceFragmentCandidates(context.story, latestProse, routableFragments),
+    )
+    context.attentionCandidateIds = fragmentCandidateIds(candidates)
+    context.attentionCandidateSignals = candidates.map((candidate) => ({
+      fragmentId: candidate.fragmentId,
+      sources: candidate.sources,
+    }))
   }
+  return context
 }
 
 // ─── Librarian Chat ───
 
 export const CHAT_SYSTEM_PROMPT = `
-You are a conversational librarian assistant for a collaborative writing app. Your job is to help the author maintain story continuity by answering questions and performing fragment edits through tools.
-Important: Follow the agent configuration.
+You are the Librarian, the author's story continuity assistant. Answer the author's questions and edit story fragments through tools.
 
-Your tools:
-- getFragment(id) — Read any fragment's full content. Use this to read prose before editing.
-- editProse(oldText, newText) — Search and replace across active prose in the story chain. You must read the prose with getFragment first to know the exact text.
-- editFragment(fragmentId, oldText, newText) — Search and replace within a specific non-prose fragment.
-- updateFragment(fragmentId, newContent, newDescription) — Overwrite a fragment's entire content.
-- createFragment(type, name, description, content) — Create a brand-new fragment.
-- listFragments(type?) — List fragments, optionally by type.
-- searchFragments(query, type?) — Search for text across all fragments.
-- deleteFragment(fragmentId) — Delete a fragment.
-- getStorySummary() — Read the current rolling story summary.
-- updateStorySummary(summary) — Replace the story's rolling summary with a new version. Use this to rewrite, condense, or correct the summary based on all available prose.
-- reanalyzeFragment(fragmentId) — Re-run librarian analysis on a prose fragment. Updates the fragment's summary, detects mentions, flags contradictions, and suggests knowledge. Use when the author asks to re-examine or reanalyze a specific prose section.
-- optimizeCharacter(fragmentId, instructions?) — Optimize a character sheet using depth-focused writing methodology. Rewrites with causality, Egri dimensions, friction, and contrast.
-- inspectGeneration(fragmentId, aspect?) — Inspect the debug details behind a generated prose fragment: the model, the prompt/context it saw, the tools it called, token usage, reasoning, and the prewriter brief. aspect is one of summary (default), prompt, tools, prewriter, reasoning. Use to explain or diagnose why a passage was written the way it was.
+## Reading
 
-Instructions:
-1. Your context includes a story summary and fragment summaries (IDs, names, descriptions) — not full content. Use getFragment(id) to read the full content of any fragment you need.
-2. For prose edits, first read the relevant prose fragment with getFragment, then use editProse(oldText, newText) — it scans active prose automatically.
-3. For character/guideline/knowledge changes, use editFragment or updateFragment with the fragment ID.
-3b. When the author asks to add new lore/character/rules, use createFragment.
-4. When the author asks for sweeping changes (e.g. "update all characters to reflect the time skip"), use listFragments and getFragment to find relevant fragments, then update each one.
-5. Explain what you changed and why after making edits.
-6. Ask clarifying questions when the request is ambiguous.
-7. You can make multiple tool calls in sequence to accomplish complex tasks.
-8. Keep fragment descriptions within the 250 character limit.
-9. Be concise but thorough in your responses.
+- Your context holds the story summary and fragment summaries (IDs, names, descriptions) — the full content stays on disk. Use **readFragments** to batch-read full content before relying on details or making whole-field rewrites.
+- Folded current state, unresolved threads, and character knowledge stay out of the default prompt. Use **readContinuity** when the author's request actually concerns continuity.
+- For sweeping requests (e.g., "update all characters to reflect the time skip"), survey first with **listFragments**, **findFragments**, and **readFragments**, then edit in one batch.
 
-Fragment ID prefixes: pr- (prose), ch- (character), gl- (guideline), kn- (knowledge).
+## Editing
+
+Edits apply immediately, so make them only when the author asked for the change.
+
+- Prose edits: **editProse** — it scans active prose automatically, applies exact diffs, and returns them.
+- Character, guideline, knowledge, summary, or custom fragments: **editFragments**. ${OPERATION_GUIDANCE} A whole-field rewrite must contain the complete final field text from the fragment you read.
+- New fragments: **editFragments** with create_fragment operations and plain fragment names; the system assigns IDs.
+- Keep fragment descriptions within the 250 character limit.
+
+## Conduct
+
+- Batch related reads and edits into one tool call.
+- Ask a clarifying question when the request is ambiguous.
+- After editing, tell the author what changed and why — they can undo it.
+- For specialist workflows use **invokeAgent**; for generation debugging use **inspectRun**.
+
 `
 
 export function createLibrarianChatBlocks(ctx: AgentBlockContext): ContextBlock[] {
   const blocks: ContextBlock[] = []
 
-  let chatSystemPrompt = instructionRegistry.resolve('librarian.chat.system', ctx.modelId)
-  if (ctx.pluginToolDescriptions && ctx.pluginToolDescriptions.length > 0) {
-    const pluginToolLines = ctx.pluginToolDescriptions.map(t => `- ${t.name} — ${t.description}`)
-    chatSystemPrompt += `\n\nAdditional enabled plugin tools:\n${pluginToolLines.join('\n')}`
-  }
-
+  // Plugin tools reach the model via the SDK schema and honor disabledTools, so
+  // they aren't enumerated here.
   blocks.push({
     id: 'instructions',
     role: 'system',
-    content: chatSystemPrompt,
+    content: instructionRegistry.resolve('librarian.chat.system', ctx.modelId),
     order: 100,
     source: 'builtin',
   })
 
-  const sysFrags = systemFragmentsBlock(ctx)
-  if (sysFrags) {
-    // Chat uses a different format for system fragments (dash-list vs ## headers)
+  if (ctx.enabledTools?.includes('setCharacterVoice')) {
     blocks.push({
-      id: 'system-fragments',
+      id: 'voice-edit-policy',
       role: 'system',
-      content: ctx.systemPromptFragments.map(f => `- ${f.id}: ${f.name} — ${f.content}`).join('\n'),
-      order: 200,
+      content: 'Character POV voice notes may be changed with setCharacterVoice only when the author explicitly asks to define, change, or clear that voice. Never change voice as an incidental part of another edit.',
+      order: 150,
       source: 'builtin',
     })
   }
 
+  const sysFrags = systemFragmentsBlock(ctx)
+  if (sysFrags) {
+    blocks.push(sysFrags)
+  }
+
   blocks.push(storyInfoBlock(ctx))
 
-  const prose = proseSummariesBlock(ctx, '## Prose Fragments (use getFragment to read/edit)')
+  const prose = proseSummariesBlock(ctx, '## Prose Fragments (use readFragments or readProseChain to inspect)')
   if (prose) blocks.push(prose)
 
-  const sticky = stickyFragmentsBlock(ctx)
-  if (sticky) blocks.push(sticky)
+  blocks.push(...fragmentSummaryCatalogBlocks(ctx, { includeCustomFragments: true }))
 
-  const shortlist = shortlistBlock(ctx)
-  if (shortlist) blocks.push(shortlist)
+  // A POV-aware conversation is created only from the author's explicit prose
+  // refinement action. Keep this as an editing constraint so the Librarian does
+  // not start role-playing the selected character in its conversational reply.
+  if (ctx.povVoice) {
+    blocks.push({
+      id: 'pov-voice',
+      role: 'user',
+      content: "Editing Point of View: Keep any prose edits in {{characterName}}'s point of view and preserve {{characterName}}'s voice: {{voice}}",
+      order: 500,
+      source: 'builtin',
+    })
+  }
 
   return blocks
 }
@@ -262,33 +444,44 @@ export function createLibrarianChatBlocks(ctx: AgentBlockContext): ContextBlock[
 export async function buildChatPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
   const base = await buildBasePreviewContext(dataDir, storyId)
   const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
-  return { ...base, systemPromptFragments }
+  return {
+    ...base,
+    systemPromptFragments,
+    // Enumerate/configure the optional block in the editor without making
+    // ordinary runtime chats POV-aware.
+    povVoice: {
+      characterName: 'POV Character',
+      content: '(voice notes will appear here)',
+    },
+  }
 }
 
 // ─── Librarian Refine ───
 
-export const REFINE_SYSTEM_PROMPT = `You are a fragment refinement agent for a collaborative writing app. Your job is to improve a specific fragment (character, guideline, or knowledge) based on the story context.
+export const REFINE_SYSTEM_PROMPT = `You are a story editor refining a single fragment of an ongoing story. Improve the target fragment based on the story context. Your scope is character, guideline, knowledge, and custom fragments only — prose fragments stay untouched, and archiving requires an explicit request from the author.
 
-Instructions:
-1. First, read the target fragment using the appropriate get tool (e.g. getCharacter, getKnowledge, getGuideline).
-2. Analyze the story context provided: prose, summary, and other fragments.
-3. Use the updateFragment or editFragment tool to improve the target fragment.
+## Instructions
+
+1. Analyze the complete target snapshot and story context provided: prose, summary, continuity, and other fragments. Its baseHash is included with the target.
+2. Batch-read any additional records you genuinely need with **readFragments**.
+3. Use **editFragments** to apply your edits. ${OPERATION_GUIDANCE}
 4. Explain what you changed and why in your text response.
 
-Guidelines for refinement:
-- If the user provides specific instructions, follow them precisely.
-- If no instructions are given, improve the fragment for consistency, clarity, and depth based on story events.
+## Guidelines for Refinement
+
+- When the author gives specific instructions, follow them precisely.
+- When no instructions are given, improve the fragment for consistency, clarity, and depth based on story events.
 - Preserve the fragment's existing voice and style unless asked otherwise.
-- Update descriptions to stay within the 250 character limit.
-- Do NOT delete fragments unless explicitly asked.
-- Do NOT modify prose fragments — only characters, guidelines, and knowledge.`
+- Keep descriptions within the 250 character limit.
+- For set_fields, include baseHash and write each changed field as the complete final value. Prefer localized operations for specific sentences, paragraphs, insertions, or end appends.`
 
 export function createLibrarianRefineBlocks(ctx: AgentBlockContext): ContextBlock[] {
   return compactBlocks([
     instructionsBlock('librarian.refine.system', ctx),
     storyInfoBlock(ctx),
     recentProseBlock(ctx),
-    stickyFragmentsBlock(ctx),
+    continuityBlock(ctx, 'librarian.refine', 'continuity-observations', 250),
+    ...pinnedFragmentCatalogBlocks(ctx),
     targetFragmentBlock(ctx,
       'fragment to refine',
       'No specific instructions provided. Improve this fragment based on recent story events for consistency, clarity, and depth.',
@@ -301,19 +494,18 @@ export async function buildRefinePreviewContext(dataDir: string, storyId: string
   return {
     ...base,
     targetFragment: undefined,
-    instructions: '(Preview — actual instructions will appear during refinement)',
+    instructions: '(your refinement instructions will appear here)',
   }
 }
 
 // ─── Prose Transform ───
 
-export const PROSE_TRANSFORM_SYSTEM_PROMPT = `You transform selected prose spans for an author in a writing app.
+export const PROSE_TRANSFORM_SYSTEM_PROMPT = `You transform selected spans of an author's prose.
 
 Rules:
 - Follow the requested operation exactly.
 - Preserve story facts, continuity, tense, and point of view.
-- Do not add metadata, explanations, markdown, quotes, or labels.
-- Return only the transformed replacement text for the selected span.`
+- Return only the transformed replacement text for the selected span — no metadata, explanations, markdown, quotes, or labels.`
 
 export function createProseTransformBlocks(ctx: AgentBlockContext): ContextBlock[] {
   const blocks: ContextBlock[] = []
@@ -324,35 +516,30 @@ export function createProseTransformBlocks(ctx: AgentBlockContext): ContextBlock
     blocks.push({
       id: 'operation',
       role: 'user',
-      content: [
-        `Operation: ${ctx.operation}`,
-        ctx.guidance || '',
-      ].join('\n').trim(),
+      content: markdownSection(2, 'Operation', [
+        ctx.operation,
+        markdownSection(3, 'Guidance', ctx.guidance || '(none)'),
+      ]),
       order: 100,
       source: 'builtin',
     })
   }
 
-  blocks.push({
+  const summary = storySummaryBlock(renderSummaryProjection(ctx.summaryProjection, 'editing') ?? undefined, {
     id: 'story-summary',
-    role: 'user',
-    content: [
-      'Story summary:',
-      ctx.story.summary || '(none)',
-    ].join('\n'),
     order: 200,
-    source: 'builtin',
+    placeholder: STORY_SUMMARY_PLACEHOLDER,
   })
+  if (summary) blocks.push(summary)
 
   const stickyContext = [...ctx.stickyGuidelines, ...ctx.stickyKnowledge]
   if (stickyContext.length > 0) {
     blocks.push({
       id: 'sticky-fragments',
       role: 'user',
-      content: [
-        'Pinned guidelines and knowledge:',
-        ...stickyContext.map(f => `### ${f.name}\n${f.content}`),
-      ].join('\n'),
+      content: markdownSection(2, 'Pinned Guidelines and Knowledge',
+        stickyContext.map(fragment => markdownSection(3, fragment.name, fragment.content))
+      ),
       order: 250,
       source: 'builtin',
     })
@@ -362,10 +549,9 @@ export function createProseTransformBlocks(ctx: AgentBlockContext): ContextBlock
     blocks.push({
       id: 'source',
       role: 'user',
-      content: [
-        'Fragment context:',
-        ctx.sourceContent,
-      ].join('\n'),
+      content: markdownSection(2, 'Source Prose',
+        markdownSection(3, 'Current Source', ctx.sourceContent)
+      ),
       order: 300,
       source: 'builtin',
     })
@@ -375,29 +561,22 @@ export function createProseTransformBlocks(ctx: AgentBlockContext): ContextBlock
     blocks.push({
       id: 'selection',
       role: 'user',
-      content: [
-        'Selected span to transform:',
-        ctx.selectedText,
-        '',
-        'Context before selected span:',
-        ctx.contextBefore?.trim() || '(none)',
-        '',
-        'Context after selected span:',
-        ctx.contextAfter?.trim() || '(none)',
-      ].join('\n'),
+      content: markdownSection(2, 'Selected Span', [
+        markdownSection(3, 'Text to Transform', ctx.selectedText),
+        markdownSection(3, 'Context Before', ctx.contextBefore?.trim() || '(none)'),
+        markdownSection(3, 'Context After', ctx.contextAfter?.trim() || '(none)'),
+      ]),
       order: 400,
       source: 'builtin',
     })
   }
 
+  pushPovVoice(blocks, ctx.povVoice, 450)
+
   return blocks
 }
 
-/**
- * Targeted fetch of sticky guidelines and knowledge for the prose-transform
- * agent — skips the full buildContextState pipeline (prose chain, summary
- * migration, characters) that a single-step, tool-less transform doesn't need.
- */
+/** Load only the pinned context needed by the single-step prose transform. */
 export async function loadStickyContextFragments(
   dataDir: string,
   storyId: string,
@@ -408,8 +587,8 @@ export async function loadStickyContextFragments(
     listFragments(dataDir, storyId, 'knowledge'),
   ])
   return {
-    stickyGuidelines: guidelines.filter(f => f.sticky).sort(sortByOrder),
-    stickyKnowledge: knowledge.filter(f => f.sticky).sort(sortByOrder),
+    stickyGuidelines: guidelines.filter(fragment => fragment.sticky).sort(sortByOrder),
+    stickyKnowledge: knowledge.filter(fragment => fragment.sticky).sort(sortByOrder),
   }
 }
 
@@ -417,30 +596,28 @@ export async function buildProseTransformPreviewContext(dataDir: string, storyId
   const story = await getStory(dataDir, storyId)
   if (!story) throw new Error(`Story ${storyId} not found`)
 
-  const { stickyGuidelines, stickyKnowledge } = await loadStickyContextFragments(dataDir, storyId)
+  const stickyContext = await loadStickyContextFragments(dataDir, storyId)
 
   return {
-    story,
-    proseFragments: [],
-    stickyGuidelines,
-    stickyKnowledge,
-    stickyCharacters: [],
-    guidelineShortlist: [],
-    knowledgeShortlist: [],
-    characterShortlist: [],
+    ...baseBlockContext(undefined, story),
+    ...stickyContext,
     systemPromptFragments: [],
     operation: 'rewrite',
     guidance: 'Rewrite the selected span for clarity and flow while preserving the original meaning and voice.',
-    selectedText: '(Preview — actual selection will appear during transform)',
-    sourceContent: '(Preview — actual fragment content will appear during transform)',
+    selectedText: '(the selected span will appear here)',
+    sourceContent: '(the surrounding fragment content will appear here)',
     contextBefore: '',
     contextAfter: '',
+    povVoice: {
+      characterName: 'POV Character',
+      content: '(voice notes will appear here)',
+    },
   }
 }
 
 // ─── Optimize Character ───
 
-export const OPTIMIZE_CHARACTER_SYSTEM_PROMPT = `You are a character optimization agent for a collaborative writing app. Your job is to rewrite a character sheet so it has genuine depth, causality, and texture — following a specific creative writing methodology.
+export const OPTIMIZE_CHARACTER_SYSTEM_PROMPT = `You are a character development specialist. Rewrite the target character fragment so it has genuine depth, causality, and texture, following the methodology below.
 
 ## Methodology
 
@@ -459,26 +636,27 @@ export const OPTIMIZE_CHARACTER_SYSTEM_PROMPT = `You are a character optimizatio
 
 **Contrast.** Unexpected combinations that create texture — gentle giant, eloquent thug, cowardly genius. The gap between expectation and reality is where interesting writing lives. Multiple dimensions make a character more stable, not less.
 
-**References as sprinkles.** Archetypes, real-world references, and cultural touchstones are starting points, never destinations. "Columbo-like disarming manner" is a seed that orients the reader, not a character sheet. Use musicians instead of specific songs, directors instead of every movie — unless a specific reference carries causal weight.
+**References as sprinkles.** Archetypes, real-world references, and cultural touchstones are starting points, never destinations. "Columbo-like disarming manner" is a seed that orients the reader, not a character definition. Use musicians instead of specific songs, directors instead of every movie — unless a specific reference carries causal weight.
 
 ## Instructions
 
-1. Read the target character fragment using the appropriate get tool (e.g. getCharacter, getFragment).
-2. Read relevant prose fragments using getFragment to understand how the character actually behaves in the story — not just how they're described on paper.
-3. Analyze gaps between the current sheet and the methodology above. Where are there bare adjectives without cause? Where is friction missing? Which of Egri's dimensions are underdeveloped?
-4. Rewrite the character sheet with depth and causality. Build the ramp of how this person grew up and why they think the way they do. Preserve existing voice and any details that already have depth — improve, don't replace what works.
-5. Use updateFragment to save the improved version. Keep descriptions within the 250 character limit.
+1. Analyze the complete target character snapshot provided; its baseHash is included with the target.
+2. Read older relevant prose using readFragments or readProseChain only when the provided recent prose is insufficient to understand how the character actually behaves in the story — not just how they're described on paper.
+3. Analyze gaps between the current fragment and the methodology above. Where are there bare adjectives without cause? Where is friction missing? Which of Egri's dimensions are underdeveloped?
+4. Rewrite the character fragment with depth and causality. Build the ramp of how this person grew up and why they think the way they do. Preserve existing voice and any details that already have depth — improve, don't replace what works.
+5. Use editFragments with set_fields and the baseHash to apply the rewrite. Write the full final character sheet as the content field. Keep descriptions within the 250 character limit.
 6. Explain what you changed and why — which dimensions you developed, what friction you introduced, what causal chains you built.
 
-Do NOT delete the fragment. Do NOT modify prose fragments. Focus entirely on deepening the character sheet.`
+Your scope is the character fragment alone: deepen it, leave prose fragments untouched, and keep it active (archiving is out of scope).`
 
 export function createOptimizeCharacterBlocks(ctx: AgentBlockContext): ContextBlock[] {
   return compactBlocks([
     instructionsBlock('librarian.optimize-character.system', ctx),
     storyInfoBlock(ctx),
     recentProseBlock(ctx),
-    stickyFragmentsBlock(ctx),
-    allCharactersBlock(ctx),
+    continuityBlock(ctx, 'librarian.optimize-character', 'continuity-observations', 250),
+    ...pinnedFragmentCatalogBlocks(ctx, { includeCharacters: false }),
+    allCharactersCatalogBlock(ctx),
     targetFragmentBlock(ctx,
       'character to optimize',
       'No specific instructions provided. Optimize this character for depth, causality, and friction using the methodology.',
@@ -488,11 +666,11 @@ export function createOptimizeCharacterBlocks(ctx: AgentBlockContext): ContextBl
 
 export async function buildOptimizeCharacterPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
   const base = await buildBasePreviewContext(dataDir, storyId)
-  const allCharacters = await listFragments(dataDir, storyId, 'character')
+  const allCharacters = (base.allFragments ?? []).filter((fragment) => fragment.type === 'character')
   return {
     ...base,
     allCharacters,
     targetFragment: undefined,
-    instructions: '(Preview — actual instructions will appear during optimization)',
+    instructions: '(your optimization instructions will appear here)',
   }
 }

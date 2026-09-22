@@ -5,7 +5,15 @@
 - `docs/context-blocks.md`
   - Context block system: structured LLM prompt blocks, the `beforeBlocks` plugin hook, Block Editor UI, custom blocks (simple + script), and block configuration API.
 - `docs/summarization-and-memory.md`
-  - Technical reference for rolling story memory: deferred summary application, latest-analysis dedupe for reanalysis safety, structured summary signals, compaction thresholds, settings/API wiring, and test coverage.
+  - Technical reference for source-linked story memory: contribution currency, target-relative projection, explicit coverage gaps, reader-specific presentation, authored memory, prompt budgeting, and performance properties.
+- `docs/summary-projection-design.md`
+  - Current tiered-memory contract: source-current contributions, recursive content-addressed roll-ups, target-safe frontier selection, retrospective register, coverage spans, explicit gaps, and reader-specific presentation.
+- `docs/analyze-context-design.md`
+  - Analyze context strategy: character working-set tiering, explicit tool lanes, and edit-safety via proposals against preloaded sheets.
+- `docs/context-provenance-and-continuity.md`
+  - Architecture for context receipts, source-linked continuity projections, chronology, open-thread lifecycle, character knowledge, and authority boundaries.
+- `docs/timelines.md`
+  - Timelines (branches): isolated story copies, forking, switching, storage layout, and API.
 - `docs/character-chat.md`
   - Character Chat architecture and API: conversation storage model, NDJSON streaming chat endpoint, persona modes, model/provider resolution, and frontend integration points.
 - `docs/prose-writing-panel.md`
@@ -19,15 +27,15 @@
 - `docs/component-ids.md`
   - Frontend `data-component-id` contract for extensibility and automation.
 - `docs/publishing-plugin-sdk.md`
-  - How to publish `@tealios/errata-plugin-sdk` manually and via GitHub Actions.
+  - How to publish `@viscerous/errata-plugin-sdk` manually and via GitHub Actions.
 - `docs/instruction-registry.md`
-  - Instruction registry: centralized prompt management, model-specific instruction overrides, InstructionSet schema, and registered keys.
+  - Instruction registry: centralized built-in prompt defaults, registered keys, and the per-agent block customization path.
 - `docs/generation-pipeline.md`
   - Generation pipeline: standard and prewriter modes, context assembly, streaming events, generation logs, and mode-specific behavior.
 - `docs/adding-agents.md`
   - Contributor guide for adding new agents: file structure, system prompts, block builders, runtime logic, registration, model resolution, UI integration, testing checklist.
-- `docs/commit-doc-sync.md`
-  - Auto-generated commit-driven documentation sync report with baseline detection and follow-up suggestions.
+- `docs/agent-observability.md`
+  - Agent observability: active registry, live activity stream, run traces, and the persistent librarian analyses/generation logs — which system answers which question, and who wires them (you don't).
 - `docs/documentation-sync-skill.md`
   - Implementation notes and usage for the commit-driven documentation sync skill.
 
@@ -36,11 +44,7 @@ Related:
 - `plugins/templates/README.md`
   - Plugin recipe template catalog.
 - `packages/errata-plugin-sdk/package.json`
-  - Local SDK package: `@tealios/errata-plugin-sdk`.
-- `PLAN.md`
-  - Full architecture reference: schemas, project structure, API routes, data model, generation pipeline.
-- `CLAUDE.md`
-  - Development guide for Claude Code: commands, conventions, efficiency tips.
+  - Local SDK package: `@viscerous/errata-plugin-sdk`.
 
 Automation:
 

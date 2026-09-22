@@ -1,9 +1,12 @@
-import { apiFetch, fetchEventStream, fetchGetEventStream } from './client'
+import { apiFetch } from './client'
+import { fetchRunEventStream } from './runs'
+import { readPovCharacterId } from './generation'
 import type {
-  LibrarianState,
+  LibrarianStatusResponse,
   LibrarianAnalysisSummary,
   LibrarianAnalysis,
-  LibrarianAcceptSuggestionResponse,
+  LibrarianAcceptChangeProposalResponse,
+  LibrarianRevertChangeProposalResponse,
   ChatHistory,
   ConversationMeta,
   AgentRunTraceRecord,
@@ -11,7 +14,7 @@ import type {
 
 export const librarian = {
   getStatus: (storyId: string) =>
-    apiFetch<LibrarianState>(`/stories/${storyId}/librarian/status`),
+    apiFetch<LibrarianStatusResponse>(`/stories/${storyId}/librarian/status`),
   getAnalysisIndex: (storyId: string) =>
     apiFetch<Record<string, string>>(`/stories/${storyId}/librarian/analysis-index`),
   analyze: (storyId: string, fragmentId: string) =>
@@ -30,51 +33,134 @@ export const librarian = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
-  acceptSuggestion: (storyId: string, analysisId: string, index: number) =>
-    apiFetch<LibrarianAcceptSuggestionResponse>(`/stories/${storyId}/librarian/analyses/${analysisId}/suggestions/${index}/accept`, { method: 'POST' }),
-  dismissSuggestion: (storyId: string, analysisId: string, index: number) =>
-    apiFetch<{ analysis: LibrarianAnalysis }>(`/stories/${storyId}/librarian/analyses/${analysisId}/suggestions/${index}/dismiss`, { method: 'POST' }),
+  acceptChangeProposal: (storyId: string, analysisId: string, index: number) =>
+    apiFetch<LibrarianAcceptChangeProposalResponse>(`/stories/${storyId}/librarian/analyses/${analysisId}/change-proposals/${index}/accept`, { method: 'POST' }),
+  revertChangeProposal: (storyId: string, analysisId: string, index: number) =>
+    apiFetch<LibrarianRevertChangeProposalResponse>(`/stories/${storyId}/librarian/analyses/${analysisId}/change-proposals/${index}/revert`, { method: 'POST' }),
+  dismissChangeProposal: (storyId: string, analysisId: string, index: number) =>
+    apiFetch<{ analysis: LibrarianAnalysis }>(`/stories/${storyId}/librarian/analyses/${analysisId}/change-proposals/${index}/dismiss`, { method: 'POST' }),
+  dismissContradiction: (storyId: string, analysisId: string, index: number) =>
+    apiFetch<{ analysis: LibrarianAnalysis }>(`/stories/${storyId}/librarian/analyses/${analysisId}/contradictions/${index}/dismiss`, { method: 'POST' }),
   deleteAnalysis: (storyId: string, analysisId: string) =>
     apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/analyses/${analysisId}`, { method: 'DELETE' }),
-  refine: (storyId: string, fragmentId: string, instructions?: string) =>
-    fetchEventStream(`/stories/${storyId}/librarian/refine`, { fragmentId, instructions }),
+  refine: (
+    storyId: string,
+    fragmentId: string,
+    instructions?: string,
+    legacyRunIdOrOptions?: string | { branchId?: string },
+    _legacySignal?: AbortSignal,
+  ) => {
+    const branchId = typeof legacyRunIdOrOptions === 'object'
+      ? legacyRunIdOrOptions.branchId
+      : undefined
+    return fetchRunEventStream(`/stories/${storyId}/librarian/refine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fragmentId,
+        instructions,
+        ...(branchId ? { branchId } : {}),
+      }),
+    })
+  },
   transformProseSelection: (
     storyId: string,
     fragmentId: string,
     operation: 'rewrite' | 'expand' | 'compress' | 'custom',
     selectedText: string,
-    options?: { sourceContent?: string; contextBefore?: string; contextAfter?: string; instruction?: string },
-  ) => fetchEventStream(`/stories/${storyId}/librarian/prose-transform`, {
-    fragmentId,
-    operation,
-    selectedText,
-    sourceContent: options?.sourceContent,
-    contextBefore: options?.contextBefore,
-    contextAfter: options?.contextAfter,
-    instruction: options?.instruction,
-  }),
-  chat: (storyId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) =>
-    fetchEventStream(`/stories/${storyId}/librarian/chat`, { messages }),
-  getChatHistory: (storyId: string) =>
-    apiFetch<ChatHistory>(`/stories/${storyId}/librarian/chat`),
-  clearChatHistory: (storyId: string) =>
-    apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/chat`, { method: 'DELETE' }),
-  getAnalysisStream: (storyId: string) =>
-    fetchGetEventStream(`/stories/${storyId}/librarian/analysis-stream`),
+    options?: {
+      sourceContent?: string
+      contextBefore?: string
+      contextAfter?: string
+      instruction?: string
+      runId?: string
+      branchId?: string
+      povCharacterId?: string
+    },
+  ) => {
+    const povCharacterId = options?.povCharacterId
+      ?? readPovCharacterId(storyId, options?.branchId)
+    return fetchRunEventStream(`/stories/${storyId}/librarian/prose-transform`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fragmentId,
+        operation,
+        selectedText,
+        sourceContent: options?.sourceContent,
+        contextBefore: options?.contextBefore,
+        contextAfter: options?.contextAfter,
+        instruction: options?.instruction,
+        ...(options?.branchId ? { branchId: options.branchId } : {}),
+        ...(povCharacterId ? { povCharacterId } : {}),
+      }),
+    })
+  },
+  chat: (
+    storyId: string,
+    message: string,
+    clientRequestId?: string,
+    branchId?: string,
+  ) =>
+    fetchRunEventStream(`/stories/${storyId}/librarian/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        ...(clientRequestId ? { clientRequestId } : {}),
+        ...(branchId ? { branchId } : {}),
+      }),
+    }),
+  getChatHistory: (storyId: string, branchId?: string) =>
+    apiFetch<ChatHistory>(
+      `/stories/${storyId}/librarian/chat${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+    ),
+  clearChatHistory: (storyId: string, branchId?: string) =>
+    apiFetch<{ ok: boolean }>(
+      `/stories/${storyId}/librarian/chat${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+      { method: 'DELETE' },
+    ),
   // Conversations
-  listConversations: (storyId: string) =>
-    apiFetch<ConversationMeta[]>(`/stories/${storyId}/librarian/conversations`),
-  createConversation: (storyId: string, title?: string) =>
+  listConversations: (storyId: string, branchId?: string) =>
+    apiFetch<ConversationMeta[]>(
+      `/stories/${storyId}/librarian/conversations${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+    ),
+  createConversation: (
+    storyId: string,
+    title?: string,
+    povCharacterId?: string,
+    branchId?: string,
+  ) =>
     apiFetch<ConversationMeta>(`/stories/${storyId}/librarian/conversations`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({
+        title,
+        ...(povCharacterId ? { povCharacterId } : {}),
+        ...(branchId ? { branchId } : {}),
+      }),
     }),
-  deleteConversation: (storyId: string, conversationId: string) =>
-    apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/conversations/${conversationId}`, {
-      method: 'DELETE',
+  deleteConversation: (storyId: string, conversationId: string, branchId?: string) =>
+    apiFetch<{ ok: boolean }>(
+      `/stories/${storyId}/librarian/conversations/${conversationId}${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+      { method: 'DELETE' },
+    ),
+  getConversationHistory: (storyId: string, conversationId: string, branchId?: string) =>
+    apiFetch<ChatHistory>(
+      `/stories/${storyId}/librarian/conversations/${conversationId}/chat${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+    ),
+  conversationChat: (
+    storyId: string,
+    conversationId: string,
+    message: string,
+    clientRequestId?: string,
+    branchId?: string,
+  ) => fetchRunEventStream(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      ...(clientRequestId ? { clientRequestId } : {}),
+      ...(branchId ? { branchId } : {}),
     }),
-  getConversationHistory: (storyId: string, conversationId: string) =>
-    apiFetch<ChatHistory>(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`),
-  conversationChat: (storyId: string, conversationId: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) =>
-    fetchEventStream(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`, { messages }),
+  }),
 }

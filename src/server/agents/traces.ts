@@ -1,11 +1,22 @@
-import type { AgentTraceEntry } from './types'
+import type { AgentRunStatus, AgentTraceEntry } from './types'
+
+let runIdCounter = 0
+
+/**
+ * The one run-id generator for every agent-execution path (`runner.ts`'s
+ * recursive `invokeAgent`, `agent-run.ts`'s `beginAgentRun`), so the formats
+ * cannot diverge. A counter beats `Math.random()` for uniqueness in-process.
+ */
+export function makeAgentRunId(): string {
+  return `ar-${Date.now().toString(36)}-${(++runIdCounter).toString(36)}`
+}
 
 export interface AgentRunTraceRecord {
   rootRunId: string
   runId: string
   storyId: string
   agentName: string
-  status: 'success' | 'error'
+  status: AgentRunStatus
   startedAt: string
   finishedAt: string
   durationMs: number

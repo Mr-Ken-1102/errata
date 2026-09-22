@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { startAndConsumeRun } from '@/lib/api/runs'
+import { invalidateStoryContent } from '@/lib/branch-cache'
+import { useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -24,42 +27,58 @@ export function ProseActionInput({
   onStream,
 }: ProseActionInputProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || branchId === undefined) return
 
     setIsLoading(true)
     setError(null)
     onStreamStart()
 
     try {
-      const stream = mode === 'regenerate'
-        ? await api.generation.regenerate(storyId, fragmentId, input)
-        : await api.generation.refine(storyId, fragmentId, input)
-
-      const reader = stream.getReader()
       let accumulated = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === 'text') {
-          accumulated += value.text
-          onStream(accumulated)
-        }
-      }
+      let rejection: string | null = null
+      const result = await startAndConsumeRun(
+        storyId,
+        (clientRequestId) => {
+          const opts = { clientRequestId, ...(branchId ? { branchId } : {}) }
+          return mode === 'regenerate'
+            ? api.generation.regenerate(storyId, fragmentId, input, undefined, opts)
+            : api.generation.refine(storyId, fragmentId, input, undefined, opts)
+        },
+        (event) => {
+          if (event.type === 'text') {
+            accumulated += event.text
+            onStream(accumulated)
+          } else if (event.type === 'generation-rejected') {
+            rejection = event.reason
+          }
+        },
+        { branchId },
+      )
 
-      await queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-      await queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
+      if (rejection) {
+        setError(rejection)
+        return
+      }
+      if (result.status === 'error') {
+        setError(result.error ?? 'Operation failed')
+        return
+      }
+      if (result.status === 'cancelled') return
+
+      await invalidateStoryContent(queryClient, storyId)
       onComplete()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Operation failed')
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, storyId, fragmentId, mode, queryClient, onComplete, onStreamStart, onStream])
+  }, [input, isLoading, storyId, branchId, fragmentId, mode, queryClient, onComplete, onStreamStart, onStream])
 
   const placeholder = mode === 'regenerate'
     ? 'New direction...'
@@ -78,7 +97,7 @@ export function ProseActionInput({
           if (e.key === 'Escape') {
             onCancel()
           }
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
             e.preventDefault()
             handleSubmit()
           }
@@ -96,7 +115,7 @@ export function ProseActionInput({
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onCancel} disabled={isLoading} data-component-id="prose-action-cancel">
             Cancel
           </Button>
-          <Button size="sm" className="h-7 text-xs" onClick={handleSubmit} disabled={!input.trim() || isLoading} data-component-id="prose-action-submit">
+          <Button size="sm" className="h-7 text-xs" onClick={handleSubmit} disabled={!input.trim() || isLoading || branchId === undefined} data-component-id="prose-action-submit">
             {isLoading
               ? (mode === 'regenerate' ? 'Regenerating...' : 'Refining...')
               : (mode === 'regenerate' ? 'Regenerate' : 'Refine')

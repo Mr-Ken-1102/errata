@@ -3,6 +3,8 @@ import { createTempDir, makeTestSettings } from '../setup'
 import { createStory } from '@/server/fragments/storage'
 import type { StoryMeta } from '@/server/fragments/schema'
 import type { CustomBlockDefinition } from '@/server/blocks/schema'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import {
   getAgentBlockConfig,
   saveAgentBlockConfig,
@@ -25,7 +27,6 @@ function makeStory(): StoryMeta {
     name: 'Test',
     description: 'Test story',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -57,12 +58,12 @@ describe('Agent Block Config Storage', () => {
       customBlocks: [],
       overrides: { instructions: { enabled: false } },
       blockOrder: ['instructions', 'story-summary'],
-      disabledTools: ['reportTimeline'],
+      disabledTools: ['reportAnalysis'],
     })
     const loaded = await getAgentBlockConfig(dataDir, STORY_ID, AGENT_NAME)
     expect(loaded.overrides.instructions?.enabled).toBe(false)
     expect(loaded.blockOrder).toEqual(['instructions', 'story-summary'])
-    expect(loaded.disabledTools).toEqual(['reportTimeline'])
+    expect(loaded.disabledTools).toEqual(['reportAnalysis'])
   })
 
   it('adds a custom block', async () => {
@@ -143,8 +144,26 @@ describe('Agent Block Config Storage', () => {
   })
 
   it('updates disabled tools', async () => {
-    const config = await updateAgentDisabledTools(dataDir, STORY_ID, AGENT_NAME, ['reportTimeline', 'reportContradictions'])
-    expect(config.disabledTools).toEqual(['reportTimeline', 'reportContradictions'])
+    const config = await updateAgentDisabledTools(dataDir, STORY_ID, AGENT_NAME, ['reportAnalysis', 'proposeRecordCorrections'])
+    expect(config.disabledTools).toEqual(['reportAnalysis', 'proposeRecordCorrections'])
+  })
+
+  it('migrates deprecated disabled tool names', async () => {
+    const config = await updateAgentDisabledTools(dataDir, STORY_ID, AGENT_NAME, [
+      'getFragment',
+      'editFragment',
+      'proposeProseChanges',
+      'suggestDirections',
+      'reanalyzeFragment',
+    ])
+
+    expect(config.disabledTools).toEqual([
+      'readFragments',
+      'editFragments',
+      'editProse',
+      'proposeDirections',
+      'invokeAgent',
+    ])
   })
 
   it('isolates configs between agents', async () => {
@@ -152,7 +171,7 @@ describe('Agent Block Config Storage', () => {
       customBlocks: [],
       overrides: { instructions: { enabled: false } },
       blockOrder: [],
-      disabledTools: ['reportTimeline'],
+      disabledTools: ['reportAnalysis'],
     })
     await saveAgentBlockConfig(dataDir, STORY_ID, 'librarian.chat', {
       customBlocks: [],
@@ -165,8 +184,34 @@ describe('Agent Block Config Storage', () => {
     const chatConfig = await getAgentBlockConfig(dataDir, STORY_ID, 'librarian.chat')
 
     expect(analyzeConfig.overrides.instructions?.enabled).toBe(false)
-    expect(analyzeConfig.disabledTools).toEqual(['reportTimeline'])
+    expect(analyzeConfig.disabledTools).toEqual(['reportAnalysis'])
     expect(chatConfig.overrides.instructions).toBeUndefined()
     expect(chatConfig.blockOrder).toEqual(['instructions'])
+  })
+
+  it('serializes concurrent mutations without losing blocks', async () => {
+    const block = (id: string): CustomBlockDefinition => ({
+      id,
+      name: id,
+      role: 'user',
+      order: 1,
+      enabled: true,
+      type: 'simple',
+      content: id,
+    })
+    await Promise.all([
+      addAgentCustomBlock(dataDir, STORY_ID, AGENT_NAME, block('cb-race01')),
+      addAgentCustomBlock(dataDir, STORY_ID, AGENT_NAME, block('cb-race02')),
+    ])
+    const config = await getAgentBlockConfig(dataDir, STORY_ID, AGENT_NAME)
+    expect(config.customBlocks.map((entry) => entry.id).sort()).toEqual(['cb-race01', 'cb-race02'])
+  })
+
+  it('preserves and reports a corrupt configuration file', async () => {
+    const path = join(dataDir, 'stories', STORY_ID, 'branches', 'main', 'agent-blocks', `${AGENT_NAME}.json`)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, '{broken', 'utf-8')
+    await expect(getAgentBlockConfig(dataDir, STORY_ID, AGENT_NAME)).rejects.toThrow('original file was left untouched')
+    await expect(readFile(path, 'utf-8')).resolves.toBe('{broken')
   })
 })

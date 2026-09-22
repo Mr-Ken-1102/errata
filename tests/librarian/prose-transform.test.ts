@@ -35,7 +35,6 @@ function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: 'A hero enters a forest.',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -154,7 +153,7 @@ describe('prose transform sticky context', () => {
   it('places sticky context before the selection', async () => {
     const userContent = await runTransform()
     const stickyIndex = userContent.indexOf('The academy sits on a cliff above the sea.')
-    const selectionIndex = userContent.indexOf('Selected span to transform:')
+    const selectionIndex = userContent.indexOf('## Selected Span')
     expect(stickyIndex).toBeGreaterThanOrEqual(0)
     expect(selectionIndex).toBeGreaterThan(stickyIndex)
   })
@@ -162,6 +161,36 @@ describe('prose transform sticky context', () => {
   it('does not include non-sticky fragments', async () => {
     const userContent = await runTransform()
     expect(userContent).not.toContain('A forgotten kingdom lies beyond the mountains.')
+  })
+
+  it('resolves the selected character voice in the compiled transform context', async () => {
+    await createFragment(dataDir, storyId, makeFragment({
+      id: 'ch-maya',
+      type: 'character',
+      name: 'Maya',
+      description: 'POV character',
+      content: 'Maya watches before she speaks.',
+      meta: { voice: 'Tôi kể ngắn, sắc, ưu tiên chi tiết cảm giác.' },
+    }))
+
+    mockAgentStream.mockResolvedValue(mockStreamResponse('Cô lướt dọc hành lang.'))
+    const result = await transformProseSelection(dataDir, storyId, {
+      fragmentId: 'pr-0001',
+      selectedText: 'The guard moved quickly down the hall.',
+      operation: 'rewrite',
+      povCharacterId: 'ch-maya',
+    })
+    await drainEventStream(result)
+
+    const { messages } = mockAgentStream.mock.calls[0][0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userContent = messages.find(message => message.role === 'user')?.content ?? ''
+
+    expect(userContent).toContain("Maya's point of view")
+    expect(userContent).toContain('Tôi kể ngắn, sắc, ưu tiên chi tiết cảm giác.')
+    expect(userContent).not.toContain('{{characterName}}')
+    expect(userContent).not.toContain('{{voice}}')
   })
 
   it('respects a disabled sticky-fragments block in agent block config', async () => {
@@ -177,6 +206,6 @@ describe('prose transform sticky context', () => {
     const userContent = await runTransform()
     expect(userContent).not.toContain('The academy sits on a cliff above the sea.')
     expect(userContent).not.toContain('Keep the prose gothic and moody.')
-    expect(userContent).toContain('Selected span to transform:')
+    expect(userContent).toContain('## Selected Span')
   })
 })

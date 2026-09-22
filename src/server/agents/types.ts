@@ -1,7 +1,7 @@
 import { z, type ZodTypeAny } from 'zod/v4'
 import type { Logger } from '../logging'
 
-export type AgentRunStatus = 'success' | 'error'
+export type AgentRunStatus = 'success' | 'error' | 'aborted'
 
 export interface AgentTraceEntry {
   runId: string
@@ -30,6 +30,7 @@ export interface AgentInvocationContext {
   parentRunId: string | null
   rootRunId: string
   depth: number
+  abortSignal?: AbortSignal
   invokeAgent: <TInput, TOutput>(name: string, input: TInput) => Promise<TOutput>
 }
 

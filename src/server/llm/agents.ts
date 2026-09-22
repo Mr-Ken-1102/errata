@@ -1,8 +1,8 @@
 import { agentBlockRegistry } from '../agents/agent-block-registry'
 import { instructionRegistry } from '../instructions'
 import type { AgentBlockContext } from '../agents/agent-block-context'
-import { registry } from '../fragments/registry'
-import { createDefaultBlocks, buildContextState, type ContextBuildState, type ContextBlock } from './context-builder'
+import { createDefaultBlocks, buildContextState, type ContextBlock } from './context-builder'
+import { coreReadToolNames, createFragmentTools } from './tools'
 import { createPrewriterBlocks, buildPrewriterPreviewContext, createWriterBriefBlocks, PREWRITER_INSTRUCTIONS } from './prewriter'
 import {
   GENERATION_SYSTEM_PROMPT,
@@ -21,76 +21,27 @@ export function pluralize(name: string): string {
 }
 
 function getAvailableTools(): string[] {
-  const tools: string[] = []
-  const types = registry.listTypes()
-  for (const t of types) {
-    if (t.llmTools === false) continue
-    const cap = capitalize(t.type)
-    const plural = capitalize(pluralize(t.type))
-    tools.push(`get${cap}`)
-    tools.push(`list${plural}`)
-  }
-  tools.push('getFragment', 'listFragments', 'searchFragments', 'listFragmentTypes')
-  return tools
+  return coreReadToolNames()
 }
 
-function buildToolLines(pluginToolDescriptions?: Array<{ name: string; description: string }>): string[] {
-  const lines: string[] = []
-  for (const t of registry.listTypes()) {
-    if (t.llmTools === false) continue
-    const cap = capitalize(t.type)
-    const plural = capitalize(pluralize(t.type))
-    lines.push(`- get${cap}(id): Get full content of a ${t.type} fragment`)
-    lines.push(`- list${plural}(): List all ${t.type} fragments`)
-  }
-  lines.push('- listFragmentTypes(): List all available fragment types')
-  for (const t of pluginToolDescriptions ?? []) {
-    lines.push(`- ${t.name}: ${t.description}`)
-  }
-  return lines
-}
+/** Placeholder author direction shown in the generation context preview. */
+const GENERATION_PREVIEW_INPUT = '(your direction for the next passage will appear here)'
 
 function createGenerationBlocks(ctx: AgentBlockContext): ContextBlock[] {
   if (ctx.story.settings.generationMode === 'prewriter') {
-    const toolLines = buildToolLines(ctx.pluginToolDescriptions)
     const placeholderBrief = '(The prewriter will generate a brief at generation time.)'
-    return createWriterBriefBlocks(ctx.proseFragments, placeholderBrief, toolLines, ctx.modelId)
+    return createWriterBriefBlocks(ctx.proseFragments, placeholderBrief, ctx.modelId)
   }
-
-  const state: ContextBuildState = {
-    story: ctx.story,
-    proseFragments: ctx.proseFragments,
-    chapterSummaries: [],
-    stickyGuidelines: ctx.stickyGuidelines,
-    stickyKnowledge: ctx.stickyKnowledge,
-    stickyCharacters: ctx.stickyCharacters,
-    guidelineShortlist: ctx.guidelineShortlist,
-    knowledgeShortlist: ctx.knowledgeShortlist,
-    characterShortlist: ctx.characterShortlist,
-    authorInput: '(preview)',
-  }
-  const extraTools = ctx.pluginToolDescriptions?.map(t => ({
-    name: t.name,
-    description: t.description,
-  }))
-  return createDefaultBlocks(state, extraTools?.length ? { extraTools } : undefined)
+  // The context is already a ContextBuildState (AgentBlockContext extends it), so
+  // render it directly — no reconstruction, nothing to drop.
+  return createDefaultBlocks(ctx)
 }
 
 async function buildGenerationPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
-  // Note: generation uses '(preview)' as authorInput, so we call buildContextState directly
-  // rather than using buildBasePreviewContext (which passes empty string)
-  const state = await buildContextState(dataDir, storyId, '(preview)')
-  return {
-    story: state.story,
-    proseFragments: state.proseFragments,
-    stickyGuidelines: state.stickyGuidelines,
-    stickyKnowledge: state.stickyKnowledge,
-    stickyCharacters: state.stickyCharacters,
-    guidelineShortlist: state.guidelineShortlist,
-    knowledgeShortlist: state.knowledgeShortlist,
-    characterShortlist: state.characterShortlist,
-    systemPromptFragments: [],
-  }
+  // Generation needs a non-empty authorInput so the author-input block renders in
+  // the preview; we use a self-explanatory placeholder rather than a bare token.
+  const state = await buildContextState(dataDir, storyId, GENERATION_PREVIEW_INPUT)
+  return { ...state, systemPromptFragments: [] }
 }
 
 let registered = false
@@ -110,6 +61,7 @@ export function registerGenerationBlocks(): void {
     displayName: 'Writer',
     description: 'Prose continuation and generation',
     availableTools: getAvailableTools(),
+    resolveTools: ({ dataDir, storyId }) => createFragmentTools(dataDir, storyId, { readOnly: true }),
     createDefaultBlocks: createGenerationBlocks,
     buildPreviewContext: buildGenerationPreviewContext,
   })
@@ -119,6 +71,7 @@ export function registerGenerationBlocks(): void {
     displayName: 'Prewriter',
     description: 'Creates a focused writing brief from full story context.',
     availableTools: getAvailableTools(),
+    resolveTools: ({ dataDir, storyId }) => createFragmentTools(dataDir, storyId, { readOnly: true }),
     createDefaultBlocks: createPrewriterBlocks,
     buildPreviewContext: buildPrewriterPreviewContext,
   })

@@ -1,152 +1,517 @@
-import { generateFragmentId } from '@/lib/fragment-ids'
-import type { Fragment } from '../fragments/schema'
 import {
-  createFragment,
   getFragment,
-  listFragments,
   updateFragment,
-  updateFragmentVersioned,
 } from '../fragments/storage'
-import { registry } from '../fragments/registry'
-import { checkFragmentWrite } from '../fragments/protection'
+import type { Fragment } from '../fragments/schema'
+import type { FragmentChangeOperation, OperationValidation } from '../fragments/change-operations'
+import {
+  fragmentBaseHash,
+  recommendedReadFragmentIds,
+  validateOperations,
+} from '../fragments/change-operations'
+import {
+  applyOperationsWithSnapshot,
+  revertAppliedChanges,
+  RevertConflictError,
+  type AppliedChange,
+  type RevertResult,
+} from '../fragments/change-apply'
 import type { LibrarianAnalysis } from './storage'
+import { evidenceAppearsInText } from './evidence'
+import {
+  correctionShapeError,
+  MAX_CORRECTION_SPAN_CHARS,
+  MAX_NEW_FRAGMENT_CONTENT_CHARS,
+  MIN_CORRECTION_ANCHOR_CHARS,
+} from './correction-limits'
 
-type FragmentSuggestion = LibrarianAnalysis['fragmentSuggestions'][number]
-
-interface ApplySuggestionResult {
-  fragmentId: string
-  created: boolean
-  updated: boolean
+export interface ApplyFragmentChangeProposalResult {
+  appliedResults: OperationValidation[]
+  appliedChanges: AppliedChange[]
+  createdFragmentIds: string[]
+  updatedFragmentIds: string[]
+  archivedFragmentIds: string[]
+  readFragmentIds: string[]
 }
 
-function normalizeName(name: string): string {
-  return name.trim().toLowerCase()
+export interface RevertFragmentChangeProposalResult {
+  revertResults: RevertResult[]
+  updatedFragmentIds: string[]
+  archivedFragmentIds: string[]
+  restoredFragmentIds: string[]
 }
 
-function resolveSourceFragmentId(
+/** Analysis-flavoured alias of the shared {@link RevertConflictError}, kept so the
+ * accept/revert route handlers catch the same type they always did. */
+export { RevertConflictError as ProposalRevertConflictError }
+
+/**
+ * Thrown when `applyOperations` wrote some targets to disk before a later target
+ * failed. Carries the snapshot of what actually applied so callers can record it
+ * on the proposal and keep the partial change visible and revertible.
+ */
+export class ProposalApplyError extends Error {
+  constructor(message: string, readonly partial: ApplyFragmentChangeProposalResult) {
+    super(message)
+    this.name = 'ProposalApplyError'
+  }
+}
+
+/**
+ * Thrown when pre-apply validation rejects a proposal, before anything writes to
+ * disk. Deterministic against current fragment state — typically the proposal is
+ * stale (a sibling proposal or manual edit already changed the target), so
+ * callers should mark it stale rather than leave it pending to fail again.
+ */
+export class ProposalValidationError extends Error {
+  constructor(message: string, readonly results: OperationValidation[]) {
+    super(message)
+    this.name = 'ProposalValidationError'
+  }
+}
+
+/**
+ * Thrown when a proposal is sound but may not be written *unattended* — a
+ * whole-field rewrite, say. Manual accept does not consult the unattended gate
+ * at all, so this accept would succeed and the proposal must stay pending.
+ *
+ * It is a distinct type because the two refusals read identically at the throw
+ * site and mean opposite things to the author: "this can never apply" versus
+ * "this is yours to approve". Marking the second stale dismissed a correct
+ * correction the moment it was made.
+ */
+export class ProposalNeedsAuthorError extends ProposalValidationError {
+  constructor(message: string, results: OperationValidation[]) {
+    super(message, results)
+    this.name = 'ProposalNeedsAuthorError'
+  }
+}
+
+/** Fragment IDs recorded in an applied-change snapshot for a given change kind. */
+function changedIdsOfKind(changes: AppliedChange[], kind: AppliedChange['kind']): string[] {
+  return unique(changes.filter((change) => change.kind === kind).map((change) => change.fragmentId))
+}
+
+function sourceFragmentIdForProposal(
   analysis: LibrarianAnalysis,
-  suggestion: FragmentSuggestion,
+  proposal: LibrarianAnalysis['fragmentChangeProposals'][number],
 ): string | null {
-  return suggestion.sourceFragmentId ?? analysis.fragmentId ?? null
+  return proposal.sourceFragmentId ?? analysis.fragmentId ?? null
 }
 
-async function findSuggestionFragment(
+function identityWords(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
+
+function namesIdentity(text: string, identity: string): boolean {
+  const words = identityWords(identity)
+  if (words.length < 3) return false
+  return ` ${identityWords(text)} `.includes(` ${words} `)
+}
+
+/**
+ * Keep character corrections from crossing entity boundaries unattended. This
+ * is deliberately an apply-time guard rather than another model contract: a
+ * mistaken proposal remains visible for review, while no extra fields or retry
+ * loop are imposed on smaller models.
+ */
+async function unattendedCharacterCorrectionError(
   dataDir: string,
   storyId: string,
-  suggestion: FragmentSuggestion,
-): Promise<Fragment | null> {
-  if (suggestion.targetFragmentId) {
-    const target = await getFragment(dataDir, storyId, suggestion.targetFragmentId)
-    if (target && target.type === suggestion.type && (target.type === 'character' || target.type === 'knowledge')) {
-      return target
+  analysis: LibrarianAnalysis,
+  proposal: LibrarianAnalysis['fragmentChangeProposals'][number],
+  operation: Extract<FragmentChangeOperation, { action: 'replace_text' }>,
+): Promise<string | null> {
+  const target = await getFragment(dataDir, storyId, operation.fragmentId)
+  if (!target || target.type !== 'character') return null
+
+  const claim = [proposal.title, proposal.rationale, operation.reason, operation.newText]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(' ')
+  const targetAliases = [
+    target.name,
+    ...analysis.mentions
+      .filter((mention) => mention.fragmentId === target.id)
+      .map((mention) => mention.text),
+  ]
+  const namesTarget = targetAliases.some((alias) => namesIdentity(claim, alias))
+
+  const otherCharacterIds = [...new Set(
+    analysis.mentions
+      .map((mention) => mention.fragmentId)
+      .filter((fragmentId) => fragmentId !== target.id),
+  )]
+  for (const fragmentId of otherCharacterIds) {
+    const other = await getFragment(dataDir, storyId, fragmentId)
+    if (!other || other.type !== 'character') continue
+    const aliases = [
+      other.name,
+      ...analysis.mentions
+        .filter((mention) => mention.fragmentId === fragmentId)
+        .map((mention) => mention.text),
+    ]
+    if (!namesTarget && aliases.some((alias) => namesIdentity(claim, alias))) {
+      return `The correction names ${other.name} but targets the character record for ${target.name}.`
     }
   }
 
-  if (suggestion.createdFragmentId) {
-    const existing = await getFragment(dataDir, storyId, suggestion.createdFragmentId)
-    if (existing) return existing
+  const replacesFirstAssertion = operation.field === 'content'
+    && target.content.trimStart().startsWith(operation.oldText.trim())
+  if (replacesFirstAssertion && !namesTarget) {
+    return `The first assertion of ${target.name}'s character record cannot be replaced unattended without retaining ${target.name}'s identity.`
   }
-
-  // Match by name against ALL fragments of the same type (not just librarian-created ones)
-  const candidates = await listFragments(dataDir, storyId)
-  const normalizedTargetName = normalizeName(suggestion.name)
-
-  const matching = candidates.filter((fragment) => {
-    if (fragment.type !== suggestion.type) return false
-    if (normalizeName(fragment.name) !== normalizedTargetName) return false
-    return true
-  })
-
-  if (matching.length === 0) return null
-  return matching[0] ?? null
+  return null
 }
 
-export async function applyFragmentSuggestion(args: {
+async function unattendedProposalError(
+  dataDir: string,
+  storyId: string,
+  analysis: LibrarianAnalysis,
+  proposal: LibrarianAnalysis['fragmentChangeProposals'][number],
+): Promise<string | null> {
+  if (proposal.autoApplySafe !== true || !proposal.proposalKind || !proposal.evidenceText) {
+    return 'The proposal did not pass the online Librarian record-maintenance contract.'
+  }
+
+  const sourceFragmentId = sourceFragmentIdForProposal(analysis, proposal)
+  const source = sourceFragmentId ? await getFragment(dataDir, storyId, sourceFragmentId) : null
+  if (!source || source.type !== 'prose' || !evidenceAppearsInText(source.content, proposal.evidenceText)) {
+    return 'The proposal evidence is no longer grounded by verbatim spans in its accepted prose source.'
+  }
+
+  for (const operation of proposal.operations) {
+    if (operation.action === 'create_fragment') {
+      if (operation.content.length > MAX_NEW_FRAGMENT_CONTENT_CHARS) {
+        return 'A new fragment proposed for unattended application exceeded the minimal content limit.'
+      }
+      continue
+    }
+    if (operation.action !== 'replace_text' || operation.replaceAll) {
+      return 'Unattended record maintenance may only create reusable fragments or replace exact existing assertions.'
+    }
+    const characterCorrectionError = await unattendedCharacterCorrectionError(
+      dataDir,
+      storyId,
+      analysis,
+      proposal,
+      operation,
+    )
+    if (characterCorrectionError) return characterCorrectionError
+    if (
+      operation.oldText.trim().length < MIN_CORRECTION_ANCHOR_CHARS
+      || operation.oldText.length > MAX_CORRECTION_SPAN_CHARS
+      || operation.newText.length > MAX_CORRECTION_SPAN_CHARS
+      || correctionShapeError(operation.oldText, operation.newText) !== null
+    ) {
+      return 'An unattended correction exceeded the minimal localized-edit limits.'
+    }
+  }
+  return null
+}
+
+function invalidValidationMessage(results: OperationValidation[]): string {
+  return results
+    .map((result) => {
+      const messages = result.errors?.map((error) => error.message).join('; ') || 'operation is not valid'
+      return `${result.operationId}: ${messages}`
+    })
+    .join(' | ')
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)]
+}
+
+function currentProposalMarkerMatches(
+  fragment: Fragment,
+  analysisId: string,
+  proposalIndex: number,
+): boolean {
+  const marker = fragment.meta.lastLibrarianChangeProposal
+  return typeof marker === 'object'
+    && marker !== null
+    && (marker as Record<string, unknown>).analysisId === analysisId
+    && (marker as Record<string, unknown>).proposalIndex === proposalIndex
+}
+
+export async function applyFragmentChangeProposal(args: {
   dataDir: string
   storyId: string
   analysis: LibrarianAnalysis
-  suggestionIndex: number
+  proposalIndex: number
   reason: 'manual-accept' | 'auto-apply'
-}): Promise<ApplySuggestionResult> {
-  const { dataDir, storyId, analysis, suggestionIndex, reason } = args
-  const suggestion = analysis.fragmentSuggestions[suggestionIndex]
-  if (!suggestion) {
-    throw new Error('Invalid suggestion index')
+}): Promise<ApplyFragmentChangeProposalResult> {
+  const { dataDir, storyId, analysis, proposalIndex, reason } = args
+  const proposal = analysis.fragmentChangeProposals[proposalIndex]
+  if (!proposal) {
+    throw new Error('Invalid fragment change proposal index')
+  }
+  const autoApplyError = reason === 'auto-apply'
+    ? await unattendedProposalError(dataDir, storyId, analysis, proposal)
+    : null
+  if (autoApplyError) {
+    throw new ProposalNeedsAuthorError(
+      `Cannot auto-apply proposal: ${autoApplyError}`,
+      proposal.validation,
+    )
   }
 
-  const sourceFragmentId = resolveSourceFragmentId(analysis, suggestion)
-  const existing = await findSuggestionFragment(dataDir, storyId, suggestion)
-
-  if (existing) {
-    const protection = checkFragmentWrite(existing, { content: suggestion.content })
-    if (!protection.allowed) {
-      throw new Error(`Cannot apply suggestion: ${protection.reason}`)
-    }
-    const versioned = await updateFragmentVersioned(
-      dataDir,
-      storyId,
-      existing.id,
-      {
-        name: suggestion.name,
-        description: suggestion.description.slice(0, 250),
-        content: suggestion.content,
-      },
-      { reason: `librarian-${reason}` },
+  const validation = await validateOperations(dataDir, storyId, proposal.operations)
+  const invalid = validation.results.filter((result) => result.status !== 'valid')
+  const readFragmentIds = recommendedReadFragmentIds(validation.results)
+  if (invalid.length > 0) {
+    const readHint = readFragmentIds.length > 0
+      ? ` Read first: ${readFragmentIds.join(', ')}.`
+      : ''
+    throw new ProposalValidationError(
+      `Cannot apply fragment change proposal: ${invalidValidationMessage(invalid)}.${readHint}`,
+      validation.results,
     )
-    if (!versioned) {
-      throw new Error(`Fragment not found: ${existing.id}`)
-    }
+  }
+  const appliedAt = new Date().toISOString()
+  const sourceFragmentId = sourceFragmentIdForProposal(analysis, proposal)
+  const sourceRefs = sourceFragmentId ? [sourceFragmentId] : []
 
-    const refs = sourceFragmentId
-      ? Array.from(new Set([...versioned.refs, sourceFragmentId]))
-      : versioned.refs
+  // Shared core validates, applies atomically per target, and captures the
+  // revert snapshot. The onFragmentUpdated hook layers analysis-specific
+  // bookkeeping (source refs + proposal marker) onto each edited fragment.
+  const { appliedResults, appliedChanges } = await applyOperationsWithSnapshot(dataDir, storyId, validation.operations, {
+    reason: `librarian-${reason}`,
+    createMetaSource: 'librarian-proposal',
+    onFragmentUpdated: async (_before, updated) => {
+      await updateFragment(dataDir, storyId, {
+        ...updated,
+        refs: unique([...updated.refs, ...sourceRefs]),
+        meta: {
+          ...updated.meta,
+          lastLibrarianChangeProposal: {
+            analysisId: analysis.id,
+            proposalIndex,
+            sourceFragmentId: sourceFragmentId ?? undefined,
+            autoApplied: reason === 'auto-apply',
+            appliedAt,
+          },
+        },
+        updatedAt: appliedAt,
+      })
+    },
+  })
 
-    const finalUpdated: Fragment = {
-      ...versioned,
-      refs,
+  // Any operation that reached 'applied' has already written to disk. Layer the
+  // proposal provenance onto created fragments (baseHash ignores refs/meta, so
+  // this does not disturb the captured snapshot).
+  const createdFragmentIds = changedIdsOfKind(appliedChanges, 'create')
+  for (const fragmentId of createdFragmentIds) {
+    const fragment = await getFragment(dataDir, storyId, fragmentId)
+    if (!fragment) continue
+    await updateFragment(dataDir, storyId, {
+      ...fragment,
+      refs: unique([...fragment.refs, ...sourceRefs]),
       meta: {
-        ...versioned.meta,
-        source: 'librarian-suggestion',
+        ...fragment.meta,
+        source: 'librarian-proposal',
         analysisId: analysis.id,
-        suggestionIndex,
+        proposalIndex,
         sourceFragmentId: sourceFragmentId ?? undefined,
         autoApplied: reason === 'auto-apply',
-        updatedFromSuggestionAt: new Date().toISOString(),
+        createdFromProposalAt: appliedAt,
       },
-      updatedAt: new Date().toISOString(),
+      updatedAt: appliedAt,
+    })
+  }
+
+  const result: ApplyFragmentChangeProposalResult = {
+    appliedResults,
+    appliedChanges,
+    createdFragmentIds,
+    updatedFragmentIds: changedIdsOfKind(appliedChanges, 'update'),
+    archivedFragmentIds: changedIdsOfKind(appliedChanges, 'archive'),
+    readFragmentIds,
+  }
+
+  const failed = appliedResults.filter((entry) => entry.status !== 'applied')
+  if (failed.length > 0) {
+    throw new ProposalApplyError(`Cannot fully apply fragment change proposal: ${invalidValidationMessage(failed)}.`, result)
+  }
+
+  return result
+}
+
+export function markFragmentChangeProposalApplied(args: {
+  analysis: LibrarianAnalysis
+  proposalIndex: number
+  result: ApplyFragmentChangeProposalResult
+  autoApplied: boolean
+}): void {
+  const { analysis, proposalIndex, result, autoApplied } = args
+  const proposal = analysis.fragmentChangeProposals[proposalIndex]
+  if (!proposal) {
+    throw new Error('Invalid fragment change proposal index')
+  }
+
+  proposal.accepted = true
+  proposal.autoApplied = autoApplied
+  proposal.dismissed = false
+  proposal.validation = result.appliedResults
+  proposal.appliedResults = result.appliedResults
+  proposal.appliedChanges = result.appliedChanges
+  delete proposal.stale
+  delete proposal.staleReason
+  delete proposal.reverted
+  delete proposal.revertedAt
+  delete proposal.revertResults
+}
+
+/**
+ * Mark a pending proposal as no longer applicable (its pre-apply validation
+ * failed against current fragment state — typically because a sibling proposal
+ * already landed the same change). Stale proposals render as dismissed so the
+ * user is not offered an accept that can only fail, but stay distinguishable
+ * from user dismissals via `stale`, and revive if a revert makes them valid again.
+ */
+export function markFragmentChangeProposalStale(args: {
+  analysis: LibrarianAnalysis
+  proposalIndex: number
+  reason: string
+  validation?: OperationValidation[]
+}): void {
+  const { analysis, proposalIndex, reason, validation } = args
+  const proposal = analysis.fragmentChangeProposals[proposalIndex]
+  if (!proposal) {
+    throw new Error('Invalid fragment change proposal index')
+  }
+  proposal.stale = true
+  proposal.staleReason = reason
+  proposal.dismissed = true
+  if (validation) proposal.validation = validation
+}
+
+/**
+ * Re-validate every pending proposal on the analysis against current fragment
+ * state. Proposals that became invalid (a sibling apply already landed their
+ * change, moved their anchors, or bumped their baseHash) are marked stale;
+ * previously stale proposals that are valid again (after a revert) revive.
+ * User dismissals are never touched. Call after any apply or revert.
+ */
+export async function refreshPendingFragmentChangeProposals(args: {
+  dataDir: string
+  storyId: string
+  analysis: LibrarianAnalysis
+}): Promise<{ staleIndices: number[]; revivedIndices: number[] }> {
+  const { dataDir, storyId, analysis } = args
+  const staleIndices: number[] = []
+  const revivedIndices: number[] = []
+
+  for (let index = 0; index < analysis.fragmentChangeProposals.length; index += 1) {
+    const proposal = analysis.fragmentChangeProposals[index]
+    if (proposal.accepted) continue
+    if (proposal.dismissed && !proposal.stale) continue
+
+    const validation = await validateOperations(dataDir, storyId, proposal.operations)
+    proposal.operations = validation.operations
+    proposal.validation = validation.results
+
+    const invalid = validation.results.filter((result) => result.status !== 'valid')
+    if (invalid.length > 0 && !proposal.stale) {
+      markFragmentChangeProposalStale({
+        analysis,
+        proposalIndex: index,
+        reason: invalidValidationMessage(invalid),
+        validation: validation.results,
+      })
+      staleIndices.push(index)
+    } else if (invalid.length === 0 && proposal.stale) {
+      delete proposal.stale
+      delete proposal.staleReason
+      proposal.dismissed = false
+      revivedIndices.push(index)
     }
-
-    await updateFragment(dataDir, storyId, finalUpdated)
-    return { fragmentId: finalUpdated.id, created: false, updated: true }
   }
 
-  const id = suggestion.createdFragmentId ?? generateFragmentId(suggestion.type)
-  const now = new Date().toISOString()
-  const fragment: Fragment = {
-    id,
-    type: suggestion.type,
-    name: suggestion.name,
-    description: suggestion.description.slice(0, 250),
-    content: suggestion.content,
-    tags: [],
-    refs: sourceFragmentId ? [sourceFragmentId] : [],
-    sticky: registry.getType(suggestion.type)?.stickyByDefault ?? false,
-    placement: 'user',
-    createdAt: now,
-    updatedAt: now,
-    archived: false,
-    order: 0,
-    meta: {
-      source: 'librarian-suggestion',
-      analysisId: analysis.id,
-      suggestionIndex,
-      sourceFragmentId: sourceFragmentId ?? undefined,
-      autoApplied: reason === 'auto-apply',
+  return { staleIndices, revivedIndices }
+}
+
+export async function revertFragmentChangeProposal(args: {
+  dataDir: string
+  storyId: string
+  analysis: LibrarianAnalysis
+  proposalIndex: number
+}): Promise<RevertFragmentChangeProposalResult> {
+  const { dataDir, storyId, analysis, proposalIndex } = args
+  const proposal = analysis.fragmentChangeProposals[proposalIndex]
+  if (!proposal) {
+    throw new Error('Invalid fragment change proposal index')
+  }
+  if (!proposal.accepted) {
+    throw new Error('Cannot revert a fragment change proposal that has not been applied.')
+  }
+  if (proposal.reverted) {
+    throw new Error('Fragment change proposal is already reverted.')
+  }
+  if (!proposal.appliedChanges?.length) {
+    throw new Error('Fragment change proposal has no applied-change snapshot and cannot be reverted safely.')
+  }
+
+  // Shared core reverses the snapshot (archive creates, restore archives, roll
+  // updates back to `before`) with hash-guarded conflict detection. The hook
+  // undoes the analysis-specific bookkeeping the apply layered on: source refs
+  // and the proposal marker.
+  return revertAppliedChanges(dataDir, storyId, proposal.appliedChanges, {
+    reason: 'librarian-revert-proposal',
+    onFragmentReverted: async (change, updated) => {
+      const nextRefs = change.addedRefs?.length
+        ? updated.refs.filter((ref) => !change.addedRefs?.includes(ref))
+        : updated.refs
+      const nextMeta = { ...updated.meta }
+      if (currentProposalMarkerMatches(updated, analysis.id, proposalIndex)) {
+        if ('previousLastLibrarianChangeProposal' in change) {
+          nextMeta.lastLibrarianChangeProposal = change.previousLastLibrarianChangeProposal
+        } else {
+          delete nextMeta.lastLibrarianChangeProposal
+        }
+      }
+      if (
+        nextRefs.length !== updated.refs.length
+        || nextMeta.lastLibrarianChangeProposal !== updated.meta.lastLibrarianChangeProposal
+      ) {
+        await updateFragment(dataDir, storyId, {
+          ...updated,
+          refs: nextRefs,
+          meta: nextMeta,
+        })
+      }
     },
-    version: 1,
-    versions: [],
+  })
+}
+
+export async function markFragmentChangeProposalReverted(args: {
+  dataDir: string
+  storyId: string
+  analysis: LibrarianAnalysis
+  proposalIndex: number
+  result: RevertFragmentChangeProposalResult
+}): Promise<void> {
+  const { dataDir, storyId, analysis, proposalIndex, result } = args
+  const proposal = analysis.fragmentChangeProposals[proposalIndex]
+  if (!proposal) {
+    throw new Error('Invalid fragment change proposal index')
   }
 
-  await createFragment(dataDir, storyId, fragment)
-  return { fragmentId: id, created: true, updated: false }
+  proposal.accepted = false
+  proposal.autoApplied = false
+  delete proposal.appliedResults
+  delete proposal.appliedChanges
+  proposal.reverted = true
+  proposal.revertedAt = new Date().toISOString()
+  proposal.revertResults = result.revertResults
+
+  for (const operation of proposal.operations) {
+    if (operation.action !== 'set_fields') continue
+    const fragment = await getFragment(dataDir, storyId, operation.fragmentId)
+    if (fragment) operation.baseHash = fragmentBaseHash(fragment)
+  }
+
+  const validation = await validateOperations(dataDir, storyId, proposal.operations)
+  proposal.operations = validation.operations
+  proposal.validation = validation.results
 }

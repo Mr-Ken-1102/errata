@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { createTempDir, makeTestSettings } from '../setup'
 import { createStory } from '@/server/fragments/storage'
+import { getContentRoot } from '@/server/fragments/branches'
 import {
   saveGenerationLog,
   getGenerationLog,
   listGenerationLogs,
+  findGenerationLogByFragment,
   type GenerationLog,
 } from '@/server/llm/generation-logs'
 
@@ -23,7 +27,6 @@ describe('generation-logs storage', () => {
       name: 'Test Story',
       description: 'A test',
     coverImage: null,
-      summary: '',
       createdAt: '2025-01-01T00:00:00.000Z',
       updatedAt: '2025-01-01T00:00:00.000Z',
       settings: makeTestSettings(),
@@ -75,7 +78,11 @@ describe('generation-logs storage', () => {
   it('lists generation logs sorted newest-first', async () => {
     const log1 = makeLog({ id: 'log-001', createdAt: '2025-01-01T00:00:00.000Z' })
     const log2 = makeLog({ id: 'log-002', createdAt: '2025-01-02T00:00:00.000Z' })
-    const log3 = makeLog({ id: 'log-003', createdAt: '2025-01-03T00:00:00.000Z' })
+    const log3 = makeLog({
+      id: 'log-003',
+      createdAt: '2025-01-03T00:00:00.000Z',
+      sampling: { temperature: 0.7, topP: 0.9, topK: 64 },
+    })
 
     await saveGenerationLog(dataDir, storyId, log1)
     await saveGenerationLog(dataDir, storyId, log2)
@@ -85,8 +92,88 @@ describe('generation-logs storage', () => {
     expect(logs).toHaveLength(3)
     // Newest first
     expect(logs[0].id).toBe('log-003')
+    expect(logs[0].sampling).toEqual({ temperature: 0.7, topP: 0.9, topK: 64 })
     expect(logs[1].id).toBe('log-002')
     expect(logs[2].id).toBe('log-001')
+  })
+
+  it('keeps every summary when generation logs are saved concurrently', async () => {
+    const logs = Array.from({ length: 24 }, (_, index) => makeLog({
+      id: `log-concurrent-${index}`,
+      createdAt: new Date(Date.UTC(2025, 0, 1, 0, 0, index)).toISOString(),
+      fragmentId: `pr-${index}`,
+    }))
+
+    await Promise.all(logs.map(log => saveGenerationLog(dataDir, storyId, log)))
+
+    const summaries = await listGenerationLogs(dataDir, storyId)
+    expect(summaries).toHaveLength(logs.length)
+    expect(new Set(summaries.map(summary => summary.id)).size).toBe(logs.length)
+  })
+
+  it('repairs a stale summary index when a full log exists without an index update', async () => {
+    await saveGenerationLog(dataDir, storyId, makeLog({
+      id: 'log-indexed',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }))
+
+    // Simulate a process exit after the authoritative log landed but before
+    // saveGenerationLog could update the derived _index.json.
+    const root = await getContentRoot(dataDir, storyId)
+    const dir = join(root, 'generation-logs')
+    await mkdir(dir, { recursive: true })
+    const orphan = makeLog({
+      id: 'log-after-crash',
+      createdAt: '2025-01-02T00:00:00.000Z',
+      fragmentId: 'pr-after-crash',
+    })
+    await writeFile(
+      join(dir, 'log-after-crash.json'),
+      JSON.stringify(orphan, null, 2),
+      'utf-8',
+    )
+
+    const summaries = await listGenerationLogs(dataDir, storyId)
+    expect(summaries.map(summary => summary.id)).toEqual([
+      'log-after-crash',
+      'log-indexed',
+    ])
+
+    const repaired = JSON.parse(await readFile(join(dir, '_index.json'), 'utf-8')) as {
+      summaries: Array<{ id: string }>
+    }
+    expect(repaired.summaries.map(summary => summary.id)).toEqual([
+      'log-after-crash',
+      'log-indexed',
+    ])
+  })
+
+  it('finds the newest generation for a fragment through the summary index', async () => {
+    await saveGenerationLog(dataDir, storyId, makeLog({
+      id: 'log-fragment-old',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      fragmentId: 'pr-target',
+      generatedText: 'Old text',
+    }))
+    await saveGenerationLog(dataDir, storyId, makeLog({
+      id: 'log-other',
+      createdAt: '2025-01-03T00:00:00.000Z',
+      fragmentId: 'pr-other',
+      generatedText: 'Other text',
+    }))
+    await saveGenerationLog(dataDir, storyId, makeLog({
+      id: 'log-fragment-new',
+      createdAt: '2025-01-02T00:00:00.000Z',
+      fragmentId: 'pr-target',
+      generatedText: 'Newest target text',
+    }))
+
+    const found = await findGenerationLogByFragment(dataDir, storyId, 'pr-target')
+    expect(found?.id).toBe('log-fragment-new')
+    expect(found?.generatedText).toBe('Newest target text')
+    await expect(
+      findGenerationLogByFragment(dataDir, storyId, 'pr-missing'),
+    ).resolves.toBeNull()
   })
 
   it('returns empty list when no logs exist', async () => {

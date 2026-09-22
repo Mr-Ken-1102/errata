@@ -1,79 +1,88 @@
-import { mkdir, readdir, readFile, unlink } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { getContentRoot } from '../fragments/branches'
+import { getFragment } from '../fragments/storage'
+import { proseContentHash } from './continuity-source'
 import { generateConversationId } from '@/lib/fragment-ids'
 import { writeJsonAtomic } from '../fs-utils'
 import { withKeyLock } from '../async-lock'
+import { getRun } from '../runs'
+import { ContinuityProjectionSchema } from '@/contracts/continuity'
+import type {
+  LibrarianAnalysis,
+  LibrarianAnalysisSummary,
+  LibrarianPassRecord,
+  StoredLibrarianState,
+} from '@/contracts/librarian'
 
-/** Serializes read-modify-write of a story's analysis index against concurrent saves. */
+export type {
+  LibrarianAnalysis,
+  LibrarianAnalysisSummary,
+  LibrarianAnalyzeLaneCompletion,
+  LibrarianAnalyzeLaneRequirement,
+  LibrarianAnalyzeLaneStatus,
+  LibrarianFragmentChangeProposal,
+  LibrarianMention,
+  LibrarianPassRecord,
+} from '@/contracts/librarian'
+
+/**
+ * The librarian analysis proposals reuse the shared apply/revert snapshot types.
+ * Aliased here so existing references (and the client type mirror) keep their
+ * librarian-flavoured names while the shape lives in one place.
+ */
+export type {
+  AppliedChange as LibrarianAppliedProposalChange,
+  AppliedFieldChange as LibrarianAppliedFieldChange,
+  RevertResult as LibrarianProposalRevertResult,
+} from '@/contracts/fragment-changes'
+
+/** Serializes read-modify-write of a story's librarian indexes against concurrent mutations. */
 function withIndexLock<T>(storyId: string, fn: () => Promise<T>): Promise<T> {
   return withKeyLock(`librarian-index:${storyId}`, fn)
 }
 
-// --- Types ---
+/** Serializes mutations of one persisted chat history independently of the analysis/index lock. */
+function withChatLock<T>(
+  storyId: string,
+  conversationId: string | null,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = conversationId
+    ? `librarian-chat:${storyId}:${conversationId}`
+    : `librarian-chat:${storyId}:legacy`
+  return withKeyLock(key, fn)
+}
 
-export interface LibrarianAnalysis {
-  id: string
-  createdAt: string
-  fragmentId: string
-  /** The summary text the librarian intended to record (intent). */
-  summaryUpdate: string
-  /**
-   * ID of the summary fragment this analysis contributed to (artifact).
-   * Set when the deferred-summary application creates or appends to a
-   * chapter summary fragment. Undefined for legacy analyses written before
-   * summary fragments existed.
-   */
-  summaryFragmentId?: string
-  structuredSummary?: {
-    events: string[]
-    stateChanges: string[]
-    openThreads: string[]
+function isRunLive(runId: string): boolean {
+  return getRun(runId)?.status === 'running'
+}
+
+export function passRecord(params: {
+  name: LibrarianPassRecord['name']
+  status: LibrarianPassRecord['status']
+  startedAt: string
+  durationMs?: number
+  modelId?: string
+  stepCount?: number
+  finishReason?: string
+  reason?: string
+  error?: string
+  diagnostics?: Record<string, unknown>
+}): LibrarianPassRecord {
+  return {
+    name: params.name,
+    status: params.status,
+    startedAt: params.startedAt,
+    ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
+    ...(params.modelId ? { modelId: params.modelId } : {}),
+    ...(params.stepCount !== undefined ? { stepCount: params.stepCount } : {}),
+    ...(params.finishReason ? { finishReason: params.finishReason } : {}),
+    ...(params.reason ? { reason: params.reason } : {}),
+    ...(params.error ? { error: params.error } : {}),
+    ...(params.diagnostics ? { diagnostics: params.diagnostics } : {}),
   }
-  mentionedCharacters: string[]
-  mentions?: Array<{ characterId: string; text: string }>
-  contradictions: Array<{
-    description: string
-    fragmentIds: string[]
-  }>
-  fragmentSuggestions: Array<{
-    type: 'character' | 'knowledge'
-    targetFragmentId?: string
-    name: string
-    description: string
-    content: string
-    sourceFragmentId?: string
-    accepted?: boolean
-    autoApplied?: boolean
-    createdFragmentId?: string
-    dismissed?: boolean
-  }>
-  /** @deprecated Use fragmentSuggestions. Kept for backward compat with stored JSON. */
-  knowledgeSuggestions?: Array<{
-    type: 'character' | 'knowledge'
-    targetFragmentId?: string
-    name: string
-    description: string
-    content: string
-    sourceFragmentId?: string
-    accepted?: boolean
-    autoApplied?: boolean
-    createdFragmentId?: string
-  }>
-  timelineEvents: Array<{
-    event: string
-    position: 'before' | 'during' | 'after'
-  }>
-  directions?: Array<{
-    title: string
-    description: string
-    instruction: string
-  }>
-  trace?: Array<{
-    type: string
-    [key: string]: unknown
-  }>
 }
 
 export function selectLatestAnalysesByFragment(
@@ -99,36 +108,57 @@ export function selectLatestAnalysesByFragment(
   return latest
 }
 
-export interface LibrarianAnalysisSummary {
-  id: string
-  createdAt: string
-  fragmentId: string
-  contradictionCount: number
-  suggestionCount: number
-  pendingSuggestionCount: number
-  timelineEventCount: number
-  directionsCount: number
-  hasTrace?: boolean
-}
-
-export interface LibrarianState {
-  lastAnalyzedFragmentId: string | null
-  /** Fragment ID up to which summaries have been applied to the story summary */
-  summarizedUpTo: string | null
-  recentMentions: Record<string, string[]>
-  timeline: Array<{ event: string; fragmentId: string }>
-}
-
 export interface LibrarianAnalysisIndexEntry {
   analysisId: string
   createdAt: string
 }
 
 export interface LibrarianAnalysisIndex {
-  version: 1
+  version: 2
   updatedAt: string
+  /** Latest analysis artifact, including inspectable partial runs. */
   latestByFragmentId: Record<string, LibrarianAnalysisIndexEntry>
+  /** Latest completed projection; partial reruns never displace this pointer. */
+  latestProjectionByFragmentId: Record<string, LibrarianAnalysisIndexEntry>
   appliedSummarySequence?: string[]
+}
+
+const MAX_ANALYSIS_READ_CACHE_ENTRIES = 512
+const analysisReadCache = new Map<string, Promise<LibrarianAnalysis | null>>()
+
+function cloneAnalysis(analysis: LibrarianAnalysis | null): LibrarianAnalysis | null {
+  return analysis ? structuredClone(analysis) : null
+}
+
+function cacheAnalysisRead(path: string, pending: Promise<LibrarianAnalysis | null>): void {
+  analysisReadCache.delete(path)
+  analysisReadCache.set(path, pending)
+  while (analysisReadCache.size > MAX_ANALYSIS_READ_CACHE_ENTRIES) {
+    const oldest = analysisReadCache.keys().next().value
+    if (typeof oldest !== 'string') break
+    analysisReadCache.delete(oldest)
+  }
+}
+
+export interface LibrarianBackfillJob {
+  id: string
+  storyId: string
+  createdAt: string
+  updatedAt: string
+  status: 'queued' | 'running' | 'paused' | 'complete' | 'failed' | 'cancelled'
+  fragmentIds: string[]
+  cursor: number
+  completedFragmentIds: string[]
+  failedFragments: Array<{
+    fragmentId: string
+    error: string
+    at: string
+  }>
+  options?: {
+    source?: 'import' | 'historical' | 'manual'
+  }
+  lastAnalysisId?: string
+  error?: string
 }
 
 // --- Path helpers ---
@@ -158,6 +188,16 @@ async function analysisIndexPath(dataDir: string, storyId: string): Promise<stri
   return join(dir, 'index.json')
 }
 
+async function backfillJobsDir(dataDir: string, storyId: string): Promise<string> {
+  const dir = await librarianDir(dataDir, storyId)
+  return join(dir, 'backfill-jobs')
+}
+
+async function backfillJobPath(dataDir: string, storyId: string, jobId: string): Promise<string> {
+  const dir = await backfillJobsDir(dataDir, storyId)
+  return join(dir, `${jobId}.json`)
+}
+
 function shouldReplaceIndexEntry(
   previous: LibrarianAnalysisIndexEntry | undefined,
   incoming: { createdAt: string; analysisId: string },
@@ -170,9 +210,10 @@ function shouldReplaceIndexEntry(
 
 function defaultAnalysisIndex(): LibrarianAnalysisIndex {
   return {
-    version: 1,
+    version: 2,
     updatedAt: new Date().toISOString(),
     latestByFragmentId: {},
+    latestProjectionByFragmentId: {},
   }
 }
 
@@ -194,10 +235,14 @@ export async function getAnalysisIndex(
   if (!existsSync(path)) return null
   const raw = await readFile(path, 'utf-8')
   const parsed = JSON.parse(raw) as Partial<LibrarianAnalysisIndex>
+  if (parsed.version !== 2 || !parsed.latestProjectionByFragmentId) {
+    return rebuildAnalysisIndex(dataDir, storyId)
+  }
   return {
-    version: 1,
+    version: 2,
     updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
     latestByFragmentId: parsed.latestByFragmentId ?? {},
+    latestProjectionByFragmentId: parsed.latestProjectionByFragmentId,
     appliedSummarySequence: Array.isArray(parsed.appliedSummarySequence) ? parsed.appliedSummarySequence : undefined,
   }
 }
@@ -215,9 +260,15 @@ export async function rebuildAnalysisIndex(
 ): Promise<LibrarianAnalysisIndex> {
   const summaries = await listAnalyses(dataDir, storyId)
   const latest = selectLatestAnalysesByFragment(summaries)
+  const latestProjections = selectLatestAnalysesByFragment(
+    summaries.filter((summary) => summary.hasContinuityProjection),
+  )
   const rebuilt: LibrarianAnalysisIndex = defaultAnalysisIndex()
   for (const [fragmentId, summary] of latest.entries()) {
     rebuilt.latestByFragmentId[fragmentId] = analysisSummaryToIndexEntry(summary)
+  }
+  for (const [fragmentId, summary] of latestProjections.entries()) {
+    rebuilt.latestProjectionByFragmentId[fragmentId] = analysisSummaryToIndexEntry(summary)
   }
   rebuilt.updatedAt = new Date().toISOString()
   await saveAnalysisIndex(dataDir, storyId, rebuilt)
@@ -232,8 +283,10 @@ export async function clearAnalysisIndexEntry(
   await withIndexLock(storyId, async () => {
     const index = await getAnalysisIndex(dataDir, storyId)
     if (!index) return
-    if (!(fragmentId in index.latestByFragmentId)) return
+    if (!(fragmentId in index.latestByFragmentId)
+      && !(fragmentId in index.latestProjectionByFragmentId)) return
     delete index.latestByFragmentId[fragmentId]
+    delete index.latestProjectionByFragmentId[fragmentId]
     index.updatedAt = new Date().toISOString()
     await saveAnalysisIndex(dataDir, storyId, index)
   })
@@ -257,12 +310,15 @@ export async function saveAnalysis(
   storyId: string,
   analysis: LibrarianAnalysis,
 ): Promise<void> {
+  const normalized = normalizeAnalysis(analysis as unknown as Record<string, unknown>)
   const dir = await analysesDir(dataDir, storyId)
   await mkdir(dir, { recursive: true })
+  const path = await analysisPath(dataDir, storyId, analysis.id)
   await writeJsonAtomic(
-    await analysisPath(dataDir, storyId, analysis.id),
-    analysis,
+    path,
+    normalized,
   )
+  cacheAnalysisRead(path, Promise.resolve(cloneAnalysis(normalized)))
 
   // Index read-modify-write must be serialized: concurrent saves would each read
   // the same index and the later write would drop the earlier entry.
@@ -273,6 +329,15 @@ export async function saveAnalysis(
       currentIndex.latestByFragmentId[analysis.fragmentId] = {
         analysisId: analysis.id,
         createdAt: analysis.createdAt,
+      }
+    }
+    if (normalized.continuityProjection) {
+      const previousProjection = currentIndex.latestProjectionByFragmentId[analysis.fragmentId]
+      if (shouldReplaceIndexEntry(previousProjection, { createdAt: analysis.createdAt, analysisId: analysis.id })) {
+        currentIndex.latestProjectionByFragmentId[analysis.fragmentId] = {
+          analysisId: analysis.id,
+          createdAt: analysis.createdAt,
+        }
       }
     }
     currentIndex.updatedAt = new Date().toISOString()
@@ -286,21 +351,35 @@ export async function getAnalysis(
   analysisId: string,
 ): Promise<LibrarianAnalysis | null> {
   const path = await analysisPath(dataDir, storyId, analysisId)
-  if (!existsSync(path)) return null
-  const raw = await readFile(path, 'utf-8')
-  return normalizeAnalysis(JSON.parse(raw))
+  const cached = analysisReadCache.get(path)
+  if (cached) {
+    cacheAnalysisRead(path, cached)
+    return cloneAnalysis(await cached)
+  }
+
+  const pending = (async () => {
+    if (!existsSync(path)) return null
+    const raw = await readFile(path, 'utf-8')
+    return normalizeAnalysis(JSON.parse(raw))
+  })()
+  cacheAnalysisRead(path, pending)
+  try {
+    return cloneAnalysis(await pending)
+  } catch (error) {
+    if (analysisReadCache.get(path) === pending) analysisReadCache.delete(path)
+    throw error
+  }
 }
 
-/** Migrate old knowledgeSuggestions → fragmentSuggestions on read */
 function normalizeAnalysis(data: Record<string, unknown>): LibrarianAnalysis {
   const analysis = data as unknown as LibrarianAnalysis
-  if (!analysis.fragmentSuggestions && analysis.knowledgeSuggestions) {
-    analysis.fragmentSuggestions = analysis.knowledgeSuggestions
+  return {
+    ...analysis,
+    fragmentChangeProposals: analysis.fragmentChangeProposals ?? [],
+    ...(analysis.continuityProjection !== undefined
+      ? { continuityProjection: ContinuityProjectionSchema.parse(analysis.continuityProjection) }
+      : {}),
   }
-  if (!analysis.fragmentSuggestions) {
-    analysis.fragmentSuggestions = []
-  }
-  return analysis
 }
 
 export async function deleteAnalysis(
@@ -316,21 +395,93 @@ export async function deleteAnalysis(
   const analysis = normalizeAnalysis(JSON.parse(raw))
 
   await unlink(path)
+  analysisReadCache.delete(path)
 
-  // Clean up index entry if it points to this analysis
+  // If either pointer named the deleted artifact, promote the next eligible
+  // artifact instead of leaving the fragment unindexed until a full rebuild.
   await withIndexLock(storyId, async () => {
     const index = await getAnalysisIndex(dataDir, storyId)
     if (index) {
-      const entry = index.latestByFragmentId[analysis.fragmentId]
-      if (entry && entry.analysisId === analysisId) {
-        delete index.latestByFragmentId[analysis.fragmentId]
-        index.updatedAt = new Date().toISOString()
-        await saveAnalysisIndex(dataDir, storyId, index)
+      const latestWasDeleted = index.latestByFragmentId[analysis.fragmentId]?.analysisId === analysisId
+      const projectionWasDeleted = index.latestProjectionByFragmentId[analysis.fragmentId]?.analysisId === analysisId
+      if (!latestWasDeleted && !projectionWasDeleted) return
+
+      const remaining = (await listAnalyses(dataDir, storyId))
+        .filter((summary) => summary.fragmentId === analysis.fragmentId)
+      const latest = selectLatestAnalysesByFragment(remaining).get(analysis.fragmentId)
+      const latestProjection = selectLatestAnalysesByFragment(
+        remaining.filter((summary) => summary.hasContinuityProjection),
+      ).get(analysis.fragmentId)
+      if (latest) index.latestByFragmentId[analysis.fragmentId] = analysisSummaryToIndexEntry(latest)
+      else delete index.latestByFragmentId[analysis.fragmentId]
+      if (latestProjection) {
+        index.latestProjectionByFragmentId[analysis.fragmentId] = analysisSummaryToIndexEntry(latestProjection)
+      } else {
+        delete index.latestProjectionByFragmentId[analysis.fragmentId]
       }
+      index.updatedAt = new Date().toISOString()
+      await saveAnalysisIndex(dataDir, storyId, index)
     }
   })
 
   return true
+}
+
+/**
+ * The panel polls this list every five seconds, and the counts it needs are a
+ * few integers off each analysis — but the analysis file also carries the whole
+ * agent trace, which is most of its bulk. Re-reading and re-parsing all of it on
+ * every poll costs megabytes of I/O and parsing per tick, growing linearly with
+ * the story, for rows that had not changed.
+ *
+ * Files are written atomically and never mutated in place, so size and mtime
+ * settle the question of whether a parse can be skipped. `continuityStale` is
+ * deliberately not cached: it compares the analysis against the *live* prose,
+ * which moves without the analysis file changing at all.
+ */
+interface CachedAnalysisSummary {
+  signature: string
+  summary: LibrarianAnalysisSummary
+  /** Present only when the analysis carries a projection worth staleness-checking. */
+  projectionContentHash: string | null
+}
+
+const MAX_SUMMARY_CACHE_ENTRIES = 512
+const summaryCache = new Map<string, CachedAnalysisSummary>()
+
+async function readAnalysisSummary(path: string): Promise<CachedAnalysisSummary> {
+  const stats = await stat(path)
+  const signature = `${stats.mtimeMs}:${stats.size}`
+  const cached = summaryCache.get(path)
+  if (cached?.signature === signature) return cached
+
+  const analysis = normalizeAnalysis(JSON.parse(await readFile(path, 'utf-8')))
+  const entry: CachedAnalysisSummary = {
+    signature,
+    summary: {
+      id: analysis.id,
+      createdAt: analysis.createdAt,
+      fragmentId: analysis.fragmentId,
+      contradictionCount: analysis.contradictions.filter((contradiction) => !contradiction.dismissed).length,
+      suggestionCount: analysis.fragmentChangeProposals.length,
+      pendingSuggestionCount: analysis.fragmentChangeProposals.filter((s) => !s.accepted && !s.dismissed).length,
+      timelineEventCount: analysis.timelineEvents.length,
+      directionsCount: analysis.directions?.length ?? 0,
+      hasTrace: !!analysis.trace?.length,
+      hasContinuityProjection: analysis.continuityProjection !== undefined,
+    },
+    projectionContentHash: analysis.sourceRevision && analysis.continuityProjection
+      ? analysis.sourceRevision.contentHash
+      : null,
+  }
+
+  summaryCache.set(path, entry)
+  while (summaryCache.size > MAX_SUMMARY_CACHE_ENTRIES) {
+    const oldest = summaryCache.keys().next().value
+    if (typeof oldest !== 'string') break
+    summaryCache.delete(oldest)
+  }
+  return entry
 }
 
 export async function listAnalyses(
@@ -340,27 +491,34 @@ export async function listAnalyses(
   const dir = await analysesDir(dataDir, storyId)
   if (!existsSync(dir)) return []
 
-  const entries = await readdir(dir)
-  const summaries: LibrarianAnalysisSummary[] = []
+  const paths = (await readdir(dir))
+    .filter(entry => entry.endsWith('.json'))
+    .map(entry => join(dir, entry))
 
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-    const raw = await readFile(join(dir, entry), 'utf-8')
-    const analysis = normalizeAnalysis(JSON.parse(raw))
-    summaries.push({
-      id: analysis.id,
-      createdAt: analysis.createdAt,
-      fragmentId: analysis.fragmentId,
-      contradictionCount: analysis.contradictions.length,
-      suggestionCount: analysis.fragmentSuggestions.length,
-      pendingSuggestionCount: analysis.fragmentSuggestions.filter((s) => !s.accepted && !s.dismissed).length,
-      timelineEventCount: analysis.timelineEvents.length,
-      directionsCount: analysis.directions?.length ?? 0,
-      hasTrace: !!analysis.trace?.length,
-    })
-  }
+  // Cold loads are filesystem-bound. Read independent summaries in parallel;
+  // the summary cache still makes warm polling cheap.
+  const entries = await Promise.all(paths.map(path => readAnalysisSummary(path)))
 
-  // Sort newest first
+  // continuityStale depends on live prose. Resolve each source fragment once,
+  // even when multiple historical analyses belong to the same passage.
+  const sourceIds = [...new Set(
+    entries
+      .filter(entry => entry.projectionContentHash)
+      .map(entry => entry.summary.fragmentId),
+  )]
+  const sourceHashEntries = await Promise.all(sourceIds.map(async (fragmentId) => {
+    const source = await getFragment(dataDir, storyId, fragmentId)
+    return [fragmentId, source ? proseContentHash(source) : null] as const
+  }))
+  const sourceHashes = new Map(sourceHashEntries)
+
+  const summaries = entries.map(({ summary, projectionContentHash }) => {
+    if (!projectionContentHash) return summary
+    const hash = sourceHashes.get(summary.fragmentId)
+    const continuityStale = hash != null && hash !== projectionContentHash
+    return continuityStale ? { ...summary, continuityStale } : summary
+  })
+
   summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return summaries
 }
@@ -368,36 +526,106 @@ export async function listAnalyses(
 export async function getState(
   dataDir: string,
   storyId: string,
-): Promise<LibrarianState> {
+): Promise<StoredLibrarianState> {
   const path = await statePath(dataDir, storyId)
   if (!existsSync(path)) {
     return {
       lastAnalyzedFragmentId: null,
-      summarizedUpTo: null,
       recentMentions: {},
       timeline: [],
     }
   }
   const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as LibrarianState
+  return JSON.parse(raw) as StoredLibrarianState
 }
 
 export async function saveState(
   dataDir: string,
   storyId: string,
-  state: LibrarianState,
+  state: StoredLibrarianState,
 ): Promise<void> {
   const dir = await librarianDir(dataDir, storyId)
   await mkdir(dir, { recursive: true })
   await writeJsonAtomic(await statePath(dataDir, storyId), state)
 }
 
+// --- Backfill jobs ---
+
+function normalizeBackfillJob(data: Record<string, unknown>): LibrarianBackfillJob {
+  const job = data as unknown as LibrarianBackfillJob
+  return {
+    ...job,
+    status: job.status ?? 'queued',
+    fragmentIds: Array.isArray(job.fragmentIds) ? job.fragmentIds : [],
+    cursor: Number.isInteger(job.cursor) ? job.cursor : 0,
+    completedFragmentIds: Array.isArray(job.completedFragmentIds) ? job.completedFragmentIds : [],
+    failedFragments: Array.isArray(job.failedFragments) ? job.failedFragments : [],
+  }
+}
+
+export async function saveBackfillJob(
+  dataDir: string,
+  storyId: string,
+  job: LibrarianBackfillJob,
+): Promise<void> {
+  const dir = await backfillJobsDir(dataDir, storyId)
+  await mkdir(dir, { recursive: true })
+  job.storyId = storyId
+  job.updatedAt = new Date().toISOString()
+  await writeJsonAtomic(await backfillJobPath(dataDir, storyId, job.id), job)
+}
+
+export async function getBackfillJob(
+  dataDir: string,
+  storyId: string,
+  jobId: string,
+): Promise<LibrarianBackfillJob | null> {
+  const path = await backfillJobPath(dataDir, storyId, jobId)
+  if (!existsSync(path)) return null
+  const raw = await readFile(path, 'utf-8')
+  return normalizeBackfillJob(JSON.parse(raw))
+}
+
+export async function listBackfillJobs(
+  dataDir: string,
+  storyId: string,
+): Promise<LibrarianBackfillJob[]> {
+  const dir = await backfillJobsDir(dataDir, storyId)
+  if (!existsSync(dir)) return []
+  const entries = await readdir(dir)
+  const jobs: LibrarianBackfillJob[] = []
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue
+    const raw = await readFile(join(dir, entry), 'utf-8')
+    jobs.push(normalizeBackfillJob(JSON.parse(raw)))
+  }
+  jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return jobs
+}
+
 // --- Chat history ---
+
+export interface ChatHistoryToolCall {
+  toolName: string
+  args: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+
+export type ChatTurnStatus = 'streaming' | 'complete' | 'error' | 'cancelled'
 
 export interface ChatHistoryMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
+  toolCalls?: ChatHistoryToolCall[]
+  plan?: string[]
+  completedSteps?: string[]
+  incomplete?: boolean
+  /** Server-owned run producing this assistant turn. */
+  runId?: string
+  status?: ChatTurnStatus
+  error?: string
 }
 
 export interface ChatHistory {
@@ -410,30 +638,132 @@ async function chatHistoryPath(dataDir: string, storyId: string): Promise<string
   return join(dir, 'chat-history.json')
 }
 
-export async function getChatHistory(
+/** Resolve legacy-chat vs named-conversation history to one file path. */
+async function historyPathFor(
   dataDir: string,
   storyId: string,
+  conversationId: string | null,
+): Promise<string> {
+  if (!conversationId) return chatHistoryPath(dataDir, storyId)
+  const dir = await librarianDir(dataDir, storyId)
+  return conversationHistoryPath(dir, conversationId)
+}
+
+async function readHistoryFile(
+  dataDir: string,
+  storyId: string,
+  conversationId: string | null,
 ): Promise<ChatHistory> {
-  const path = await chatHistoryPath(dataDir, storyId)
-  if (!existsSync(path)) {
-    return { messages: [], updatedAt: new Date().toISOString() }
-  }
+  const path = await historyPathFor(dataDir, storyId, conversationId)
+  if (!existsSync(path)) return { messages: [], updatedAt: new Date().toISOString() }
   const raw = await readFile(path, 'utf-8')
   return JSON.parse(raw) as ChatHistory
 }
 
+/**
+ * A persisted "streaming" status is only true while its in-memory run exists.
+ * After a restart/GC, expose it as interrupted without mutating historical tool calls.
+ */
+function reconcileHistory(history: ChatHistory): ChatHistory {
+  let changed = false
+  const messages = history.messages.map((message) => {
+    if (message.status !== 'streaming') return message
+    if (message.runId && isRunLive(message.runId)) return message
+    changed = true
+    return {
+      ...message,
+      status: 'error' as const,
+      error: message.error ?? 'Generation was interrupted',
+    }
+  })
+  return changed ? { ...history, messages } : history
+}
+
+export async function getChatHistory(
+  dataDir: string,
+  storyId: string,
+): Promise<ChatHistory> {
+  return reconcileHistory(await readHistoryFile(dataDir, storyId, null))
+}
+
+/** Legacy full-replacement writer retained for compatibility during migration. */
 export async function saveChatHistory(
   dataDir: string,
   storyId: string,
   messages: ChatHistoryMessage[],
 ): Promise<void> {
-  const dir = await librarianDir(dataDir, storyId)
-  await mkdir(dir, { recursive: true })
-  const history: ChatHistory = {
-    messages,
-    updatedAt: new Date().toISOString(),
-  }
-  await writeJsonAtomic(await chatHistoryPath(dataDir, storyId), history)
+  await withChatLock(storyId, null, async () => {
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+    const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
+    await writeJsonAtomic(await chatHistoryPath(dataDir, storyId), history)
+  })
+}
+
+export async function appendChatMessage(
+  dataDir: string,
+  storyId: string,
+  message: ChatHistoryMessage,
+): Promise<ChatHistory> {
+  return appendMessage(dataDir, storyId, null, message)
+}
+
+/** Patch one assistant turn by server run id; never address "the last message". */
+export async function updateChatMessageByRunId(
+  dataDir: string,
+  storyId: string,
+  conversationId: string | null,
+  runId: string,
+  patch: Partial<ChatHistoryMessage>,
+): Promise<ChatHistory> {
+  return withChatLock(storyId, conversationId, async () => {
+    const current = await readHistoryFile(dataDir, storyId, conversationId)
+    const index = current.messages.findIndex(message => message.runId === runId)
+    if (index === -1) return current
+
+    const messages = [...current.messages]
+    messages[index] = { ...messages[index], ...patch }
+    const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
+
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+    await writeJsonAtomic(await historyPathFor(dataDir, storyId, conversationId), history)
+    return history
+  })
+}
+
+async function appendMessage(
+  dataDir: string,
+  storyId: string,
+  conversationId: string | null,
+  message: ChatHistoryMessage,
+): Promise<ChatHistory> {
+  return withChatLock(storyId, conversationId, async () => {
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+
+    const current = await readHistoryFile(dataDir, storyId, conversationId)
+    const history: ChatHistory = {
+      messages: [...current.messages, message],
+      updatedAt: new Date().toISOString(),
+    }
+    await writeJsonAtomic(await historyPathFor(dataDir, storyId, conversationId), history)
+
+    if (conversationId) {
+      await withIndexLock(storyId, async () => {
+        const index = await readConversationsIndex(dataDir, storyId)
+        const conversation = index.conversations.find(item => item.id === conversationId)
+        if (!conversation) return
+        conversation.updatedAt = history.updatedAt
+        if (conversation.title === 'New chat' && message.role === 'user') {
+          conversation.title = message.content.slice(0, 60).trim() || 'New chat'
+        }
+        await writeConversationsIndex(dataDir, storyId, index)
+      })
+    }
+
+    return history
+  })
 }
 
 export async function clearChatHistory(
@@ -441,9 +771,7 @@ export async function clearChatHistory(
   storyId: string,
 ): Promise<void> {
   const path = await chatHistoryPath(dataDir, storyId)
-  if (existsSync(path)) {
-    await unlink(path)
-  }
+  if (existsSync(path)) await unlink(path)
 }
 
 // --- Conversations ---
@@ -453,6 +781,8 @@ export interface ConversationMeta {
   title: string
   createdAt: string
   updatedAt: string
+  /** POV captured when this conversation was opened from prose refinement. */
+  povCharacterId?: string
 }
 
 interface ConversationsIndex {
@@ -488,18 +818,26 @@ export async function listConversations(dataDir: string, storyId: string): Promi
   return index.conversations.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
-export async function createConversation(dataDir: string, storyId: string, title: string): Promise<ConversationMeta> {
-  const index = await readConversationsIndex(dataDir, storyId)
-  const now = new Date().toISOString()
-  const conversation: ConversationMeta = {
-    id: generateConversationId(),
-    title,
-    createdAt: now,
-    updatedAt: now,
-  }
-  index.conversations.push(conversation)
-  await writeConversationsIndex(dataDir, storyId, index)
-  return conversation
+export async function createConversation(
+  dataDir: string,
+  storyId: string,
+  title: string,
+  povCharacterId?: string,
+): Promise<ConversationMeta> {
+  return withIndexLock(storyId, async () => {
+    const index = await readConversationsIndex(dataDir, storyId)
+    const now = new Date().toISOString()
+    const conversation: ConversationMeta = {
+      id: generateConversationId(),
+      title,
+      createdAt: now,
+      updatedAt: now,
+      ...(povCharacterId ? { povCharacterId } : {}),
+    }
+    index.conversations.push(conversation)
+    await writeConversationsIndex(dataDir, storyId, index)
+    return conversation
+  })
 }
 
 export async function updateConversationTitle(
@@ -508,26 +846,30 @@ export async function updateConversationTitle(
   conversationId: string,
   title: string,
 ): Promise<ConversationMeta | null> {
-  const index = await readConversationsIndex(dataDir, storyId)
-  const conv = index.conversations.find(c => c.id === conversationId)
-  if (!conv) return null
-  conv.title = title
-  conv.updatedAt = new Date().toISOString()
-  await writeConversationsIndex(dataDir, storyId, index)
-  return conv
+  return withIndexLock(storyId, async () => {
+    const index = await readConversationsIndex(dataDir, storyId)
+    const conv = index.conversations.find(c => c.id === conversationId)
+    if (!conv) return null
+    conv.title = title
+    conv.updatedAt = new Date().toISOString()
+    await writeConversationsIndex(dataDir, storyId, index)
+    return conv
+  })
 }
 
 export async function deleteConversation(dataDir: string, storyId: string, conversationId: string): Promise<boolean> {
-  const index = await readConversationsIndex(dataDir, storyId)
-  const idx = index.conversations.findIndex(c => c.id === conversationId)
-  if (idx === -1) return false
-  index.conversations.splice(idx, 1)
-  await writeConversationsIndex(dataDir, storyId, index)
-  // Delete history file
-  const dir = await librarianDir(dataDir, storyId)
-  const historyFile = conversationHistoryPath(dir, conversationId)
-  if (existsSync(historyFile)) await unlink(historyFile)
-  return true
+  return withIndexLock(storyId, async () => {
+    const index = await readConversationsIndex(dataDir, storyId)
+    const idx = index.conversations.findIndex(c => c.id === conversationId)
+    if (idx === -1) return false
+    index.conversations.splice(idx, 1)
+    await writeConversationsIndex(dataDir, storyId, index)
+    // Delete history file
+    const dir = await librarianDir(dataDir, storyId)
+    const historyFile = conversationHistoryPath(dir, conversationId)
+    if (existsSync(historyFile)) await unlink(historyFile)
+    return true
+  })
 }
 
 export async function getConversationHistory(
@@ -535,11 +877,16 @@ export async function getConversationHistory(
   storyId: string,
   conversationId: string,
 ): Promise<ChatHistory> {
-  const dir = await librarianDir(dataDir, storyId)
-  const path = conversationHistoryPath(dir, conversationId)
-  if (!existsSync(path)) return { messages: [], updatedAt: new Date().toISOString() }
-  const raw = await readFile(path, 'utf-8')
-  return JSON.parse(raw) as ChatHistory
+  return reconcileHistory(await readHistoryFile(dataDir, storyId, conversationId))
+}
+
+export async function appendConversationMessage(
+  dataDir: string,
+  storyId: string,
+  conversationId: string,
+  message: ChatHistoryMessage,
+): Promise<ChatHistory> {
+  return appendMessage(dataDir, storyId, conversationId, message)
 }
 
 export async function saveConversationHistory(
@@ -548,14 +895,18 @@ export async function saveConversationHistory(
   conversationId: string,
   messages: ChatHistoryMessage[],
 ): Promise<void> {
-  const dir = await librarianDir(dataDir, storyId)
-  await mkdir(dir, { recursive: true })
-  const history: ChatHistory = { messages, updatedAt: new Date().toISOString() }
-  await writeJsonAtomic(conversationHistoryPath(dir, conversationId), history)
-  // Update conversation timestamp
-  const index = await readConversationsIndex(dataDir, storyId)
-  const conv = index.conversations.find(c => c.id === conversationId)
-  if (conv) {
+  let history!: ChatHistory
+  await withChatLock(storyId, conversationId, async () => {
+    const dir = await librarianDir(dataDir, storyId)
+    await mkdir(dir, { recursive: true })
+    history = { messages, updatedAt: new Date().toISOString() }
+    await writeJsonAtomic(conversationHistoryPath(dir, conversationId), history)
+  })
+  // Update conversation timestamp. Index mutations hold the separate index lock.
+  await withIndexLock(storyId, async () => {
+    const index = await readConversationsIndex(dataDir, storyId)
+    const conv = index.conversations.find(c => c.id === conversationId)
+    if (!conv) return
     conv.updatedAt = history.updatedAt
     // Auto-title from first user message if still default
     if (conv.title === 'New chat' && messages.length > 0) {
@@ -563,5 +914,5 @@ export async function saveConversationHistory(
       if (firstUser) conv.title = firstUser.content.slice(0, 60).trim() || 'New chat'
     }
     await writeConversationsIndex(dataDir, storyId, index)
-  }
+  })
 }

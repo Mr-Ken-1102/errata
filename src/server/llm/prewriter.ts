@@ -1,67 +1,61 @@
-import { tool, ToolLoopAgent, stepCountIs, hasToolCall, type ToolSet, type ProviderOptions } from 'ai'
+import { tool, ToolLoopAgent, stepCountIs, hasToolCall, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
-import { getModel } from './client'
-import { compileBlocks, expandMessagesFragmentTags, type ContextBlock, type ContextMessage } from './context-builder'
+import { resolveAgentRuntime, samplingCallSettings, samplingDiagnostics } from './client'
+import { addCacheBreakpoints, compileBlocks, expandMessagesFragmentTags, pushPovVoice, type ContextBlock, type PovVoice } from './context-builder'
+import { proseWindowBlock } from './fragment-context-blocks'
 import { compileAgentContext } from '../agents/compile-agent-context'
 import { instructionRegistry } from '../instructions'
-import { registry } from '../fragments/registry'
 import { buildContextState } from './context-builder'
-import type { AgentBlockContext } from '../agents/agent-block-context'
-import type { Fragment } from '../fragments/schema'
-import type { TokenUsage } from './generation-logs'
-import { reportUsage } from './token-tracker'
-import { normalizeTokenUsage } from './usage-normalizer'
+import { type AgentBlockContext, baseBlockContext } from '../agents/agent-block-context'
+import { renderContinuity } from '../librarian/continuity-view'
+import { suggestionDirectionSchema } from '../directions/schema'
+import type { Fragment, SamplingSettings, StoryMeta } from '../fragments/schema'
+import type { TokenUsage, ToolCallLog } from './generation-logs'
+import { resolveAndReportServedUsage } from './usage-normalizer'
+import { servedModelIdFromResponse } from './served-models'
 import { createLogger } from '../logging'
 
 const logger = createLogger('prewriter')
 
-export const PREWRITER_INSTRUCTIONS = `You are a writing planner. Analyze the full story context and author's direction,
-then produce a focused WRITING BRIEF for a prose writer.
+export const PREWRITER_INSTRUCTIONS = `You are a writing planner. Analyze the full story context and the author's direction,
+then produce a focused WRITING BRIEF for the writer — a separate prose model.
 
-The writer will ONLY see the most recent prose (for continuity) and your brief.
-The writer will NOT see character sheets, guidelines, knowledge, or the story summary.
+The writer sees exactly two things: the most recent prose (for continuity) and your brief.
+Character fragments, guidelines, knowledge, and the story summary all stay with you.
 Everything the writer needs must be in your brief.
 
-Your brief MUST include:
+## Writing Brief Requirements
 
-1. SCENE SETUP: Where are we? Who is present? What just happened?
-2. OBJECTIVE: What should this passage accomplish? (1-2 sentences)
-3. CHARACTER VOICES: For EACH character active in this scene, provide a detailed
-   voice profile distilled from their character sheet:
+Your brief must include:
+
+1. **SCENE SETUP**: Where are we? Who is present? What just happened?
+2. **OBJECTIVE**: What should this passage accomplish? (1-2 sentences)
+3. **CHARACTER VOICES**: For each character active in this scene, a detailed voice profile distilled from their character fragment:
    - How they speak (vocabulary level, sentence patterns, verbal tics, accent cues)
    - Personality in action (how their traits manifest in dialogue and behavior)
-   - Emotional state RIGHT NOW and what's driving it
+   - Emotional state right now and what's driving it
    - What they want in this scene and how they'll pursue it
    - Example dialogue line that captures their voice in this moment
-   This is critical — the writer has NO access to character sheets.
-4. PACING: How much story time should this cover? Where should it END?
-   Be specific: "End when X happens" or "End mid-conversation after Y."
-5. KEY DETAILS: Specific facts, names, places from knowledge/guidelines to reference.
-6. TONE & STYLE: Emotional register, prose style, POV constraints.
-7. SCOPE LIMITS: What the writer must NOT do:
-   - "Do NOT resolve the conflict in this passage"
-   - "Do NOT skip ahead in time"
-   - "Do NOT introduce new characters"
+   *This section carries everything the writer will ever know about these characters.*
+4. **PACING**: How much story time this passage covers and where it ends. Be specific: "End when X happens" or "End mid-conversation after Y."
+5. **KEY DETAILS**: Specific facts, names, places from knowledge/guidelines to reference.
+6. **TONE & STYLE**: Emotional register, prose style, POV constraints.
+7. **SCOPE LIMITS**: Boundaries the writer must respect, stated as positive constraints:
+   - "Keep the conflict unresolved in this passage"
+   - "Stay within the current time frame"
+   - "Keep the cast to the characters named above"
 
-Be direct and specific. The Reasoning Length guidance below sets how long and
-how deeply to plan — follow it for the brief's length and level of detail.
-Spend the most space on CHARACTER VOICES — the writer depends entirely on your
-character direction to capture each character faithfully.
+Be direct and specific. The Reasoning Length guidance below sets how long and how deeply to plan — follow it for the brief's length and level of detail. Spend the most space on **CHARACTER VOICES** — the writer depends entirely on your character direction to capture each character faithfully.
 
-After writing the brief, you MUST call the suggestDirections tool to provide
-exactly 3 pacing options for the NEXT passage:
+## Next Directions
 
-1. LINGER — A direction that stays in the current moment. Deepen the atmosphere,
-   explore character interiority, or develop the emotional texture of the scene
-   without advancing the plot.
-2. CONTINUE — A direction that advances the scene meaningfully but leaves the
-   current plot thread unresolved. Move toward the next beat but don't close it.
-3. END — A direction that brings the current scene or plot section to a natural
-   conclusion. Resolve the active tension and transition to what comes next.
+After writing the brief, call the proposeDirections tool with exactly 3 pacing options for the NEXT passage:
 
-Each direction should be specific to THIS story moment — not generic advice.
-The title should be evocative (3-6 words), the description should preview what
-happens (1-2 sentences), and the instruction should be a concrete writing prompt.`
+1. **LINGER** — A direction that stays in the current moment. Deepen the atmosphere, explore character interiority, or develop the emotional texture of the scene without advancing the plot.
+2. **CONTINUE** — A direction that advances the scene meaningfully but leaves the current plot thread unresolved. Move toward the next beat but leave it open.
+3. **END** — A direction that brings the current scene or plot section to a natural conclusion. Resolve the active tension and transition to what comes next.
+
+Anchor each direction in this specific story moment rather than generic advice.`
 
 export interface PrewriterDirection {
   pacing: 'linger' | 'continue' | 'end'
@@ -107,11 +101,11 @@ ambiguous — missing intent, unclear POV or which character acts, undefined
 stakes, or a fork you cannot resolve from context.
 
 - If everything you need is clear, DO NOT ask. Proceed straight to the brief.
-- If you genuinely need input, call the askQuestions tool with up to 4 focused
+- If you genuinely need input, call the askClarifyingQuestions tool with up to 4 focused
   questions. For each question, supply 2-4 concrete options when you can
   enumerate the likely answers; omit options for open-ended questions.
-- If you call askQuestions, STOP — do not also write a brief or call
-  suggestDirections. The author will answer and you will be re-invoked.
+- If you call askClarifyingQuestions, STOP — do not also write a brief or call
+  proposeDirections. The author will answer and you will be re-invoked.
 - Never re-ask anything the author has already answered.`
 
 export interface ClarifyQuestionOption {
@@ -139,7 +133,7 @@ export const ClarifyQuestionSchema = z.object({
     .describe('2-4 suggested options, or omit for a free-text answer'),
 })
 
-/** Input schema for the askQuestions tool: 1–4 clarifying questions. */
+/** Input schema for the askClarifyingQuestions tool: 1–4 clarifying questions. */
 export const ClarifyQuestionsInputSchema = z.object({
   questions: z.array(ClarifyQuestionSchema).min(1).max(4),
 })
@@ -161,15 +155,19 @@ export type PrewriterEvent =
 export interface RunPrewriterArgs {
   dataDir: string
   storyId: string
-  compiledMessages: ContextMessage[]
+  /** The story, already loaded by the caller — resolves the prewriter's own
+   * runtime (model, thinking toggle, output cap) via `resolveAgentRuntime`. */
+  story: StoryMeta
+  /** Structured Writer-owned story blocks projected into the planning prompt. */
+  contextBlocks: ContextBlock[]
+  blockContext?: AgentBlockContext
   authorInput: string
   mode: 'generate' | 'regenerate' | 'refine'
   tools?: ToolSet
   maxSteps?: number
   abortSignal?: AbortSignal
   onEvent?: (event: PrewriterEvent) => void
-  providerOptions?: ProviderOptions
-  /** Allow the prewriter to ask clarifying questions via the askQuestions tool. */
+  /** Allow the prewriter to ask clarifying questions via the askClarifyingQuestions tool. */
   clarifyEnabled?: boolean
   /** Prior question/answer pairs from earlier clarify rounds, rendered into the prompt. */
   clarifications?: Clarification[]
@@ -185,10 +183,14 @@ export interface PrewriterResult {
   messages: Array<{ role: string; content: string }>
   customBlocks: ContextBlock[]
   directions: PrewriterDirection[]
+  toolCalls: ToolCallLog[]
   stepCount: number
   durationMs: number
   model: string
+  sampling: SamplingSettings
   usage?: TokenUsage
+  /** Structured story blocks actually presented through the full-context slot. */
+  presentedContextBlocks: ContextBlock[]
   /** Set when the prewriter asked the author clarifying questions instead of finalizing a brief. */
   questions?: ClarifyQuestion[]
 }
@@ -199,47 +201,53 @@ export interface PrewriterResult {
  * that the writer will use instead of the full context.
  */
 export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterResult> {
-  const { dataDir, storyId, compiledMessages, authorInput, mode, tools, maxSteps = 3, abortSignal, onEvent, providerOptions, clarifyEnabled = false, clarifications = [], round = 0, reasoning = 'normal' } = args
+  const { dataDir, storyId, story, contextBlocks, authorInput, mode, tools, maxSteps = 3, abortSignal, onEvent, clarifyEnabled = false, clarifications = [], round = 0, reasoning = 'normal' } = args
   const requestLogger = logger.child({ storyId })
   const canAskQuestions = clarifyEnabled && round < MAX_CLARIFY_ROUNDS
 
   const startTime = Date.now()
-  const { model, modelId, temperature } = await getModel(dataDir, storyId, { role: 'generation.prewriter' })
-  requestLogger.info('Prewriter model resolved', { modelId })
+  const runtime = await resolveAgentRuntime(dataDir, storyId, 'generation.prewriter', story)
+  const { model, modelId, providerId, providerOptions, guards } = runtime
+  requestLogger.info('Prewriter model resolved', { modelId, sampling: samplingDiagnostics(runtime) })
 
-  // Build the prewriter prompt from blocks (allows user customization via block editor)
+  // Build the prewriter prompt from blocks (allows user customization via block editor).
+  // Falls back to the real story's empty context state (never a fabricated
+  // placeholder) so a caller that omits blockContext still gets a context shape
+  // that can't drift from what every other agent's preview builds from.
   const blockContext: AgentBlockContext = {
-    story: { id: storyId, name: '', description: '', coverImage: null, summary: '', createdAt: '', updatedAt: '', settings: {} as any },
-    proseFragments: [],
-    stickyGuidelines: [],
-    stickyKnowledge: [],
-    stickyCharacters: [],
-    guidelineShortlist: [],
-    knowledgeShortlist: [],
-    characterShortlist: [],
+    ...baseBlockContext(undefined, story),
     systemPromptFragments: [],
+    ...(args.blockContext ?? {}),
     modelId,
   }
 
   let prewriterBlocks: ContextBlock[]
+  let configuredTools: ToolSet = tools ?? {}
   try {
-    const compiled = await compileAgentContext(dataDir, storyId, 'generation.prewriter', blockContext, {})
+    const compiled = await compileAgentContext(dataDir, storyId, 'generation.prewriter', blockContext, tools ?? {})
     prewriterBlocks = compiled.blocks
+    configuredTools = compiled.tools
   } catch {
     // If no agent block config exists, use default blocks
     prewriterBlocks = createPrewriterBlocks(blockContext)
   }
 
-  // Replace the full-context placeholder with the actual compiled messages
-  const fullContextContent = compiledMessages
-    .map(m => `[${m.role}]\n${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
-    .join('\n\n---\n\n')
-
-  prewriterBlocks = prewriterBlocks.map(b =>
-    b.id === 'full-context'
-      ? { ...b, content: `## Full Story Context\n\n${fullContextContent}` }
-      : b,
-  )
+  // Replace the placeholder with real blocks rather than serializing a compiled
+  // Writer prompt into a second prompt. This preserves fragment metadata for
+  // receipts and keeps each context surface independently inspectable.
+  prewriterBlocks = prewriterBlocks.flatMap((block) => {
+    if (block.id !== 'full-context') return [block]
+    const projected = contextBlocks.map((contextBlock, index) => ({
+      ...contextBlock,
+      id: `full-context:${contextBlock.id}`,
+      order: block.order + ((index + 1) / 1000),
+      source: 'builtin' as const,
+    }))
+    return [
+      { ...block, content: '## Full Story Context' },
+      ...projected,
+    ]
+  })
 
   // Update planning-request based on mode
   const modePrompts: Record<string, string> = {
@@ -273,7 +281,7 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
   ]
 
   // When clarify is enabled, append guidance telling the prewriter it may ask
-  // questions via the askQuestions tool. Kept as its own block so it survives
+  // questions via the askClarifyingQuestions tool. Kept as its own block so it survives
   // user block overrides of the base instructions.
   if (canAskQuestions) {
     prewriterBlocks = [
@@ -291,17 +299,16 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
   let prewriterMessages = compileBlocks(prewriterBlocks)
   prewriterMessages = await expandMessagesFragmentTags(prewriterMessages, dataDir, storyId)
 
-  // Directions collector — captured via closure in the suggestDirections tool
+  // Directions collector — captured via closure in the proposeDirections tool
   let capturedDirections: PrewriterDirection[] = []
 
   const directionsTool = tool({
     description: 'Suggest 3 pacing-aware directions for the next passage.',
     inputSchema: z.object({
-      directions: z.array(z.object({
+      // The same direction the librarian proposes, plus the pacing choice that
+      // is this tool's own: one name should not mean two shapes.
+      directions: z.array(suggestionDirectionSchema.extend({
         pacing: z.enum(['linger', 'continue', 'end']),
-        title: z.string().describe('Short evocative title (3-6 words)'),
-        description: z.string().describe('1-2 sentences previewing what happens'),
-        instruction: z.string().describe('Concrete writing prompt for the writer'),
       })).length(3),
     }),
     execute: async ({ directions }) => {
@@ -315,8 +322,8 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
   // we treat the turn as terminal: the caller surfaces the questions and skips
   // the writer entirely (no brief is produced this round).
   let capturedQuestions: ClarifyQuestion[] | null = null
-  const askQuestionsTool = tool({
-    description: 'Ask the author up to 4 clarifying questions before writing. Use ONLY when the direction is genuinely ambiguous. Calling this ends your turn — do not also write a brief or suggest directions.',
+  const askClarifyingQuestionsTool = tool({
+    description: 'Ask the author up to 4 clarifying questions before writing. Use ONLY when the direction is genuinely ambiguous. Calling this ends your turn — do not also write a brief or propose directions.',
     inputSchema: ClarifyQuestionsInputSchema,
     execute: async ({ questions }) => {
       capturedQuestions = questions as ClarifyQuestion[]
@@ -326,9 +333,9 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
   })
 
   const mergedTools: ToolSet = {
-    ...(tools ?? {}),
-    suggestDirections: directionsTool,
-    ...(canAskQuestions ? { askQuestions: askQuestionsTool } : {}),
+    ...configuredTools,
+    proposeDirections: directionsTool,
+    ...(canAskQuestions ? { askClarifyingQuestions: askClarifyingQuestionsTool } : {}),
   }
   const agent = new ToolLoopAgent({
     model,
@@ -336,25 +343,29 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
     toolChoice: 'auto',
     stopWhen: [
       stepCountIs(maxSteps),
-      hasToolCall('suggestDirections'),
-      hasToolCall('askQuestions'),
+      hasToolCall('proposeDirections'),
+      hasToolCall('askClarifyingQuestions'),
     ],
-    temperature,
+    ...samplingCallSettings(runtime),
     providerOptions,
+    maxOutputTokens: guards.maxOutputTokens,
   })
 
   // The brief is the text of the LATEST step that produced text. Capturing per
   // step (and keeping the last non-empty one) avoids concatenating drafts when a
   // model re-writes the brief across steps — e.g. writes it, looks a detail up,
-  // then re-emits it in the same turn it calls suggestDirections. Accumulating
+  // then re-emits it in the same turn it calls proposeDirections. Accumulating
   // every text-delta would otherwise hand the writer the brief twice.
   let briefText = ''
   let currentStepText = ''
   let fullReasoning = ''
   let stepCount = 0
+  let servedModelId: string | undefined
   let terminalToolReturned = false
+  const toolCallArgsById = new Map<string, Record<string, unknown>>()
+  const toolCalls: ToolCallLog[] = []
   const result = await agent.stream({
-    messages: prewriterMessages,
+    messages: addCacheBreakpoints(prewriterMessages),
     abortSignal,
   })
 
@@ -381,26 +392,37 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
       fullReasoning += text
       onEvent?.({ type: 'reasoning', text })
     } else if (part.type === 'tool-call') {
+      const toolCallId = p.toolCallId as string
+      const input = (p.input ?? {}) as Record<string, unknown>
+      toolCallArgsById.set(toolCallId, input)
       onEvent?.({
         type: 'tool-call',
-        id: p.toolCallId as string,
+        id: toolCallId,
         toolName: p.toolName as string,
-        args: (p.input ?? {}) as Record<string, unknown>,
+        args: input,
       })
     } else if (part.type === 'tool-result') {
-      if (p.toolName === 'suggestDirections' || p.toolName === 'askQuestions') {
+      const toolName = (p.toolName as string) ?? ''
+      const toolCallId = p.toolCallId as string
+      toolCalls.push({
+        toolName,
+        args: toolCallArgsById.get(toolCallId) ?? {},
+        result: p.output,
+      })
+      if (p.toolName === 'proposeDirections' || p.toolName === 'askClarifyingQuestions') {
         terminalToolReturned = true
       }
       onEvent?.({
         type: 'tool-result',
-        id: p.toolCallId as string,
-        toolName: (p.toolName as string) ?? '',
+        id: toolCallId,
+        toolName,
         result: p.output,
       })
     } else if (part.type === 'finish-step') {
       // One step per LLM round-trip. `finish` (singular) fires once for the
       // whole run, so counting it would always yield 1.
       stepCount++
+      servedModelId = servedModelIdFromResponse(p.response) ?? servedModelId
       captureStepBrief()
     }
   }
@@ -410,17 +432,13 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
 
   const durationMs = Date.now() - startTime
 
-  let usage: TokenUsage | undefined
-  try {
-    const rawUsage = await result.totalUsage
-    usage = normalizeTokenUsage(rawUsage)
-  } catch {
-    // Some providers may not report usage
-  }
-
-  if (usage) {
-    reportUsage(dataDir, storyId, 'generation.prewriter', usage, modelId)
-  }
+  const { usage } = await resolveAndReportServedUsage(
+    dataDir,
+    storyId,
+    'generation.prewriter',
+    result.totalUsage,
+    { providerId, configuredModelId: modelId, servedModelId },
+  )
 
   requestLogger.info('Prewriter completed', { durationMs, briefLength: briefText.length })
 
@@ -434,7 +452,21 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
 
   requestLogger.info('Prewriter steps used', { stepCount })
 
-  return { brief: briefText, reasoning: fullReasoning, messages: serializedMessages, customBlocks, directions: capturedDirections, stepCount, durationMs, model: modelId, usage, questions: capturedQuestions ?? undefined }
+  return {
+    brief: briefText,
+    reasoning: fullReasoning,
+    messages: serializedMessages,
+    customBlocks,
+    directions: capturedDirections,
+    toolCalls,
+    stepCount,
+    durationMs,
+    model: modelId,
+    sampling: samplingDiagnostics(runtime),
+    usage,
+    presentedContextBlocks: prewriterBlocks.filter((block) => block.id.startsWith('full-context:')),
+    questions: capturedQuestions ?? undefined,
+  }
 }
 
 /**
@@ -443,6 +475,7 @@ export async function runPrewriter(args: RunPrewriterArgs): Promise<PrewriterRes
  * customized by users via the block editor.
  */
 export function createPrewriterBlocks(_ctx: AgentBlockContext): ContextBlock[] {
+  const planningContinuity = renderContinuity(_ctx, 'generation.prewriter')
   return [
     {
       id: 'instructions',
@@ -454,14 +487,24 @@ export function createPrewriterBlocks(_ctx: AgentBlockContext): ContextBlock[] {
     {
       id: 'full-context',
       role: 'user' as const,
-      content: '(Full story context will be injected at runtime)',
+      content: '(the full story context will appear here)',
       order: 100,
       source: 'builtin',
     },
+    // The planner decides what the passage does, so it needs current state as a
+    // block it owns. Flattened inside full-context instead, continuity is
+    // unreachable from the block editor and shows only a placeholder in preview.
+    ...(planningContinuity ? [{
+      id: 'continuity-observations',
+      role: 'user' as const,
+      content: planningContinuity,
+      order: 150,
+      source: 'builtin' as const,
+    }] : []),
     {
       id: 'planning-request',
       role: 'user' as const,
-      content: '(Planning request will be injected at runtime based on generation mode)',
+      content: '(the planning request will appear here, based on generation mode)',
       order: 200,
       source: 'builtin',
     },
@@ -474,14 +517,7 @@ export function createPrewriterBlocks(_ctx: AgentBlockContext): ContextBlock[] {
 export async function buildPrewriterPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
   const state = await buildContextState(dataDir, storyId, '(preview)')
   return {
-    story: state.story,
-    proseFragments: state.proseFragments,
-    stickyGuidelines: state.stickyGuidelines,
-    stickyKnowledge: state.stickyKnowledge,
-    stickyCharacters: state.stickyCharacters,
-    guidelineShortlist: state.guidelineShortlist,
-    knowledgeShortlist: state.knowledgeShortlist,
-    characterShortlist: state.characterShortlist,
+    ...baseBlockContext(state, state.story),
     systemPromptFragments: [],
   }
 }
@@ -493,14 +529,14 @@ export async function buildPrewriterPreviewContext(dataDir: string, storyId: str
  * - Recent prose (for continuity)
  * - The prewriter's writing brief
  *
- * All other context (characters, guidelines, knowledge, summary, shortlists)
+ * All other context (characters, guidelines, knowledge, summary, catalogs)
  * is omitted — the writer relies on the brief instead.
  */
 export function createWriterBriefBlocks(
   proseFragments: Fragment[],
   brief: string,
-  toolLines: string[],
   modelId?: string,
+  povVoice?: PovVoice,
 ): ContextBlock[] {
   const blocks: ContextBlock[] = []
   const normalizedBrief = brief
@@ -516,49 +552,21 @@ export function createWriterBriefBlocks(
     source: 'builtin',
   })
 
-  if (toolLines.length > 0) {
-    blocks.push({
-      id: 'tools',
-      role: 'system' as const,
-      content: [
-        '## Available Tools',
-        'You have access to the following tools for optional lookups:',
-        toolLines.join('\n'),
-        '\n' + instructionRegistry.resolve('generation.writer-brief.tools-suffix', modelId),
-      ].join('\n'),
-      order: 200,
-      source: 'builtin',
-    })
-  }
+  // Tools reach the model via the SDK schema; this block holds usage policy only.
+  blocks.push({
+    id: 'tools',
+    role: 'system' as const,
+    content: instructionRegistry.resolve('generation.writer-brief.tools-suffix', modelId),
+    order: 200,
+    source: 'builtin',
+  })
 
-  if (proseFragments.length > 0) {
-    blocks.push({
-      id: 'prose',
-      role: 'user' as const,
-      content: [
-        '## Recent Prose',
-        ...proseFragments.map(p => {
-          const rendered = registry.renderContext(p)
-          return `[@fragment=${p.id}]\n${rendered}`
-        }),
-        '\n## End of Recent Prose',
-      ].join('\n'),
+  {
+    const prose = proseWindowBlock(proseFragments, {
       order: 100,
-      source: 'builtin',
+      newStoryGuidance: 'Establish the opening scene — setting, tone, and any initial characters — based on the writing brief below.',
     })
-  } else {
-    blocks.push({
-      id: 'new-story',
-      role: 'user' as const,
-      content: [
-        '## New Story',
-        'There is no existing prose yet. You are writing the very beginning of this story.',
-        'Establish the opening scene — setting, tone, and any initial characters — based on the writing brief below.',
-        'Do NOT reference or continue from any prior narrative; start fresh.',
-      ].join('\n'),
-      order: 100,
-      source: 'builtin',
-    })
+    if (prose) blocks.push(prose)
   }
 
   blocks.push({
@@ -568,6 +576,10 @@ export function createWriterBriefBlocks(
     order: 200,
     source: 'builtin',
   })
+
+  // Keep the author's POV constraint after the planner's brief so the writer
+  // cannot lose voice/perspective when full context is stripped.
+  pushPovVoice(blocks, povVoice, 250)
 
   return blocks
 }

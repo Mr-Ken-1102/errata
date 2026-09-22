@@ -1,23 +1,24 @@
 /**
  * Factory for standard streaming agent runners.
  *
- * Encodes the 14-step validate → resolve → build → compile → stream pipeline
+ * Encodes the standard validate → resolve → build → compile → stream pipeline
  * that all streaming agents share. Only the agent-specific "knobs" vary.
  */
 
 import { ToolLoopAgent, stepCountIs, type ToolSet } from 'ai'
 import type { StoryMeta } from '../fragments/schema'
 import type { ContextBuildState } from '../llm/context-builder'
-import type { AgentBlockContext } from './agent-block-context'
+import { type AgentBlockContext, baseBlockContext } from './agent-block-context'
 import type { AgentStreamResult } from './stream-types'
-import { getModel, buildProviderOptions } from '../llm/client'
+import { resolveAgentRuntime, samplingCallSettings, samplingDiagnostics } from '../llm/client'
+import { MISSING_SYSTEM_PROMPT_FALLBACK } from '../instructions'
 import { getStory } from '../fragments/storage'
 import { buildContextState } from '../llm/context-builder'
 import { createFragmentTools } from '../llm/tools'
-import { reportUsage } from '../llm/token-tracker'
-import { normalizeTokenUsage } from '../llm/usage-normalizer'
+import { resolveAndReportServedUsage } from '../llm/usage-normalizer'
 import { createLogger } from '../logging'
 import { createEventStream } from './create-event-stream'
+import { holdLibrarianAnalysis } from '../librarian/scheduler'
 import { compileAgentContext, type CompiledAgentContext } from './compile-agent-context'
 import { withBranch } from '../fragments/branches'
 
@@ -28,7 +29,7 @@ export interface StreamingRunnerConfig<TOpts, TValidated = Record<string, unknow
   /** Model role key (defaults to `name`). */
   role?: string
 
-  /** Default maxSteps when opts doesn't specify one. Default: 5 */
+  /** Default maxSteps when opts doesn't specify one. Default: 10 */
   maxSteps?: number
 
   /** Tool choice passed to the agent. Default: 'auto' */
@@ -100,6 +101,10 @@ export interface StreamingRunnerConfig<TOpts, TValidated = Record<string, unknow
   afterStream?: (result: AgentStreamResult) => void
 }
 
+export interface StreamingRunOptions {
+  abortSignal?: AbortSignal
+}
+
 /**
  * Create a streaming agent runner function from a config object.
  *
@@ -108,13 +113,18 @@ export interface StreamingRunnerConfig<TOpts, TValidated = Record<string, unknow
  */
 export function createStreamingRunner<TOpts extends object, TValidated = Record<string, unknown>>(
   config: StreamingRunnerConfig<TOpts, TValidated>,
-): (dataDir: string, storyId: string, opts: TOpts) => Promise<AgentStreamResult> {
+): (dataDir: string, storyId: string, opts: TOpts, execution?: StreamingRunOptions) => Promise<AgentStreamResult> {
   const logger = createLogger(config.name)
   const role = config.role ?? config.name
   const defaultMaxSteps = config.maxSteps ?? 10
   const shouldBuildContext = config.buildContext !== false
 
-  return async function run(dataDir: string, storyId: string, opts: TOpts): Promise<AgentStreamResult> {
+  return async function run(
+    dataDir: string,
+    storyId: string,
+    opts: TOpts,
+    execution: StreamingRunOptions = {},
+  ): Promise<AgentStreamResult> {
     return withBranch(dataDir, storyId, async () => {
       const requestLogger = logger.child({ storyId })
       requestLogger.info(`Starting ${config.name}...`)
@@ -129,9 +139,9 @@ export function createStreamingRunner<TOpts extends object, TValidated = Record<
         : ({} as TValidated)
 
       // 3. Resolve model early (modelId needed for instruction resolution)
-      const { model, modelId, temperature } = await getModel(dataDir, storyId, { role })
-      const providerOptions = buildProviderOptions(story.settings.disableThinking ?? false)
-      requestLogger.info('Resolved model', { modelId })
+      const runtime = await resolveAgentRuntime(dataDir, storyId, role, story)
+      const { model, modelId, providerId, providerOptions, guards } = runtime
+      requestLogger.info('Resolved model', { modelId, sampling: samplingDiagnostics(runtime) })
 
       // 4. Build story context (optional)
       let ctxState: ContextBuildState | null = null
@@ -146,14 +156,7 @@ export function createStreamingRunner<TOpts extends object, TValidated = Record<
         : {}
 
       const blockContext: AgentBlockContext = {
-        story: ctxState?.story ?? story,
-        proseFragments: ctxState?.proseFragments ?? [],
-        stickyGuidelines: ctxState?.stickyGuidelines ?? [],
-        stickyKnowledge: ctxState?.stickyKnowledge ?? [],
-        stickyCharacters: ctxState?.stickyCharacters ?? [],
-        guidelineShortlist: ctxState?.guidelineShortlist ?? [],
-        knowledgeShortlist: ctxState?.knowledgeShortlist ?? [],
-        characterShortlist: ctxState?.characterShortlist ?? [],
+        ...baseBlockContext(ctxState, story),
         systemPromptFragments: [],
         modelId,
         ...extra,
@@ -183,12 +186,13 @@ export function createStreamingRunner<TOpts extends object, TValidated = Record<
       const maxSteps = (opts as Record<string, unknown>).maxSteps as number | undefined
       const agent = new ToolLoopAgent({
         model,
-        instructions: systemMessage?.content || 'You are a helpful assistant.',
+        instructions: systemMessage?.content || MISSING_SYSTEM_PROMPT_FALLBACK,
         tools: compiled.tools,
         toolChoice: config.toolChoice ?? 'auto',
         stopWhen: stepCountIs(maxSteps ?? defaultMaxSteps),
-        temperature,
+        ...samplingCallSettings(runtime),
         providerOptions,
+        maxOutputTokens: guards.maxOutputTokens,
       })
 
       // 10. Build messages
@@ -196,25 +200,50 @@ export function createStreamingRunner<TOpts extends object, TValidated = Record<
         ? config.messages({ compiled, opts })
         : userMessage ? [{ role: 'user' as const, content: userMessage.content }] : []
 
-      // 11. Stream — abort the LLM call if the consumer disconnects.
+      // 11. Stream. Hold analysis for write-enabled runs so multi-step prose edits
+      // analyze once on the final state (see holdLibrarianAnalysis); abort the LLM
+      // call if the consumer disconnects.
       const abortController = new AbortController()
-      const result = await agent.stream({ messages, abortSignal: abortController.signal })
-      const streamResult = createEventStream(result.fullStream, () => abortController.abort())
+      const abortFromCaller = () => abortController.abort()
+      if (execution.abortSignal?.aborted) abortController.abort()
+      else execution.abortSignal?.addEventListener('abort', abortFromCaller, { once: true })
+
+      let result: Awaited<ReturnType<typeof agent.stream>>
+      try {
+        result = abortController.signal.aborted
+          ? { fullStream: (async function* () {})() } as unknown as Awaited<ReturnType<typeof agent.stream>>
+          : await agent.stream({ messages, abortSignal: abortController.signal })
+      } catch (error) {
+        execution.abortSignal?.removeEventListener('abort', abortFromCaller)
+        throw error
+      }
+      const releaseAnalysis = config.readOnly === false
+        ? holdLibrarianAnalysis(storyId)
+        : () => {}
+      // Note: this run's active-marker/activity-trace/history are NOT registered
+      // here. Every caller of a createStreamingRunner agent goes through either
+      // createAgentInstance (HTTP routes) or runner.ts's invokeAgent (nested/
+      // scheduled calls) — both already wrap the whole call in beginAgentRun and
+      // tee the event stream into the trace. Registering here too would double it.
+      const streamResult = createEventStream(
+        result.fullStream,
+        () => abortController.abort(),
+        abortController.signal,
+      )
+      const unlinkAbort = () => execution.abortSignal?.removeEventListener('abort', abortFromCaller)
+      void streamResult.completion.then(unlinkAbort, unlinkAbort)
+      void streamResult.completion.then(releaseAnalysis, releaseAnalysis)
 
       // 12. Track token usage after stream completes
-      streamResult.completion.then(async () => {
-        try {
-          const rawUsage = await result.totalUsage
-          const usage = normalizeTokenUsage(rawUsage)
-          if (usage) {
-            reportUsage(dataDir, storyId, config.name, usage, modelId)
-          }
-        } catch {
-          // Some providers may not report usage
-        }
-      }).catch(() => {
-        // Stream errored — skip usage tracking
-      })
+      streamResult.completion
+        .then((completion) => resolveAndReportServedUsage(dataDir, storyId, config.name, result.totalUsage, {
+          providerId,
+          configuredModelId: modelId,
+          servedModelId: completion.servedModelId,
+        }))
+        .catch(() => {
+          // Stream errored — skip usage tracking
+        })
 
       // 13. Post-stream hook
       if (config.afterStream) {

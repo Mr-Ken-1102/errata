@@ -1,25 +1,65 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
 import {
-  createFragment as createFragmentInStorage,
   getFragment,
   getStory,
-  updateStory,
   listFragments,
-  updateFragmentVersioned,
-  deleteFragment,
 } from '../fragments/storage'
 import { getActiveProseIds } from '../fragments/prose-chain'
 import { registry } from '../fragments/registry'
 import { createLogger } from '../logging'
 import type { Fragment } from '../fragments/schema'
-import { generateFragmentId } from '@/lib/fragment-ids'
-import { checkFragmentWrite, isFragmentLocked } from '../fragments/protection'
-import { reanalyzeAfterProseChange } from '../librarian/reanalyze'
-import { capitalize, pluralize } from './agents'
+import { reanalyzeAfterProseChange } from '../librarian/scheduler'
+import {
+  MAX_BATCH_OPERATIONS,
+  OPERATION_GUIDANCE,
+  type EditableField,
+  type FragmentChangeOperation,
+  type OperationValidation,
+  editableFieldSchema,
+  excerptAround,
+  findOccurrences,
+  fragmentBaseHash,
+  proposeFragmentChangesSchema,
+  recommendedReadFragmentIds,
+  sanitizeOperationValidationsForTool,
+  sanitizeTextForToolEcho,
+  truncateText,
+} from '../fragments/change-operations'
+import { applyOperationsWithSnapshot, type AppliedChange } from '../fragments/change-apply'
+import { buildContextState, STORY_SUMMARY_PLACEHOLDER } from './context-builder'
+import { numberSentences, sentenceIndexAt } from './segments'
+import { renderSummaryProjection } from '../librarian/summary-projection'
 
+export {
+  BASE_HASH_DESCRIPTION,
+  FRAGMENT_CONTENT_DESCRIPTION,
+  FRAGMENT_DESCRIPTION_DESCRIPTION,
+  FRAGMENT_NAME_DESCRIPTION,
+  SET_FIELDS_DESCRIPTION,
+  fragmentBaseHash,
+  fragmentChangeOperationSchema,
+  fragmentNameError,
+} from '../fragments/change-operations'
+
+/**
+ * Convention across every LLM-facing tool here and in the librarian:
+ *
+ * A tool that can fail in a way the model should act on returns `ok` on *both*
+ * branches, with the guidance beside it. A tool that cannot fail returns its
+ * result plainly and no `ok` at all. `throw` is for a genuine exception — the
+ * SDK surfaces it as a tool error, which is the right shape for "the engine
+ * broke", not for "your request matched nothing".
+ */
 const logger = createLogger('llm-tools')
 const TOOL_LOG_MAX_CHARS = 1200
+const MAX_READ_FRAGMENTS = 30
+const MAX_LIST_LIMIT = 100
+/**
+ * One default for every listing tool. Each reports `total` and `truncated`, so
+ * asking for more is one call away and the cheap default costs nothing but that.
+ */
+const DEFAULT_LIST_LIMIT = 25
 
 function safeStringify(value: unknown): string {
   try {
@@ -27,7 +67,7 @@ function safeStringify(value: unknown): string {
     return JSON.stringify(value, (_key, val) => {
       if (typeof val === 'object' && val !== null) {
         if (seen.has(val as object)) return '[Circular]'
-        seen.add(val as object)
+        seen.add(val)
       }
       return val
     })
@@ -75,180 +115,267 @@ function withToolLogging<TInput, TResult>(
   }
 }
 
-/**
- * After an LLM write tool changes a prose fragment, invalidate its librarian
- * analysis and schedule re-analysis (unless auto-analysis is disabled) —
- * mirroring what the HTTP fragment routes do for manual edits. Failures are
- * logged but never fail the tool call.
- */
-async function scheduleProseReanalysis(
-  dataDir: string,
-  storyId: string,
-  before: Fragment,
-  after: Fragment,
-): Promise<void> {
-  if (before.type !== 'prose') return
-  const changed = before.content !== after.content
-    || before.description !== after.description
-    || before.name !== after.name
-  if (!changed) return
-  await reanalyzeAfterProseChange(dataDir, storyId, after).catch((err) => {
-    logger.error('librarian re-analysis failed after prose tool edit', {
-      storyId,
-      fragmentId: after.id,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  })
-}
+const proseReplaceSchema = z.object({
+  oldText: z.string().min(1).describe('Required exact text to find in active prose fragments.'),
+  newText: z.string().describe('Required replacement text. Use an empty string only to delete oldText.'),
+  replaceAll: z.boolean().default(true).describe('Replace all matches in each affected active prose fragment. Defaults to true for prose-wide search/replace.'),
+  occurrence: z.number().int().positive().optional().describe('1-based occurrence for each affected fragment when `replaceAll` is false and `oldText` appears multiple times.'),
+  reason: z.string().max(500).optional(),
+})
 
 export interface FragmentToolsOptions {
+  /** true: read tools only. false: add the direct edit tools. Defaults to true. */
   readOnly?: boolean
+  /**
+   * The caller's ledger of records shown with numbered sentences. Supplying one
+   * turns numbering on and registers what was shown, so a write path addressing
+   * sentences by number shares one object with the reads that earn them.
+   *
+   * Analyze numbered a record in three of the four places it could appear and
+   * left the reads plain, leaving Muse-Glimmer-30B to count sentences by eye.
+   */
+  numberedFragmentIds?: Set<string>
+  /**
+   * Do not echo a full fragment that the current prompt or an earlier tool
+   * result already supplied. Intended for long-running numbered-record loops.
+   */
+  skipNumberedFragments?: boolean
+}
+
+function summarizeFragment(fragment: Fragment) {
+  return {
+    id: fragment.id,
+    type: fragment.type,
+    name: sanitizeTextForToolEcho(fragment.name),
+    description: sanitizeTextForToolEcho(fragment.description),
+    archived: fragment.archived ?? false,
+    sticky: fragment.sticky,
+    tags: fragment.tags,
+    refs: fragment.refs,
+    version: fragment.version ?? 1,
+    baseHash: fragmentBaseHash(fragment),
+  }
+}
+
+function fullFragmentForTool(fragment: Fragment, numbered: boolean) {
+  return {
+    ...summarizeFragment(fragment),
+    content: numbered
+      ? numberSentences(fragment.content, sanitizeTextForToolEcho)
+      : sanitizeTextForToolEcho(fragment.content),
+    meta: fragment.meta,
+  }
+}
+
+async function loadActiveProseFragments(dataDir: string, storyId: string): Promise<Fragment[]> {
+  const activeIds = await getActiveProseIds(dataDir, storyId)
+  if (activeIds.length > 0) {
+    const fragments: Fragment[] = []
+    for (const id of activeIds) {
+      const fragment = await getFragment(dataDir, storyId, id)
+      if (fragment && !fragment.archived && fragment.type === 'prose') {
+        fragments.push(fragment)
+      }
+    }
+    return fragments
+  }
+  const allProse = await listFragments(dataDir, storyId, 'prose')
+  return allProse.filter((fragment) => !fragment.archived)
 }
 
 /**
- * Creates LLM tool definitions for fragment operations.
+ * Common shape for the direct edit tools: what applied, what was skipped, the
+ * per-operation diffs the model (and the chat card) render, and the
+ * `appliedChanges` revert token the Undo button reverses through the shared core.
+ */
+function editResponse(
+  appliedResults: OperationValidation[],
+  appliedChanges: AppliedChange[],
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    ok: appliedResults.length > 0 && appliedResults.every((result) => result.status === 'applied'),
+    applied: appliedResults.filter((result) => result.status === 'applied').length,
+    skipped: appliedResults.filter((result) => result.status !== 'applied').length,
+    readFragmentIds: recommendedReadFragmentIds(appliedResults),
+    operations: sanitizeOperationValidationsForTool(appliedResults),
+    appliedChanges,
+    ...extra,
+  }
+}
+
+export function coreReadToolNames(): string[] {
+  return ['readFragments', 'findFragments', 'listFragments', 'readProseChain', 'listFragmentTypes', 'readStorySummary']
+}
+
+export function coreProposalToolNames(): string[] {
+  return ['editFragments', 'editProse']
+}
+
+/**
+ * Creates the standard LLM tool definitions for story data.
  *
- * Generates type-specific aliased read tools per registered fragment type:
- *   getCharacter(id), listCharacters(), getProse(id), listProse(), etc.
- *
- * Write tools (updateFragment, editFragment, deleteFragment) are generic
- * and only included when readOnly is false.
- *
- * @param readOnly - If true (default), only read tools are included. Safer for generation.
+ * Read-only mode exposes a compact batch read/search/list surface. Write-enabled
+ * mode adds proposal and application tools; it does not expose direct create,
+ * update, edit, delete, or prose-edit tools.
  */
 export function createFragmentTools(
   dataDir: string,
   storyId: string,
   opts: FragmentToolsOptions = {},
 ) {
-  const { readOnly = true } = opts
-
+  const { readOnly = true, numberedFragmentIds, skipNumberedFragments = false } = opts
+  const numbered = numberedFragmentIds !== undefined
   const tools: ToolSet = {}
-  const types = registry.listTypes()
 
-  for (const typeDef of types) {
-    // Skip types that opt out of LLM tools (content already in context)
-    if (typeDef.llmTools === false) continue
-
-    const name = capitalize(typeDef.type) // "Character"
-    const plural = pluralize(name) // "Characters" or "Prose"
-
-    // get{Type}(id) — always included
-    tools[`get${name}`] = tool({
-      description: `Get the full content of a ${typeDef.type} fragment by its ID`,
-      inputSchema: z.object({
-        id: z.string().describe(`The ${typeDef.type} fragment ID (e.g. ${typeDef.prefix}-bakumo)`),
-      }),
-      execute: withToolLogging(`get${name}`, storyId, async ({ id }: { id: string }) => {
+  tools.readFragments = tool({
+    description: numbered
+      ? `Read one or more fragments by ID. Returns full editable fields and \`baseHash\`, with \`content\` sentence-numbered as \`[n] sentence\` — the same numbering used to address a sentence for correction.${skipNumberedFragments ? ' Records already present in this context are reported under `alreadyAvailable` instead of being echoed again.' : ''}`
+      : 'Read one or more fragments by ID. Returns full editable fields and `baseHash`. Use `baseHash` when applying `set_fields` whole-field rewrites.',
+    inputSchema: z.object({
+      fragmentIds: z.array(z.string()).min(1).max(MAX_READ_FRAGMENTS).describe('Fragment IDs to read. Batch related reads in one call.'),
+    }),
+    execute: withToolLogging('readFragments', storyId, async ({ fragmentIds }: { fragmentIds: string[] }) => {
+      const fragments = []
+      const missing = []
+      const alreadyAvailable = []
+      for (const id of [...new Set(fragmentIds)]) {
+        if (skipNumberedFragments && numberedFragmentIds?.has(id)) {
+          alreadyAvailable.push(id)
+          continue
+        }
         const fragment = await getFragment(dataDir, storyId, id)
         if (!fragment) {
-          return { error: `Fragment not found: ${id}` }
+          missing.push(id)
+          continue
         }
-        return {
-          id: fragment.id,
-          type: fragment.type,
-          name: fragment.name,
-          description: fragment.description,
-          content: fragment.content,
-          tags: fragment.tags,
-          refs: fragment.refs,
-          sticky: fragment.sticky,
-        }
-      }),
-    })
-
-    // list{Types}() — always included, no params needed
-    tools[`list${plural}`] = tool({
-      description: `List all ${typeDef.type} fragments (returns id, name, description)`,
-      inputSchema: z.object({}),
-      execute: withToolLogging(`list${plural}`, storyId, async () => {
-        const fragments = await listFragments(dataDir, storyId, typeDef.type)
-        return {
-          fragments: fragments.map((f) => ({
-            id: f.id,
-            name: f.name,
-            description: f.description,
-          })),
-        }
-      }),
-    })
-  }
-
-  // --- Generic tools (always available, bypass llmTools flag) ---
-
-  tools.getFragment = tool({
-    description: 'Get any fragment by its ID (works for all types: prose, character, guideline, knowledge, etc.)',
-    inputSchema: z.object({
-      id: z.string().describe('The fragment ID (e.g. pr-katemi, ch-bokura, gl-sideno, kn-taviku)'),
-    }),
-    execute: withToolLogging('getFragment', storyId, async ({ id }: { id: string }) => {
-      const fragment = await getFragment(dataDir, storyId, id)
-      if (!fragment) {
-        return { error: `Fragment not found: ${id}` }
+        fragments.push(fullFragmentForTool(fragment, numbered))
+        numberedFragmentIds?.add(fragment.id)
       }
       return {
-        id: fragment.id,
-        type: fragment.type,
-        name: fragment.name,
-        description: fragment.description,
-        content: fragment.content,
-        tags: fragment.tags,
-        refs: fragment.refs,
-        sticky: fragment.sticky,
+        fragments,
+        missing,
+        ...(alreadyAvailable.length > 0 ? { alreadyAvailable } : {}),
+      }
+    }),
+  })
+
+  tools.findFragments = tool({
+    description: numbered
+      ? 'Search fragments by case-insensitive substring. Returns matching IDs, excerpts, and the `segment` number the match falls in; call `readFragments` before relying on details or addressing a sentence you have not seen numbered in full.'
+      : 'Search fragments by case-insensitive substring. Returns matching IDs and excerpts; call `readFragments` before relying on details or editing.',
+    inputSchema: z.object({
+      query: z.string().min(1).describe('Case-insensitive text to search for in name, description, or content.'),
+      types: z.array(z.string()).optional().describe('Optional fragment types to include. Omit to search all textual fragment types.'),
+      fields: z.array(editableFieldSchema).optional().describe('Fields to search. Defaults to name, description, and content.'),
+      includeArchived: z.boolean().default(false),
+      limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
+    }),
+    execute: withToolLogging('findFragments', storyId, async ({ query, types, fields, includeArchived, limit }: {
+      query: string
+      types?: string[]
+      fields?: EditableField[]
+      includeArchived?: boolean
+      limit?: number
+    }) => {
+      const selectedFields = fields?.length ? fields : ['name', 'description', 'content'] as EditableField[]
+      const typeSet = types?.length ? new Set(types) : null
+      const lowerQuery = query.toLowerCase()
+      const fragments = await listFragments(dataDir, storyId, undefined, { includeArchived: includeArchived ?? false })
+      const matches: Array<{ id: string; type: string; name: string; field: EditableField; excerpt: string; baseHash: string; segment?: number }> = []
+      for (const fragment of fragments) {
+        if (typeSet && !typeSet.has(fragment.type)) continue
+        if (!typeSet && (fragment.type === 'image' || fragment.type === 'icon')) continue
+        for (const field of selectedFields) {
+          const value = fragment[field]
+          const index = value.toLowerCase().indexOf(lowerQuery)
+          if (index === -1) continue
+          // An excerpt is a window, not an addressable unit; the segment it
+          // lands in keeps search on the same coordinates as the citation.
+          const segment = numbered ? sentenceIndexAt(value, index) : null
+          matches.push({
+            id: fragment.id,
+            type: fragment.type,
+            name: sanitizeTextForToolEcho(fragment.name),
+            field,
+            excerpt: sanitizeTextForToolEcho(excerptAround(value, index, query.length)),
+            baseHash: fragmentBaseHash(fragment),
+            ...(segment !== null ? { segment } : {}),
+          })
+          break
+        }
+      }
+      // Counted across every fragment, not stopped at the limit: `total` naming
+      // the returned count told the model its search was exhaustive whenever it
+      // was in fact cut short, and there was no `truncated` to say otherwise.
+      const selected = limit ?? DEFAULT_LIST_LIMIT
+      return {
+        matches: matches.slice(0, selected),
+        total: matches.length,
+        truncated: matches.length > selected,
       }
     }),
   })
 
   tools.listFragments = tool({
-    description: 'List fragments, optionally filtered by type. Returns id, type, name, description for each.',
+    description: 'List fragments with optional filters. Returns summaries only; use `readFragments` for full content before editing or citing details.',
     inputSchema: z.object({
-      type: z.string().optional().describe('Filter by fragment type (e.g. "prose", "character", "guideline", "knowledge"). Omit to list all.'),
+      type: z.string().optional().describe('Optional fragment type filter.'),
+      query: z.string().optional().describe('Optional case-insensitive filter over name and description.'),
+      includeArchived: z.boolean().default(false),
+      limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
     }),
-    execute: withToolLogging('listFragments', storyId, async ({ type }: { type?: string }) => {
-      const fragments = await listFragments(dataDir, storyId, type)
+    execute: withToolLogging('listFragments', storyId, async ({ type, query, includeArchived, limit }: {
+      type?: string
+      query?: string
+      includeArchived?: boolean
+      limit?: number
+    }) => {
+      let fragments = await listFragments(dataDir, storyId, type, { includeArchived: includeArchived ?? false })
+      if (query?.trim()) {
+        const lower = query.trim().toLowerCase()
+        fragments = fragments.filter((fragment) =>
+          fragment.name.toLowerCase().includes(lower) ||
+          fragment.description.toLowerCase().includes(lower),
+        )
+      }
+      const selected = limit ?? DEFAULT_LIST_LIMIT
       return {
-        fragments: fragments.filter((f) => !f.archived).map((f) => ({
-          id: f.id,
-          type: f.type,
-          name: f.name,
-          description: f.description,
-        })),
+        fragments: fragments.slice(0, selected).map(summarizeFragment),
+        total: fragments.length,
+        truncated: fragments.length > selected,
       }
     }),
   })
 
-  tools.searchFragments = tool({
-    description: 'Search for text across all fragments. Returns matching fragment IDs, types, names, and the matched excerpts.',
+  tools.readProseChain = tool({
+    description: 'Read the active prose chain in order, most recent passages first when truncated. Use this for continuity and for scoping prose edits to active prose only.',
     inputSchema: z.object({
-      query: z.string().describe('The text to search for (case-insensitive)'),
-      type: z.string().optional().describe('Limit search to a specific fragment type'),
+      includeContent: z.boolean().default(false).describe('When true, include full content. Otherwise returns summaries and `baseHash` only.'),
+      limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
     }),
-    execute: withToolLogging('searchFragments', storyId, async ({ query, type }: { query: string; type?: string }) => {
-      const fragments = await listFragments(dataDir, storyId, type)
-      const lowerQuery = query.toLowerCase()
-      const matches: Array<{ id: string; type: string; name: string; excerpt: string }> = []
-      for (const f of fragments) {
-        if (f.archived) continue
-        // Image/icon fragments contain binary data or URLs, not searchable text
-        if (!type && (f.type === 'image' || f.type === 'icon')) continue
-        const idx = f.content.toLowerCase().indexOf(lowerQuery)
-        if (idx !== -1) {
-          const start = Math.max(0, idx - 40)
-          const end = Math.min(f.content.length, idx + query.length + 40)
-          matches.push({
-            id: f.id,
-            type: f.type,
-            name: f.name,
-            excerpt: (start > 0 ? '...' : '') + f.content.slice(start, end) + (end < f.content.length ? '...' : ''),
-          })
-        }
+    execute: withToolLogging('readProseChain', storyId, async ({ includeContent, limit }: { includeContent?: boolean; limit?: number }) => {
+      const active = await loadActiveProseFragments(dataDir, storyId)
+      const selected = limit ?? DEFAULT_LIST_LIMIT
+      // The tail, not the head: a long chain truncated from the front returns
+      // the story's opening to a tool whose stated job is current continuity.
+      // `index` stays the position in the whole chain so the numbers still mean
+      // something once the window has moved.
+      const offset = Math.max(active.length - selected, 0)
+      return {
+        fragments: active.slice(offset).map((fragment, position) => ({
+          index: offset + position,
+          ...summarizeFragment(fragment),
+          ...(includeContent ? { content: sanitizeTextForToolEcho(fragment.content) } : {}),
+        })),
+        total: active.length,
+        truncated: offset > 0,
       }
-      return { matches, total: matches.length }
     }),
   })
 
   tools.listFragmentTypes = tool({
-    description: 'List all available fragment types',
+    description: 'List all available built-in and custom fragment types.',
     inputSchema: z.object({}),
     execute: withToolLogging('listFragmentTypes', storyId, async () => {
       const story = await getStory(dataDir, storyId)
@@ -259,14 +386,14 @@ export function createFragmentTools(
             type: t.type,
             prefix: t.prefix,
             stickyByDefault: t.stickyByDefault,
-            name: t.type,
-            description: '',
+            hiddenFromList: t.hiddenFromList ?? false,
             custom: false,
           })),
           ...customTypes.map((t) => ({
             type: t.type,
             prefix: t.type.slice(0, 4).toLowerCase(),
             stickyByDefault: false,
+            hiddenFromList: false,
             name: t.name,
             description: t.description,
             custom: true,
@@ -276,214 +403,81 @@ export function createFragmentTools(
     }),
   })
 
-  // Write tools only when not readOnly
+  tools.readStorySummary = tool({
+    description: 'Read the current rolling story summary. Summary fragments are still editable through `readFragments` and the edit tools.',
+    inputSchema: z.object({}),
+    execute: withToolLogging('readStorySummary', storyId, async () => {
+      const story = await getStory(dataDir, storyId)
+      if (!story) return { ok: false, error: 'Story not found' }
+      const context = await buildContextState(dataDir, storyId, '')
+      const summary = renderSummaryProjection(context.summaryProjection, 'editing') ?? ''
+      const summaryFragments = await listFragments(dataDir, storyId, 'summary')
+      return {
+        ok: true,
+        summary: summary || STORY_SUMMARY_PLACEHOLDER,
+        fragments: summaryFragments.map(summarizeFragment),
+      }
+    }),
+  })
+
   if (!readOnly) {
-    tools.createFragment = tool({
-      description: 'Create a new fragment (character, guideline, knowledge, prose, image, icon, or plugin type)',
-      inputSchema: z.object({
-        type: z.string().describe('Fragment type, e.g. character, guideline, knowledge, prose'),
-        name: z.string().max(100).describe('Fragment name/title'),
-        description: z.string().max(250).describe('Short description (max 250 chars)'),
-        content: z.string().describe('Full fragment content'),
-      }),
-      execute: withToolLogging('createFragment', storyId, async ({ type, name, description, content }) => {
-        // Reject unregistered types so the LLM can't mint fragments with a type
-        // that has no registry entry (breaks IDs, visuals, tools, rendering).
-        if (!registry.getType(type)) {
-          const story = await getStory(dataDir, storyId)
-          const isCustom = story?.settings.customFragmentTypes?.some((t) => t.type === type) ?? false
-          if (!isCustom) {
-            const known = registry.listTypes().map((t) => t.type).join(', ')
-            return { error: `Unknown fragment type "${type}". Known types: ${known}` }
-          }
-        }
-        const id = generateFragmentId(type)
-        const now = new Date().toISOString()
-        const fragment: Fragment = {
-          id,
-          type,
-          name,
-          description,
-          content,
-          tags: [],
-          refs: [],
-          sticky: registry.getType(type)?.stickyByDefault ?? false,
-          placement: 'user',
-          createdAt: now,
-          updatedAt: now,
-          order: 0,
-          meta: {},
-          archived: false,
-          version: 1,
-          versions: [],
-        }
-        await createFragmentInStorage(dataDir, storyId, fragment)
-        return { ok: true, id, type }
-      }),
-    })
-
-    tools.updateFragment = tool({
-      description: 'Overwrite a fragment with entirely new content',
-      inputSchema: z.object({
-        fragmentId: z.string().describe('The fragment ID'),
-        newContent: z.string().describe('The new content to set'),
-        newDescription: z.string().max(250).describe('Updated description (max 250 chars)'),
-      }),
-      execute: withToolLogging('updateFragment', storyId, async ({ fragmentId, newContent, newDescription }) => {
-        const fragment = await getFragment(dataDir, storyId, fragmentId)
-        if (!fragment) {
-          return { error: `Fragment not found: ${fragmentId}` }
-        }
-        const protection = checkFragmentWrite(fragment, { content: newContent })
-        if (!protection.allowed) return { error: protection.reason }
-        const updated = await updateFragmentVersioned(
-          dataDir,
-          storyId,
-          fragmentId,
-          {
-            content: newContent,
-            description: newDescription,
-          },
-          { reason: 'llm-updateFragment' },
-        )
-        if (!updated) {
-          return { error: `Fragment not found: ${fragmentId}` }
-        }
-        await scheduleProseReanalysis(dataDir, storyId, fragment, updated)
-        return { ok: true, id: fragmentId }
-      }),
-    })
-
-    tools.editFragment = tool({
-      description:
-        'Edit a fragment by replacing a specific text span (for large prose/knowledge)',
-      inputSchema: z.object({
-        fragmentId: z.string().describe('The fragment ID'),
-        oldText: z.string().describe('The exact text to find and replace'),
-        newText: z.string().describe('The replacement text'),
-      }),
-      execute: withToolLogging('editFragment', storyId, async ({ fragmentId, oldText, newText }) => {
-        const fragment = await getFragment(dataDir, storyId, fragmentId)
-        if (!fragment) {
-          return { error: `Fragment not found: ${fragmentId}` }
-        }
-        if (!fragment.content.includes(oldText)) {
-          return { error: `Text not found in fragment ${fragmentId}: "${oldText}"` }
-        }
-        const editedContent = fragment.content.replace(oldText, newText)
-        const protection = checkFragmentWrite(fragment, { content: editedContent })
-        if (!protection.allowed) return { error: protection.reason }
-        const updated = await updateFragmentVersioned(
-          dataDir,
-          storyId,
-          fragmentId,
-          { content: editedContent },
-          { reason: 'llm-editFragment' },
-        )
-        if (!updated) {
-          return { error: `Fragment not found: ${fragmentId}` }
-        }
-        await scheduleProseReanalysis(dataDir, storyId, fragment, updated)
-        return { ok: true, id: fragmentId }
-      }),
-    })
-
-    tools.deleteFragment = tool({
-      description: 'Delete a fragment',
-      inputSchema: z.object({
-        fragmentId: z.string().describe('The fragment ID to delete'),
-      }),
-      execute: withToolLogging('deleteFragment', storyId, async ({ fragmentId }) => {
-        const fragment = await getFragment(dataDir, storyId, fragmentId)
-        if (fragment && isFragmentLocked(fragment)) {
-          return { error: 'Fragment is locked and cannot be modified by AI tools.' }
-        }
-        await deleteFragment(dataDir, storyId, fragmentId)
-        return { ok: true, id: fragmentId }
+    tools.editFragments = tool({
+      description: `Create, edit, append to, whole-field rewrite, or archive memory fragments via \`operations\`. ${OPERATION_GUIDANCE} Applies atomically per target fragment and returns per-operation diffs; invalid targets are skipped and reported. Not for prose — use editProse.`,
+      inputSchema: proposeFragmentChangesSchema,
+      execute: withToolLogging('editFragments', storyId, async ({ title, rationale, operations }) => {
+        const { appliedResults, appliedChanges } = await applyOperationsWithSnapshot(dataDir, storyId, operations, {
+          onFragmentUpdated: reanalyzeAfterProseChange.bind(null, dataDir, storyId),
+        })
+        return editResponse(appliedResults, appliedChanges, {
+          ...(title?.trim() ? { title: title.trim() } : {}),
+          ...(rationale?.trim() ? { rationale: rationale.trim() } : {}),
+        })
       }),
     })
 
     tools.editProse = tool({
-      description:
-        'Search and replace text across active prose fragments in the story chain. Scans every active prose fragment for oldText and replaces with newText. Returns which fragments were modified. Use this for sweeping prose edits — no need to specify fragment IDs.',
+      description: 'Apply exact search/replace edits across active prose only. Scans active prose, expands each match into fragment-specific edits, applies them atomically, and returns diffs. Edits whose oldText matches no active prose are reported as unmatched.',
       inputSchema: z.object({
-        oldText: z.string().describe('The exact text to find (matched as-is across active prose)'),
-        newText: z.string().describe('The replacement text'),
+        edits: z.array(proseReplaceSchema).min(1).max(MAX_BATCH_OPERATIONS),
       }),
-      execute: withToolLogging('editProse', storyId, async ({ oldText, newText }) => {
-        // Only edit prose in the active chain, not inactive variations
-        const activeIds = await getActiveProseIds(dataDir, storyId)
-        const proseFragments: Fragment[] = []
-        if (activeIds.length > 0) {
-          for (const id of activeIds) {
-            const f = await getFragment(dataDir, storyId, id)
-            if (f && !f.archived) proseFragments.push(f)
+      execute: withToolLogging('editProse', storyId, async ({ edits }) => {
+        const active = await loadActiveProseFragments(dataDir, storyId)
+        const operations: FragmentChangeOperation[] = []
+        const unmatched: Array<{ oldText: string; reason: string }> = []
+        for (const edit of edits) {
+          let matchCount = 0
+          for (const fragment of active) {
+            const count = findOccurrences(fragment.content, edit.oldText).length
+            if (count === 0) continue
+            matchCount += count
+            operations.push({
+              action: 'replace_text',
+              fragmentId: fragment.id,
+              field: 'content',
+              oldText: edit.oldText,
+              newText: edit.newText,
+              replaceAll: edit.replaceAll,
+              occurrence: edit.occurrence,
+              reason: edit.reason,
+            })
           }
-        } else {
-          // Fallback: no chain yet, use all prose
-          const all = await listFragments(dataDir, storyId, 'prose')
-          proseFragments.push(...all.filter(f => !f.archived))
-        }
-
-        const edited: string[] = []
-        const skipped: string[] = []
-        for (const f of proseFragments) {
-          if (f.content.includes(oldText)) {
-            const newContent = f.content.replace(oldText, newText)
-            const protection = checkFragmentWrite(f, { content: newContent })
-            if (!protection.allowed) {
-              skipped.push(f.id)
-              continue
-            }
-            // Versioned write so the edit is captured in undo history, like the
-            // single-fragment write tools.
-            const updated = await updateFragmentVersioned(
-              dataDir,
-              storyId,
-              f.id,
-              { content: newContent },
-              { reason: 'llm-editProse' },
-            )
-            // Fragment may have been deleted between read and write
-            if (!updated) continue
-            edited.push(f.id)
-            await scheduleProseReanalysis(dataDir, storyId, f, updated)
+          if (matchCount === 0) {
+            unmatched.push({ oldText: truncateText(edit.oldText, 120), reason: 'No active prose fragment contains oldText.' })
           }
         }
-        if (edited.length === 0 && skipped.length === 0) {
-          return { error: `Text not found in any active prose fragment: "${oldText.slice(0, 80)}"` }
-        }
-        if (edited.length === 0 && skipped.length > 0) {
-          return { error: `Text found but all matching fragments are protected (locked or have frozen sections): ${skipped.join(', ')}` }
-        }
-        return { ok: true, editedFragments: edited, count: edited.length, ...(skipped.length > 0 ? { skippedProtected: skipped } : {}) }
-      }),
-    })
 
-    tools.getStorySummary = tool({
-      description: 'Get the current rolling story summary',
-      inputSchema: z.object({}),
-      execute: withToolLogging('getStorySummary', storyId, async () => {
-        const story = await getStory(dataDir, storyId)
-        if (!story) return { error: 'Story not found' }
-        return { summary: story.summary || '(No summary yet)' }
-      }),
-    })
+        // No matches is the same outcome as every match failing — nothing was
+        // written — so it reports through the same envelope rather than a shape
+        // of its own that happens to omit `readFragmentIds`.
+        if (operations.length === 0) {
+          return editResponse([], [], { unmatched, note: 'No active prose contains any of the given oldText.' })
+        }
 
-    tools.updateStorySummary = tool({
-      description: 'Replace the story\'s rolling summary with a new version. Use this to rewrite, condense, or correct the summary.',
-      inputSchema: z.object({
-        summary: z.string().describe('The new story summary text'),
-      }),
-      execute: withToolLogging('updateStorySummary', storyId, async ({ summary }: { summary: string }) => {
-        const story = await getStory(dataDir, storyId)
-        if (!story) return { error: 'Story not found' }
-        await updateStory(dataDir, {
-          ...story,
-          summary,
-          updatedAt: new Date().toISOString(),
+        const { appliedResults, appliedChanges } = await applyOperationsWithSnapshot(dataDir, storyId, operations, {
+          allowProseEdits: true,
+          onFragmentUpdated: reanalyzeAfterProseChange.bind(null, dataDir, storyId),
         })
-        return { ok: true, summaryLength: summary.length }
+        return editResponse(appliedResults, appliedChanges, unmatched.length > 0 ? { unmatched } : {})
       }),
     })
   }

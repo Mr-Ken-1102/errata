@@ -5,11 +5,20 @@
  * so each agent can compose its context from reusable pieces.
  */
 
-import type { ContextBlock } from '../llm/context-builder'
-import type { AgentBlockContext } from './agent-block-context'
+import { getFragmentVoice, type ContextBlock } from '../llm/context-builder'
+import { type AgentBlockContext, baseBlockContext } from './agent-block-context'
 import type { Fragment } from '../fragments/schema'
 import { buildContextState } from '../llm/context-builder'
+import {
+  joinMarkdownBlocks,
+  markdownSection,
+  proseWindowContent,
+  storyHeaderContent,
+  STORY_SUMMARY_HEADING,
+} from '../llm/fragment-context-blocks'
 import { instructionRegistry } from '../instructions'
+import { fragmentBaseHash } from '../fragments/change-operations'
+import { renderSummaryProjection, type SummaryReader } from '../librarian/summary-projection'
 
 // ─── Block helpers ───
 
@@ -30,43 +39,26 @@ export function systemFragmentsBlock(ctx: AgentBlockContext): ContextBlock | nul
   return {
     id: 'system-fragments',
     role: 'system',
-    content: ctx.systemPromptFragments.map(frag => `## ${frag.name}\n${frag.content}`).join('\n\n'),
+    content: markdownSection(2, 'System Prompt Fragments',
+      ctx.systemPromptFragments.map((frag) => markdownSection(3, frag.name, frag.content))
+    ),
     order: 200,
     source: 'builtin',
   }
 }
 
-/** Story name, description, and summary. */
-export function storyInfoBlock(ctx: AgentBlockContext): ContextBlock {
-  const parts = [`## Story: ${ctx.story.name}`, ctx.story.description]
-  if (ctx.story.summary) {
-    parts.push(`\n## Story Summary\n${ctx.story.summary}`)
+/** Story identity plus the reader-specific memory projection. */
+export function storyInfoBlock(ctx: AgentBlockContext, reader: SummaryReader = 'editing'): ContextBlock {
+  const parts = [storyHeaderContent(ctx.story)]
+  const summary = renderSummaryProjection(ctx.summaryProjection, reader)
+  if (summary) {
+    parts.push(markdownSection(2, STORY_SUMMARY_HEADING, summary))
   }
   return {
     id: 'story-info',
     role: 'user',
-    content: parts.join('\n'),
+    content: joinMarkdownBlocks(parts),
     order: 100,
-    source: 'builtin',
-  }
-}
-
-/** Sticky guidelines, knowledge, and characters. */
-export function stickyFragmentsBlock(ctx: AgentBlockContext): ContextBlock | null {
-  const all = [
-    ...ctx.stickyGuidelines,
-    ...ctx.stickyKnowledge,
-    ...ctx.stickyCharacters,
-  ]
-  if (all.length === 0) return null
-  return {
-    id: 'sticky-fragments',
-    role: 'user',
-    content: [
-      '## Active Context Fragments',
-      ...all.map(f => `- ${f.id}: ${f.name} — ${f.description}`),
-    ].join('\n'),
-    order: 300,
     source: 'builtin',
   }
 }
@@ -75,34 +67,35 @@ export function stickyFragmentsBlock(ctx: AgentBlockContext): ContextBlock | nul
 export function recentProseBlock(ctx: AgentBlockContext): ContextBlock | null {
   if (ctx.proseFragments.length === 0) return null
   return {
-    id: 'prose',
+    id: 'prose-recent',
     role: 'user',
-    content: [
-      '## Recent Prose',
-      ...ctx.proseFragments.map(p => `### ${p.name} (${p.id})\n${p.content}`),
-    ].join('\n'),
+    content: proseWindowContent(ctx.proseFragments, { includeFragmentHeadings: true }),
     order: 200,
     source: 'builtin',
   }
 }
 
+/** Render compact prose previews for chat-style contexts. */
+export function renderProseSummariesText(proseFragments: Fragment[], header: string): string {
+  if (proseFragments.length === 0) return ''
+  const rows: string[] = []
+  for (const p of proseFragments) {
+    if (p.content.length < 600) {
+      rows.push(`- ${p.id}: \n${p.content}`)
+    } else {
+      rows.push(`- ${p.id}: ${p.content.slice(0, 500).replace(/\n/g, ' ')}... [truncated]`)
+    }
+  }
+  return joinMarkdownBlocks([header, rows.join('\n')])
+}
+
 /** Prose summaries with librarian-summary fallback (for chat-style contexts). */
 export function proseSummariesBlock(ctx: AgentBlockContext, header: string): ContextBlock | null {
   if (ctx.proseFragments.length === 0) return null
-  const parts = [header]
-  for (const p of ctx.proseFragments) {
-    if ((p.meta._librarian as { summary?: string })?.summary) {
-      parts.push(`- ${p.id}: ${(p.meta._librarian as { summary?: string }).summary ?? 'No summary available'}`)
-    } else if (p.content.length < 600) {
-      parts.push(`- ${p.id}: \n${p.content}`)
-    } else {
-      parts.push(`- ${p.id}: ${p.content.slice(0, 500).replace(/\n/g, ' ')}... [truncated]`)
-    }
-  }
   return {
     id: 'prose-summaries',
     role: 'user',
-    content: parts.join('\n'),
+    content: renderProseSummariesText(ctx.proseFragments, header),
     order: 200,
     source: 'builtin',
   }
@@ -115,51 +108,29 @@ export function targetFragmentBlock(
   defaultGuidance: string,
 ): ContextBlock | null {
   if (!ctx.targetFragment) return null
-  const parts = [`Target ${label}: ${ctx.targetFragment.id} (type: ${ctx.targetFragment.type}, name: "${ctx.targetFragment.name}")`]
-  if (ctx.instructions) {
-    parts.push(`\nUser instructions: ${ctx.instructions}`)
-  } else {
-    parts.push(`\n${defaultGuidance}`)
-  }
+  const voice = ctx.targetFragment.type === 'character'
+    ? getFragmentVoice(ctx.targetFragment)
+    : undefined
+  const fragmentSnapshot = [
+    `ID: ${ctx.targetFragment.id}`,
+    `Type: ${ctx.targetFragment.type}`,
+    `Name: "${ctx.targetFragment.name}"`,
+    `Description: ${ctx.targetFragment.description}`,
+    `Version: ${ctx.targetFragment.version ?? 1}`,
+    `Base hash: ${fragmentBaseHash(ctx.targetFragment)}`,
+    markdownSection(3, 'Current Content', ctx.targetFragment.content || '(empty)'),
+    ...(voice ? [markdownSection(3, 'POV Voice Notes', voice)] : []),
+  ].join('\n')
+  const guidance = ctx.instructions
+    ? markdownSection(3, 'User Instructions', ctx.instructions)
+    : markdownSection(3, 'Default Guidance', defaultGuidance)
   return {
     id: 'target',
     role: 'user',
-    content: parts.join('\n'),
-    order: 400,
-    source: 'builtin',
-  }
-}
-
-/** All characters list for cross-reference. */
-export function allCharactersBlock(ctx: AgentBlockContext): ContextBlock | null {
-  if (!ctx.allCharacters || ctx.allCharacters.length === 0) return null
-  return {
-    id: 'all-characters',
-    role: 'user',
-    content: [
-      '## All Characters',
-      ...ctx.allCharacters.map(c => `- ${c.id}: ${c.name} — ${c.description}`),
-    ].join('\n'),
-    order: 350,
-    source: 'builtin',
-  }
-}
-
-/** Shortlist fragments (guidelines, knowledge, characters not in sticky). */
-export function shortlistBlock(ctx: AgentBlockContext): ContextBlock | null {
-  const all = [
-    ...ctx.guidelineShortlist,
-    ...ctx.knowledgeShortlist,
-    ...ctx.characterShortlist,
-  ]
-  if (all.length === 0) return null
-  return {
-    id: 'shortlist',
-    role: 'user',
-    content: [
-      '## Other Available Fragments',
-      ...all.map(f => `- ${f.id}: ${f.name} — ${f.description}`),
-    ].join('\n'),
+    content: markdownSection(2, `Target ${label}`, [
+      fragmentSnapshot,
+      guidance,
+    ]),
     order: 400,
     source: 'builtin',
   }
@@ -185,21 +156,16 @@ export async function buildBasePreviewContext(
 ): Promise<AgentBlockContext> {
   const ctxState = await buildContextState(dataDir, storyId, '')
   return {
-    story: ctxState.story,
-    proseFragments: ctxState.proseFragments,
-    stickyGuidelines: ctxState.stickyGuidelines,
-    stickyKnowledge: ctxState.stickyKnowledge,
-    stickyCharacters: ctxState.stickyCharacters,
-    guidelineShortlist: ctxState.guidelineShortlist,
-    knowledgeShortlist: ctxState.knowledgeShortlist,
-    characterShortlist: ctxState.characterShortlist,
+    ...baseBlockContext(ctxState, ctxState.story),
     systemPromptFragments: [],
   }
 }
 
 /**
  * Load fragments tagged 'pass-to-librarian-system-prompt' for a story.
- * Used by analyze, chat, and directions preview contexts.
+ * Used only by Librarian analyze and Librarian chat. The tag is intentionally
+ * not a general editorial instruction surface: refinement, optimization, and
+ * direction generation have narrower prompts and should not inherit it.
  */
 export async function loadSystemPromptFragments(
   dataDir: string,

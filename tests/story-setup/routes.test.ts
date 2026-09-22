@@ -1,21 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTempDir, makeTestSettings, seedTestProvider } from '../setup'
 import { createFragment, createStory, getStory, listFragments } from '@/server/fragments/storage'
-import { getProseChain } from '@/server/fragments/prose-chain'
 import { syncStorySetupSnapshot } from '@/server/story-setup/sync'
 import type { StoryMeta } from '@/server/fragments/schema'
 
-const { mockAgentCtor, mockAgentStream, mockGenerateText } = vi.hoisted(() => ({
+const { mockAgentCtor, mockAgentStream } = vi.hoisted(() => ({
   mockAgentCtor: vi.fn(),
   mockAgentStream: vi.fn(),
-  mockGenerateText: vi.fn(),
 }))
 
 vi.mock('ai', async () => {
   const actual = await vi.importActual<typeof import('ai')>('ai')
   return {
     ...actual,
-    generateText: mockGenerateText,
     ToolLoopAgent: class MockToolLoopAgent {
       constructor(config: unknown) {
         mockAgentCtor(config)
@@ -35,7 +32,6 @@ function makeStory(): StoryMeta {
     name: 'New Story',
     description: '',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -77,7 +73,7 @@ describe('story setup routes', () => {
     await cleanup()
   })
 
-  it('lets the model open the conversation with a focused question', async () => {
+  it('assesses existing material before opening with a focused question', async () => {
     mockChatResponse('What are you starting with: a premise, a character, a scene, or only a mood?')
 
     const response = await app.fetch(new Request(
@@ -98,7 +94,7 @@ describe('story setup routes', () => {
       }),
     }))
     expect(mockAgentStream).toHaveBeenCalledWith(expect.objectContaining({
-      messages: [{ role: 'user', content: expect.stringContaining('Begin the story setup conversation') }],
+      messages: [{ role: 'user', content: expect.stringContaining('Assess the checklist against the current story material') }],
     }))
   })
 
@@ -130,17 +126,49 @@ describe('story setup routes', () => {
     }))
   })
 
-  it('includes writer-created character and guideline fragments as read-only context', async () => {
+  it('keeps assessment turns read-only until the writer responds', async () => {
+    mockChatResponse('What part of this idea would you like to sharpen?')
+
+    const response = await app.fetch(new Request(
+      'http://localhost/api/stories/story-setup-test/setup/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [], mode: 'assess' }),
+      },
+    ))
+
+    expect(response.status).toBe(200)
+    const config = mockAgentCtor.mock.calls.at(-1)?.[0] as {
+      tools: {
+        updateStorySetup: {
+          execute: (input: {
+            checklist: Array<{ key: string; status: string; note: string }>
+          }) => Promise<{ saved: boolean; checklist: Array<{ key: string; status: string; note: string }> }>
+        }
+      }
+    }
+    const result = await config.tools.updateStorySetup.execute({
+      checklist: [{ key: 'starting-point', status: 'partial', note: 'A clue' }],
+    })
+
+    expect(result.saved).toBe(false)
+    expect(result.checklist).toEqual([{ key: 'starting-point', status: 'partial', note: 'A clue' }])
+    expect((await getStory(dataDir, 'story-setup-test'))?.name).toBe('New Story')
+    expect(await listFragments(dataDir, 'story-setup-test')).toEqual([])
+  })
+
+  it('uses writer-owned fragments to assess coverage without treating them as setup drafts', async () => {
     const now = new Date().toISOString()
     await createFragment(dataDir, 'story-setup-test', {
-      id: 'ch-orin',
+      id: 'character-victoria',
       type: 'character',
-      name: 'Orin Vale',
-      description: 'Cartographer hiding a royal lineage',
-      content: 'Orin refuses every title and maps roads that no longer exist.',
+      name: 'Crown Princess Victoria',
+      description: 'Heir balancing public duty and private identity',
+      content: 'Victoria is the established protagonist and heir apparent.',
       tags: [],
       refs: [],
-      sticky: false,
+      sticky: true,
       placement: 'user',
       createdAt: now,
       updatedAt: now,
@@ -150,25 +178,7 @@ describe('story setup routes', () => {
       version: 1,
       versions: [],
     })
-    await createFragment(dataDir, 'story-setup-test', {
-      id: 'gl-voice',
-      type: 'guideline',
-      name: 'Narrative voice',
-      description: 'Close third person in present tense',
-      content: 'Stay close to Orin and keep the prose restrained and tactile.',
-      tags: [],
-      refs: [],
-      sticky: true,
-      placement: 'system',
-      createdAt: now,
-      updatedAt: now,
-      order: 1,
-      meta: {},
-      archived: false,
-      version: 1,
-      versions: [],
-    })
-    mockChatResponse('What danger is Orin mapping toward?')
+    mockChatResponse('Which unresolved pressure on Victoria would you like to explore?')
 
     const response = await app.fetch(new Request(
       'http://localhost/api/stories/story-setup-test/setup/chat',
@@ -181,9 +191,14 @@ describe('story setup routes', () => {
 
     expect(response.status).toBe(200)
     expect(mockAgentCtor).toHaveBeenCalledWith(expect.objectContaining({
-      instructions: expect.stringMatching(
-        /Existing writer-created fragments[\s\S]*Orin Vale[\s\S]*roads that no longer exist[\s\S]*Narrative voice[\s\S]*restrained and tactile/,
-      ),
+      instructions: expect.stringMatching(/writer-owned context blocks[\s\S]*read-only/),
+    }))
+    expect(mockAgentStream).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          content: expect.stringMatching(/Existing Writer-Owned Story Material[\s\S]*Crown Princess Victoria[\s\S]*established protagonist/),
+        }),
+      ]),
     }))
   })
 
@@ -281,98 +296,4 @@ describe('story setup routes', () => {
     expect(mockAgentStream).toHaveBeenCalledWith(expect.objectContaining({ messages }))
   })
 
-  it('turns the conversation into validated story fragments only when requested', async () => {
-    mockGenerateText.mockResolvedValue({
-      toolCalls: [{
-        toolName: 'submitStorySetupPlan',
-        input: {
-        name: 'The Memory Courier',
-        description: 'A courier must deliver a stolen memory before it rewrites her past.',
-        guideline: 'Close third person through Mara. Tense, tactile prose with restrained exposition.',
-        knowledge: [{
-          name: 'Memory trade',
-          description: 'Rules of bought memories',
-          content: 'Memories can be copied, sold, and altered. Copies decay each time they change hands.',
-        }],
-        characters: [{
-          name: 'Mara Venn',
-          description: 'Courier with a missing past',
-          content: 'Mara is a careful black-market courier who has gaps in her own childhood memories.',
-        }],
-        opening: 'Mara knew the memory was stolen because it was still warm.',
-        },
-      }],
-      totalUsage: undefined,
-    })
-
-    const response = await app.fetch(new Request(
-      'http://localhost/api/stories/story-setup-test/setup/complete',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'assistant', content: 'What are you starting with?' },
-            { role: 'user', content: 'A courier named Mara carrying a stolen memory.' },
-          ],
-          draftFragments: [{
-            key: 'mara',
-            type: 'character',
-            name: 'Mara Venn',
-            description: 'Courier with a missing past',
-            content: 'Mara is a careful black-market courier.',
-          }],
-        }),
-      },
-    ))
-
-    expect(response.status).toBe(200)
-    expect(mockGenerateText).toHaveBeenCalledWith(expect.objectContaining({
-      system: expect.stringContaining('Mara Venn'),
-      tools: expect.objectContaining({ submitStorySetupPlan: expect.anything() }),
-      toolChoice: { type: 'tool', toolName: 'submitStorySetupPlan' },
-    }))
-    expect(mockGenerateText.mock.calls[0][0]).not.toHaveProperty('output')
-    const body = await response.json() as { created: Array<{ type: string; name: string }> }
-    expect(body.created.map(item => item.type)).toEqual([
-      'guideline',
-      'knowledge',
-      'character',
-      'prose',
-    ])
-
-    const story = await getStory(dataDir, 'story-setup-test')
-    expect(story?.name).toBe('The Memory Courier')
-    expect(story?.description).toContain('stolen memory')
-
-    const fragments = await listFragments(dataDir, 'story-setup-test')
-    expect(fragments).toHaveLength(4)
-    expect(fragments.find(fragment => fragment.type === 'guideline')).toMatchObject({
-      sticky: true,
-      placement: 'system',
-    })
-    expect(fragments.find(fragment => fragment.type === 'character')).toMatchObject({
-      sticky: true,
-      name: 'Mara Venn',
-    })
-
-    const chain = await getProseChain(dataDir, 'story-setup-test')
-    expect(chain?.entries).toHaveLength(1)
-  })
-
-  it('requires at least one user answer before creating the story', async () => {
-    const response = await app.fetch(new Request(
-      'http://localhost/api/stories/story-setup-test/setup/complete',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'assistant', content: 'What are you starting with?' }],
-        }),
-      },
-    ))
-
-    expect(response.status).toBe(422)
-    expect(mockGenerateText).not.toHaveBeenCalled()
-  })
 })

@@ -12,19 +12,19 @@ function makeState(overrides: Partial<ContextBuildState> = {}): ContextBuildStat
       name: 'Test Story',
       description: 'A test story',
     coverImage: null,
-      summary: '',
       createdAt: now,
       updatedAt: now,
       settings: makeTestSettings(),
     },
     proseFragments: [],
-    chapterSummaries: [],
     stickyGuidelines: [],
     stickyKnowledge: [],
     stickyCharacters: [],
-    guidelineShortlist: [],
-    knowledgeShortlist: [],
-    characterShortlist: [],
+    recentCharacters: [],
+    guidelineCatalog: [],
+    knowledgeCatalog: [],
+    characterCatalog: [],
+    customFragmentCatalogs: [],
     authorInput: 'Continue the story',
     ...overrides,
   }
@@ -157,6 +157,13 @@ describe('applyBlockConfig', () => {
   })
 
   it('applies content override', async () => {
+    const blocks = makeBlocks()
+    blocks[0].fragmentContext = {
+      mode: 'full',
+      scope: 'all',
+      fragmentType: 'mixed',
+      fragmentIds: ['gl-0001'],
+    }
     const config: BlockConfig = {
       customBlocks: [],
       overrides: {
@@ -164,9 +171,10 @@ describe('applyBlockConfig', () => {
       },
       blockOrder: [],
     }
-    const result = await applyBlockConfig(makeBlocks(), config, makeState())
+    const result = await applyBlockConfig(blocks, config, makeState())
     const inst = result.find(b => b.id === 'instructions')
     expect(inst!.content).toBe('New instructions')
+    expect(inst!.fragmentContext).toBeUndefined()
   })
 
   it('applies content prepend', async () => {

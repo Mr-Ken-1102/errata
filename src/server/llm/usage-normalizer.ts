@@ -1,4 +1,6 @@
 import type { TokenUsage } from './generation-logs'
+import { recordServedModel } from './served-models'
+import { reportUsage } from './token-tracker'
 
 function toNumber(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined
@@ -43,4 +45,53 @@ export function normalizeTokenUsage(rawUsage: unknown): TokenUsage | undefined {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,
   }
+}
+
+/**
+ * Await a stream's `totalUsage`, normalize it, and report it — the
+ * try/await/normalize/report/catch sequence every agent needs once its stream
+ * completes, in one place so a new call site can't quietly skip it (librarian
+ * chat did, until this was centralized). Swallows failures: some providers
+ * never resolve usage. Returns the normalized usage so callers that also need
+ * the value (a saved generation log, a returned result field) don't re-derive it.
+ */
+export async function resolveAndReportUsage(
+  dataDir: string,
+  storyId: string,
+  source: string,
+  totalUsage: PromiseLike<unknown>,
+  modelId?: string,
+): Promise<TokenUsage | undefined> {
+  try {
+    const usage = normalizeTokenUsage(await totalUsage)
+    if (usage) reportUsage(dataDir, storyId, source, usage, modelId)
+    return usage
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Attribute a completed response to the model the provider says served it, then
+ * report its usage under that same identity. Keeping those operations together
+ * prevents logs and token totals from disagreeing about which model answered.
+ */
+export async function resolveAndReportServedUsage(
+  dataDir: string,
+  storyId: string,
+  source: string,
+  totalUsage: PromiseLike<unknown>,
+  attribution: {
+    providerId: string | null
+    configuredModelId: string
+    servedModelId?: string
+  },
+): Promise<{ modelId: string; usage: TokenUsage | undefined }> {
+  const modelId = recordServedModel(
+    attribution.providerId,
+    attribution.configuredModelId,
+    attribution.servedModelId,
+  )
+  const usage = await resolveAndReportUsage(dataDir, storyId, source, totalUsage, modelId)
+  return { modelId, usage }
 }

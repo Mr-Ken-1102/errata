@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Fragment, type StoryMeta } from '@/lib/api'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 import type { ErratanetAccount, ErratanetConfigResponse } from '@/lib/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,7 @@ interface ErratanetPanelProps {
  */
 export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps) {
   const qc = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
 
   const { data: config } = useQuery({
     queryKey: ['erratanet-config'],
@@ -74,21 +76,9 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
   // Fragments + media are needed to re-sync a fragment pack; only fetch them
   // when this story has packs to sync (the query keys are shared/cached).
   const needFragments = connected && fragmentPacks.length > 0
-  const { data: allFragments = [] } = useQuery({
-    queryKey: ['fragments', storyId],
-    queryFn: () => api.fragments.list(storyId),
-    enabled: needFragments,
-  })
-  const { data: imageFrags = [] } = useQuery({
-    queryKey: ['fragments', storyId, 'image'],
-    queryFn: () => api.fragments.list(storyId, 'image'),
-    enabled: needFragments,
-  })
-  const { data: iconFrags = [] } = useQuery({
-    queryKey: ['fragments', storyId, 'icon'],
-    queryFn: () => api.fragments.list(storyId, 'icon'),
-    enabled: needFragments,
-  })
+  const { data: allFragments = [] } = useQuery({ ...q.fragments(storyId, branchId), enabled: needFragments })
+  const { data: imageFrags = [] } = useQuery({ ...q.fragments(storyId, branchId, 'image'), enabled: needFragments })
+  const { data: iconFrags = [] } = useQuery({ ...q.fragments(storyId, branchId, 'icon'), enabled: needFragments })
   const fragmentById = useMemo(() => {
     const m = new Map<string, Fragment>()
     for (const f of allFragments) m.set(f.id, f)

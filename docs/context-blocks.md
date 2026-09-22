@@ -43,7 +43,7 @@ Two marker formats are used:
 
 ```
 [@block=instructions]
-You are a creative writing assistant...
+You are a fiction writer continuing an ongoing story...
 
 [@block=tools]
 ## Available Tools
@@ -55,9 +55,9 @@ Write in present tense, third person limited.
 
 Other marker types used within block content:
 
-- `[@section=Label]` — sub-sections within a block (e.g. Guidelines/Knowledge/Characters groupings inside `system-fragments` or `user-fragments`)
-- `[@fragment=id]` — individual fragment content
 - `[@plugin=name]` — plugin-contributed tool descriptions
+
+Block *content* carries no markers beyond these. Grouped fragment context uses a consistent hierarchy: `##` for the block, `###` for the fragment type or group, and `####` for each full fragment sheet. Headings are separated from the next heading or body by one blank line. Catalog entries are not headings; they are plain `` `id` | name | desc `` rows. Full literary renders keep ids off the page, while editing agents use `renderFullFragmentSheet` for id-bearing `####` headings.
 
 ## Default Blocks
 
@@ -66,22 +66,57 @@ Other marker types used within block content:
 | Block ID | Role | Order | Content |
 |---|---|---|---|
 | `instructions` | system | 100 | Writing assistant instructions |
-| `tools` | system | 200 | Available tools listing |
+| `tools` | system | 200 | Tool usage guidance |
 | `system-fragments` | system | 300 | System-placed sticky fragments |
 | `story-info` | user | 100 | Story name + description |
-| `summary` | user | 200 | Story summary (omitted if empty) |
-| `user-fragments` | user | 300 | User-placed sticky fragments |
-| `shortlist-guidelines` | user | 400 | Non-sticky guideline shortlist |
-| `shortlist-knowledge` | user | 410 | Non-sticky knowledge shortlist |
-| `shortlist-characters` | user | 420 | Non-sticky character shortlist |
-| `prose` | user | 500 | Recent prose chain |
+| `user-fragments` | user | 200 | User-placed sticky fragments |
+| `fragment-recent` | user | 308 | One full-context block with per-type sections for fragments active in recent context |
+| `fragment-catalog` | user | 330 | One compact catalog block with per-type sections for non-full fragments |
+| `summary` | user | 400 | Story summary (omitted if empty) |
+| `chapter-summaries` | user | 410 | Chapter/arc summaries overlapping the prose window |
+| `prose-recent` | user | 500 | Recent prose chain |
 | `author-input` | user | 600 | Author's direction |
 
-Order gaps of 100 leave room for inserting custom blocks between existing ones.
+Orders leave space around major prompt phases; closely related fragment blocks
+sit near each other so full context and catalogs stay together.
+
+`prose-recent` has two intentional render modes:
+
+- Writer/directions prose windows keep prose as continuous manuscript text under `## Recent Prose`, followed by `## End of Recent Prose`.
+- Editing and analysis agents that need fragment identity render each prose fragment as `### Name (id)` followed by the prose body.
+
+## Content tiering
+
+Fragments enter context at one of three depths, by **relevance** and runner
+authority:
+
+- **Full** — the entire body is inlined. Used for **sticky** fragments (always
+  relevant) and promoted attention candidates — fragments the runner profile
+  has selected for full context. These render in semantic aggregate blocks such
+  as `fragment-pinned`, `fragment-recent`, `fragment-writer-context`, or
+  `fragment-candidates`, each grouped by type. Writer provenance comes from
+  the versioned context receipt, a type-agnostic record the Writer saves on each prose
+  fragment's `meta`.
+- **Catalog** — one line per fragment (`` `id` | name | desc ``), grouped by
+  type in a summary-index block such as `fragment-catalog` or
+  `fragment-pinned-catalog`. Used for non-full fragments and scoped lookup
+  surfaces.
+- **On demand** — not in context at all; the agent fetches with `readFragments`.
+
+A fragment's **full** render is `name + content` (per type's `registry.renderContext`),
+placed as a `####` sheet inside an aggregate full-context block. The `description`
+is dropped, since it's the fragment's *summary* form and would be a redundant
+restatement once the body is inlined. (Image/icon keep it — with no content body,
+the description *is* the substance.) The one exception is the **analyze** agent,
+which renders its semantic full-context sheets *with* the description (and
+inline id) because it edits those fields and needs to see them.
+
+See [Context Strategy](analyze-context-design.md) for the full rationale,
+relevance signals, and the current no-hard-cap testing stance.
 
 ## Block Manipulation
 
-Six utility functions are exported from `@tealios/errata-plugin-sdk`. All are pure and return new arrays:
+Six utility functions are exported from `@viscerous/errata-plugin-sdk`. All are pure and return new arrays:
 
 ```ts
 import {
@@ -91,7 +126,7 @@ import {
   insertBlockBefore,
   insertBlockAfter,
   reorderBlock,
-} from '@tealios/errata-plugin-sdk'
+} from '@viscerous/errata-plugin-sdk'
 
 findBlock(blocks, 'instructions')                        // ContextBlock | undefined
 replaceBlockContent(blocks, 'instructions', 'new text')  // ContextBlock[]
@@ -112,8 +147,8 @@ The hook receives a `ContextBlock[]` and must return a (possibly modified) `Cont
 ### Replace block content
 
 ```ts
-import { definePlugin, replaceBlockContent } from '@tealios/errata-plugin-sdk'
-import type { ContextBlock } from '@tealios/errata-plugin-sdk'
+import { definePlugin, replaceBlockContent } from '@viscerous/errata-plugin-sdk'
+import type { ContextBlock } from '@viscerous/errata-plugin-sdk'
 
 export default definePlugin({
   manifest: {
@@ -134,7 +169,7 @@ export default definePlugin({
 ### Remove a block and inject a new one
 
 ```ts
-import { removeBlock, insertBlockAfter } from '@tealios/errata-plugin-sdk'
+import { removeBlock, insertBlockAfter } from '@viscerous/errata-plugin-sdk'
 
 // in hooks:
 hooks: {
@@ -192,7 +227,7 @@ const messages = compileBlocks(blocks)
 
 The current block editor lives inside the **Agents** panel. It gives users full control over each agent's LLM context structure without writing plugins. Users can disable builtin blocks, override their content, create custom blocks (including dynamic script blocks), and reorder everything via drag-and-drop.
 
-Open it from the sidebar under **Management > Agents**, then pick an agent such as **Writer**, **Prewriter**, **Librarian Analyze**, or **Character Chat**. The older story-level Block Editor UI was removed when per-agent configuration became the source of truth. The separate **Fragment Order** panel is still gated by **Settings > Generation > Context > Fragment ordering: Custom**.
+Open it from the sidebar under **Management > Agents**, then pick an agent such as **Writer**, **Prewriter**, **Librarian Analyze**, or **Character Chat**. The separate **Fragment Order** panel is gated by **Settings > Generation > Context > Fragment ordering: Custom**.
 
 ## How It Works
 
@@ -252,14 +287,14 @@ The `ctx` object contains:
 
 | Field | Type | Description |
 |---|---|---|
-| `ctx.story` | `StoryMeta` | Story metadata (name, description, summary, settings) |
+| `ctx.story` | `StoryMeta` | Story metadata (name, description, cover image, settings) |
 | `ctx.proseFragments` | `Fragment[]` | Recent prose fragments included in context |
 | `ctx.stickyGuidelines` | `Fragment[]` | Pinned guideline fragments |
 | `ctx.stickyKnowledge` | `Fragment[]` | Pinned knowledge fragments |
 | `ctx.stickyCharacters` | `Fragment[]` | Pinned character fragments |
-| `ctx.guidelineShortlist` | `Fragment[]` | Non-pinned guidelines (shown as shortlist) |
-| `ctx.knowledgeShortlist` | `Fragment[]` | Non-pinned knowledge (shown as shortlist) |
-| `ctx.characterShortlist` | `Fragment[]` | Non-pinned characters (shown as shortlist) |
+| `ctx.guidelineCatalog` | `Fragment[]` | Non-pinned guidelines rendered as catalog rows |
+| `ctx.knowledgeCatalog` | `Fragment[]` | Non-pinned knowledge rendered as catalog rows |
+| `ctx.characterCatalog` | `Fragment[]` | Non-pinned characters rendered as catalog rows |
 | `ctx.authorInput` | `string` | The author's current input/direction |
 | `ctx.getFragment(id)` | `async (id: string) => Fragment \| null` | Fetch any fragment by ID (async — use `await`) |
 | `ctx.getFragments(type?)` | `async (type?: string) => Fragment[]` | List fragments, optionally filtered by type (async — use `await`) |
@@ -291,11 +326,11 @@ if (proseCount > 15) return 'The story is well underway. Begin moving toward res
 return ''
 ```
 
-Summary-aware context:
+Authored-memory-aware context:
 ```js
-if (!ctx.story.summary) return ''
-const words = ctx.story.summary.split(/\s+/).length
-return `Story summary (${words} words) is available. Avoid contradicting established events.`
+const records = await ctx.getFragments('summary')
+if (records.length === 0) return ''
+return `${records.length} author-owned memory record(s) are available by ID.`
 ```
 
 Input-aware formatting:
@@ -356,11 +391,9 @@ This order means:
 - Per-block `order` overrides can fine-tune positions beyond what drag-and-drop provides.
 - Disabling happens last, so a disabled block's content is never evaluated for overrides.
 
-## Legacy Generation Block APIs
+## Block Utility APIs
 
-The old story-level generation block CRUD API was removed. Per-agent block configuration now lives under `/api/stories/:storyId/agent-blocks/:agentName` (see [Agent Block System](#agent-block-system)).
-
-The remaining `/api/stories/:storyId/blocks` routes are compatibility utilities:
+Per-agent block configuration lives under `/api/stories/:storyId/agent-blocks/:agentName` (see [Agent Block System](#agent-block-system)). The `/api/stories/:storyId/blocks` namespace also exposes this utility:
 
 | Method | Path | Description |
 |---|---|---|
@@ -481,9 +514,6 @@ return ''
 | `src/components/agents/AgentConfigurePanel.tsx` | Main per-agent block editor component |
 | `src/components/blocks/BlockCreateDialog.tsx` | Custom block creation dialog |
 | `src/components/blocks/BlockContentView.tsx` | Context preview renderer |
-| `tests/agents/agent-block-storage.test.ts` | Storage CRUD tests |
-| `tests/blocks/apply.test.ts` | Config application logic tests |
-| `tests/api/blocks-routes.test.ts` | Compatibility route tests |
 
 ---
 
@@ -501,7 +531,7 @@ AgentBlockContext → createDefaultBlocks() → applyBlockConfig() → compileBl
 
 1. The calling agent builds an `AgentBlockContext` with relevant story data.
 2. `compileAgentContext()` looks up the agent's registered block definitions, creates default blocks, applies per-story config overrides, and compiles into messages.
-3. The compiled system/user messages and filtered tools are passed to `createToolAgent()`.
+3. The compiled system/user messages and filtered tools are passed to the agent's `ToolLoopAgent` construction (via `createStreamingRunner` for factory-based agents, or the agent's own runner for bespoke ones).
 
 ## AgentBlockContext
 
@@ -514,9 +544,9 @@ interface AgentBlockContext {
   stickyGuidelines: Fragment[]
   stickyKnowledge: Fragment[]
   stickyCharacters: Fragment[]
-  guidelineShortlist: Fragment[]
-  knowledgeShortlist: Fragment[]
-  characterShortlist: Fragment[]
+  guidelineCatalog: Fragment[]
+  knowledgeCatalog: Fragment[]
+  characterCatalog: Fragment[]
   systemPromptFragments: Fragment[]
   // Agent-specific fields (used by block builders that need them):
   allCharacters?: Fragment[]
@@ -569,7 +599,7 @@ generation           → ['generation']
 
 ### Resolution Flow
 
-`getModel(dataDir, storyId, { role })` in `src/server/llm/client.ts` resolves a model by walking the fallback chain:
+`getModel(dataDir, storyId, { role })` in `src/server/llm/client.ts` resolves a model by walking the fallback chain (agents call it through `resolveAgentRuntime()`, which bundles the story-level `disableThinking`/`generationLimits` knobs into the same resolution):
 
 1. **Story `modelOverrides` map** — For each key in the chain, check `story.settings.modelOverrides[key]` for a `providerId`/`modelId` pair.
 2. **Legacy field map** — If no override matched, check legacy per-field story settings (e.g. `librarianProviderId`, `characterChatModelId`). See backward compatibility below.
@@ -643,7 +673,7 @@ data/stories/<storyId>/branches/<branchId>/agent-blocks/<agentName>.json
 
 Each config file follows the same `BlockConfig` schema (custom blocks, overrides, block order) plus:
 
-- `disabledTools: string[]` — filters which tools the agent can use
+- `disabledTools: string[]` — filters which tools the agent can use; default block builders also receive `ctx.disabledTools` and the post-filter `ctx.enabledTools` so generated instructions can avoid naming unavailable tools
 - `disableAutoAnalysis?: boolean` — currently used by `librarian.analyze` to suppress automatic post-generation analysis
 
 ## API Endpoints
@@ -664,7 +694,7 @@ All endpoints are under `/api/stories/:storyId/agent-blocks`.
 
 ## UI
 
-The **Agent Configure** panel is accessible from the sidebar under **Management > Agents**. It allows browsing registered agents, viewing their compiled context, exporting/importing configs, changing provider/model/temperature per agent, toggling tools, and customizing block overrides.
+The **Agent Configure** panel is accessible from the sidebar under **Management > Agents**. It allows browsing registered agents, viewing their compiled context, exporting/importing configs, changing provider/model/temperature/Top P/Top K per agent, toggling tools, and customizing block overrides. Empty sampling fields inherit through the role chain and ultimately delegate to the model/provider default.
 
 ## File Reference
 
@@ -674,7 +704,8 @@ The **Agent Configure** panel is accessible from the sidebar under **Management 
 | `src/server/agents/agent-block-registry.ts` | Agent block definition registry |
 | `src/server/agents/agent-block-storage.ts` | Per-agent block config storage |
 | `src/server/agents/compile-agent-context.ts` | `compileAgentContext()` — assembles messages from blocks |
-| `src/server/agents/create-agent.ts` | `createToolAgent()` — shared `ToolLoopAgent` wrapper |
+| `src/server/agents/create-streaming-runner.ts` | `createStreamingRunner()` — standard pipeline factory (constructs the `ToolLoopAgent`) |
+| `src/server/agents/drain-agent-stream.ts` | `drainAgentStream()` — shared `fullStream` → `AgentStreamEvent` translator |
 | `src/server/agents/create-event-stream.ts` | `createEventStream()` — shared NDJSON stream builder |
 | `src/server/agents/stream-types.ts` | `AgentStreamEvent`, `AgentStreamResult`, `ChatResult` types |
 | `src/server/librarian/blocks.ts` | Block definitions for all librarian agents |
@@ -682,6 +713,3 @@ The **Agent Configure** panel is accessible from the sidebar under **Management 
 | `src/server/routes/agent-blocks.ts` | API routes |
 | `src/lib/api/agent-blocks.ts` | Frontend API client |
 | `src/components/agents/AgentConfigurePanel.tsx` | UI panel |
-| `tests/agents/agent-block-storage.test.ts` | Storage tests |
-| `tests/agents/agent-blocks.test.ts` | Block registration tests |
-| `tests/agents/compile-agent-context.test.ts` | Context compilation tests |

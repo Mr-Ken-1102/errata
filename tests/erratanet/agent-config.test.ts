@@ -36,7 +36,6 @@ function makeStory(id: string, overrides?: Partial<StoryMeta['settings']>): Stor
     name: id,
     description: '',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(overrides),
@@ -85,7 +84,7 @@ describe('agent-config snapshot + summary', () => {
     await seedTestProvider(dataDir) // provider name "Test", id "test-provider"
     await createStory(
       dataDir,
-      makeStory(STORY_A, { modelOverrides: { generation: { providerId: 'test-provider', modelId: 'fancy-model' } } }),
+      makeStory(STORY_A, { modelOverrides: { generation: { providerId: 'test-provider', modelId: 'fancy-model', topP: 0.9, topK: 64 } } }),
     )
     await saveAgentBlockConfig(dataDir, STORY_A, 'test-agent', makeAgentConfig())
   })
@@ -107,6 +106,8 @@ describe('agent-config snapshot + summary', () => {
     const role = bundle.modelRoles?.find((r) => r.role === 'generation')
     expect(role?.providerName).toBe('Test') // referenced by name, not id
     expect(role?.model).toBe('fancy-model')
+    expect(role?.topP).toBe(0.9)
+    expect(role?.topK).toBe(64)
   })
 
   it('honors an includes filter', async () => {
@@ -253,7 +254,7 @@ describe('applyAgentConfigToStory', () => {
     await seedTestProvider(dataDir)
     await createStory(
       dataDir,
-      makeStory(STORY_A, { modelOverrides: { generation: { providerId: 'test-provider', modelId: 'fancy-model' } } }),
+      makeStory(STORY_A, { modelOverrides: { generation: { providerId: 'test-provider', modelId: 'fancy-model', topP: 0.9, topK: 64 } } }),
     )
     await saveAgentBlockConfig(dataDir, STORY_A, 'test-agent', makeAgentConfig())
     await createStory(dataDir, makeStory(STORY_B))
@@ -276,6 +277,8 @@ describe('applyAgentConfigToStory', () => {
     expect(result.modelRolesApplied).toEqual(['generation'])
     const story = await getStory(dataDir, STORY_B)
     expect(story?.settings.modelOverrides?.generation?.providerId).toBe('test-provider')
+    expect(story?.settings.modelOverrides?.generation?.topP).toBe(0.9)
+    expect(story?.settings.modelOverrides?.generation?.topK).toBe(64)
     expect(result.modelRolesNeedingProvider).toEqual([])
     expect(result.suggestedProviders.some((p) => p.name === 'Test')).toBe(true)
   })

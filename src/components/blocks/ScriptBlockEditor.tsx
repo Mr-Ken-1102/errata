@@ -2,7 +2,9 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 import type { BlockPreviewResponse } from '@/lib/api/types'
+import { copyText } from '@/lib/clipboard'
 import { ScriptEditor } from './ScriptEditor'
 import { BlockContentView } from './BlockContentView'
 import {
@@ -60,14 +62,11 @@ export function ScriptBlockEditor({
   const [evalLoading, setEvalLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const requestIdRef = useRef(0)
+  const branchId = useActiveBranchId(storyId)
 
   // Fragment hints — fed to the editor's completion system so `ctx.getFragment('...'`
   // suggests real IDs and `ctx.getFragments('...'` suggests real type names.
-  const { data: fragments } = useQuery({
-    queryKey: ['fragments', storyId],
-    queryFn: () => api.fragments.list(storyId),
-    staleTime: 30_000,
-  })
+  const { data: fragments } = useQuery({ ...q.fragments(storyId, branchId), staleTime: 30_000 })
   const fragmentHints = useMemo(
     () => (fragments ?? []).map(f => ({ id: f.id, name: f.name, type: f.type })),
     [fragments],
@@ -495,12 +494,9 @@ function ContextPane({
 export function FragmentReference({ storyId }: { storyId: string }) {
   const [open, setOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const branchId = useActiveBranchId(storyId)
 
-  const { data: fragments } = useQuery({
-    queryKey: ['fragments', storyId],
-    queryFn: () => api.fragments.list(storyId),
-    enabled: open,
-  })
+  const { data: fragments } = useQuery({ ...q.fragments(storyId, branchId), enabled: open })
 
   const grouped = useMemo(() => {
     if (!fragments) return new Map<string, Array<{ id: string; name: string }>>()
@@ -513,8 +509,8 @@ export function FragmentReference({ storyId }: { storyId: string }) {
     return map
   }, [fragments])
 
-  const handleCopy = useCallback((id: string) => {
-    navigator.clipboard.writeText(id)
+  const handleCopy = useCallback(async (id: string) => {
+    if (!await copyText(id)) return
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 1200)
   }, [])

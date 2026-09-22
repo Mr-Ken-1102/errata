@@ -35,7 +35,7 @@ export interface CharacterChatOptions {
 export const characterChat = createStreamingRunner<CharacterChatOptions, { character: Fragment; personaCharacterName?: string; personaCharacterDescription?: string }>({
   name: 'character-chat.chat',
   role: 'character-chat.chat',
-  readOnly: true,
+  readOnly: 'none',
 
   validate: async ({ dataDir, storyId, opts }) => {
     const character = await getFragment(dataDir, storyId, opts.characterId)
@@ -59,7 +59,6 @@ export const characterChat = createStreamingRunner<CharacterChatOptions, { chara
 
   contextOptions: (opts) => ({
     proseBeforeFragmentId: opts.storyPointFragmentId ?? undefined,
-    summaryBeforeFragmentId: opts.storyPointFragmentId ?? undefined,
   }),
 
   extraContext: async ({ opts, validated, modelId }) => ({
@@ -72,9 +71,16 @@ export const characterChat = createStreamingRunner<CharacterChatOptions, { chara
     ),
   }),
 
-  messages: ({ opts }) =>
-    opts.messages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
+  messages: ({ compiled, opts }) => {
+    const contextMessage = compiled.messages.find(m => m.role === 'user')
+    return [
+      ...(contextMessage?.content.trim()
+        ? [{ role: 'user' as const, content: `Character memory and conversation context:\n\n${contextMessage.content}` }]
+        : []),
+      ...opts.messages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    ]
+  },
 })

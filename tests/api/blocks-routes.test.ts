@@ -41,6 +41,28 @@ async function createStory(): Promise<string> {
   return data.id
 }
 
+describe('Context previews preserve agent access boundaries', () => {
+  it('does not route pinned authorial memory into character chat', async () => {
+    const storyId = await createStory()
+    await api('/agent-blocks')
+    const created = await apiJson(`/stories/${storyId}/fragments`, {
+      type: 'knowledge',
+      name: 'Magic System',
+      description: 'Rules for magic',
+      content: 'Full magic details.',
+    })
+    const fragmentId = (await created.json()).id
+    await apiJson(`/stories/${storyId}/fragments/${fragmentId}/sticky`, { sticky: true }, 'PATCH')
+
+    const preview = await (await api(`/stories/${storyId}/agent-blocks/character-chat.chat/preview`)).json()
+    const prompt = preview.messages.map((m: { content: string }) => m.content).join('\n')
+    expect(prompt).not.toContain('Magic System')
+    expect(prompt).not.toContain('Full magic details')
+    expect(prompt).not.toContain('readFragments')
+    expect(preview.tools).toEqual([])
+  })
+})
+
 describe('Per-agent config export/import routes', () => {
   it('GET /agent-blocks/:agentName/export returns config for agent', async () => {
     const storyId = await createStory()

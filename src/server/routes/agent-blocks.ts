@@ -1,16 +1,31 @@
 import { Elysia } from 'elysia'
+import type { ToolSet } from 'ai'
 import { withStory } from './_helpers'
-import { agentBlockRegistry } from '../agents/agent-block-registry'
+import { agentBlockRegistry, type AgentBlockDefinition } from '../agents/agent-block-registry'
+import type { AgentBlockContext } from '../agents/agent-block-context'
 import { modelRoleRegistry } from '../agents/model-role-registry'
 import { ensureCoreAgentsRegistered } from '../agents/register-core'
-import { listActiveAgents } from '../agents/active-registry'
+import { listActiveAgents, requestAgentCancellation } from '../agents/active-registry'
+import { createActivitySSE } from '../agents/activity-stream'
+import { encodeStream } from './encode-stream'
 import { compileBlocks, expandMessagesFragmentTags } from '../llm/context-builder'
 import { getModel } from '../llm/client'
 import { applyBlockConfig } from '../blocks/apply'
 import { createScriptHelpers } from '../blocks/script-context'
 import { pluginRegistry } from '../plugins/registry'
 import { collectPluginToolsWithOrigin } from '../plugins/tools'
-import { CustomBlockDefinitionSchema } from '../blocks/schema'
+import { CustomBlockDefinitionSchema, type BlockOverride } from '../blocks/schema'
+import {
+  getAgentBlockConfig,
+  saveAgentBlockConfig,
+  addAgentCustomBlock,
+  updateAgentCustomBlock,
+  deleteAgentCustomBlock,
+  updateAgentBlockOverrides,
+  updateAgentDisabledTools,
+  AgentBlockConfigSchema,
+  type AgentBlockConfig,
+} from '../agents/agent-block-storage'
 
 /** Agents that receive plugin-contributed tools at generation time. */
 const PLUGIN_TOOL_AGENTS = new Set(['generation.writer', 'generation.prewriter'])
@@ -29,27 +44,61 @@ function withPluginTools(
   const pluginNames = Object.keys(tools).filter((name) => !base.includes(name))
   return [...base, ...pluginNames]
 }
-import type { BlockOverride } from '../blocks/schema'
-import {
-  getAgentBlockConfig,
-  saveAgentBlockConfig,
-  addAgentCustomBlock,
-  updateAgentCustomBlock,
-  deleteAgentCustomBlock,
-  updateAgentBlockOverrides,
-  updateAgentDisabledTools,
-  AgentBlockConfigSchema,
-} from '../agents/agent-block-storage'
+
+async function applyToolContextToPreview(
+  def: AgentBlockDefinition,
+  ctx: AgentBlockContext,
+  dataDir: string,
+  storyId: string,
+  config: AgentBlockConfig,
+): Promise<ToolSet | null> {
+  ctx.disabledTools = config.disabledTools ?? []
+  const disabled = new Set(ctx.disabledTools)
+  if (!def.resolveTools) {
+    // No factory to call, but the definition may still declare its toolset.
+    // Leaving enabledTools unset made the preview disagree with the run for
+    // every agent without resolveTools, so blocks that word themselves from the
+    // toolset rendered one way for the author and another for the model. A
+    // definition that declares nothing stays unknown rather than becoming "no
+    // tools" — those are different claims.
+    if (def.availableTools) {
+      ctx.enabledTools = def.availableTools.filter((name) => !disabled.has(name))
+    }
+    return null
+  }
+  const resolved = await def.resolveTools({ dataDir, storyId })
+  ctx.enabledTools = Object.keys(resolved).filter((name) => !disabled.has(name))
+  return resolved
+}
 
 export function agentBlockRoutes(dataDir: string) {
   // Idempotent; run once so every handler sees a populated registry.
   ensureCoreAgentsRegistered()
 
   return new Elysia({ detail: { tags: ['Agent Blocks'] } })
+    // Stop any client-addressable agent run. The run registry is agent-agnostic,
+    // so cancellation lives under the same namespace instead of generation.
+    .post('/stories/:storyId/agents/:runId/cancel', ({ params }) => ({
+      ok: true,
+      active: requestAgentCancellation(params.storyId, params.runId),
+    }), { detail: { summary: 'Cancel an agent run' } })
+
     // List currently running agents for a story
     .get('/stories/:storyId/active-agents', ({ params }) => {
       return listActiveAgents(params.storyId)
     }, { detail: { summary: 'List currently running agents' } })
+
+    // Stream a running agent's live reasoning/tool trace (NDJSON)
+    .get('/stories/:storyId/activity/:agentName/stream', ({ params, set }) => {
+      const stream = createActivitySSE(params.storyId, params.agentName)
+      if (!stream) {
+        set.status = 404
+        return { error: 'No active run for this agent' }
+      }
+      return new Response(encodeStream(stream), {
+        headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
+      })
+    }, { detail: { summary: 'Stream a running agent\'s live activity (NDJSON)' } })
 
     // List all registered model roles (auto-discovered from agents)
     .get('/model-roles', () => {
@@ -117,6 +166,7 @@ export function agentBlockRoutes(dataDir: string) {
 
       // Build preview context to get default blocks metadata
       const previewCtx = await def.buildPreviewContext(dataDir, params.storyId)
+      await applyToolContextToPreview(def, previewCtx, dataDir, params.storyId, config)
       const defaultBlocks = def.createDefaultBlocks(previewCtx)
       const builtinBlocks = defaultBlocks.map(b => ({
         id: b.id,
@@ -143,6 +193,7 @@ export function agentBlockRoutes(dataDir: string) {
       }
 
       const previewCtx = await def.buildPreviewContext(dataDir, params.storyId)
+      const config = await getAgentBlockConfig(dataDir, params.storyId, params.agentName)
       // Allow ?modelId= to preview model-specific instruction overrides
       const modelId = (query as Record<string, string | undefined>).modelId
       if (modelId) {
@@ -156,8 +207,8 @@ export function agentBlockRoutes(dataDir: string) {
           // If model resolution fails (no provider configured), leave modelId unset
         }
       }
+      const resolvedTools = await applyToolContextToPreview(def, previewCtx, dataDir, params.storyId, config)
       let blocks = def.createDefaultBlocks(previewCtx)
-      const config = await getAgentBlockConfig(dataDir, params.storyId, params.agentName)
       blocks = await applyBlockConfig(blocks, config, {
         ...previewCtx,
         ...createScriptHelpers(dataDir, params.storyId),
@@ -171,7 +222,23 @@ export function agentBlockRoutes(dataDir: string) {
         })
         .map(b => ({ id: b.id, name: b.name ?? b.id, role: b.role }))
 
-      return { messages, blocks: blocksMeta, blockCount: blocks.length }
+      // The actual tools sent to the model (with disabledTools applied), built
+      // from the same factories the handler uses so the preview can't drift.
+      let tools: Array<{ name: string; description: string; enabled: boolean }> = []
+      if (resolvedTools) {
+        const disabled = new Set(config.disabledTools ?? [])
+        // Preserve the toolset's declaration order - it reflects the agent's
+        // workflow (e.g. report tools, then edit tools, then suggest tools) -
+        // rather than re-sorting alphabetically.
+        tools = Object.entries(resolvedTools)
+          .map(([name, t]) => ({
+            name,
+            description: (t as { description?: string }).description ?? '',
+            enabled: !disabled.has(name),
+          }))
+      }
+
+      return { messages, blocks: blocksMeta, blockCount: blocks.length, tools }
     }), { detail: { summary: 'Preview compiled agent context' } })
 
     // Create custom block

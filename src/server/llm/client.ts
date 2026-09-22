@@ -1,12 +1,20 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import type { LanguageModelV3CallOptions } from '@ai-sdk/provider'
 import { getGlobalConfig } from '../config/storage'
 import { getStory } from '../fragments/storage'
 import { modelRoleRegistry } from '../agents/model-role-registry'
 import { ensureCoreAgentsRegistered } from '../agents/register-core'
-import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
-import type { LanguageModel } from 'ai'
+import {
+  extractReasoningMiddleware,
+  wrapLanguageModel,
+  type LanguageModel,
+  type LanguageModelMiddleware,
+  type ToolLoopAgentSettings,
+} from 'ai'
 import { createLogger } from '../logging'
+import type { SamplingSettings, StoryMeta } from '../fragments/schema'
+import { isGeminiProvider, normalizeGeminiBaseURL } from '../config/provider-urls'
 
 // Normalize old camelCase modelOverrides keys to dot-separated agent names
 const OVERRIDE_KEY_ALIASES: Record<string, string> = {
@@ -18,14 +26,18 @@ const OVERRIDE_KEY_ALIASES: Record<string, string> = {
 }
 
 /** Apply key aliases to a modelOverrides map, returning a normalized copy */
+type ModelOverride = StoryMeta['settings']['modelOverrides'][string]
+
 function normalizeOverrideKeys(
-  overrides: Record<string, { providerId?: string | null; modelId?: string | null; temperature?: number | null }>,
-): Record<string, { providerId?: string | null; modelId?: string | null; temperature?: number | null }> {
-  const result: Record<string, { providerId?: string | null; modelId?: string | null; temperature?: number | null }> = {}
+  overrides: Record<string, ModelOverride>,
+): Record<string, ModelOverride> {
+  const result: Record<string, ModelOverride> = {}
   for (const [key, value] of Object.entries(overrides)) {
     const normalizedKey = OVERRIDE_KEY_ALIASES[key] ?? key
-    // Don't overwrite if the new key already exists (new-style key takes priority)
-    if (!(normalizedKey in result)) {
+    const legacyAlias = normalizedKey !== key
+    // A canonical key always wins, regardless of JSON property order. A legacy
+    // alias only fills the slot when no canonical value has been seen.
+    if (!legacyAlias || !(normalizedKey in result)) {
       result[normalizedKey] = value
     }
   }
@@ -43,21 +55,14 @@ const LEGACY_FIELD_MAP: Record<string, { providerId: string; modelId: string }> 
   directions: { providerId: 'directionsProviderId', modelId: 'directionsModelId' },
 }
 
-// Provider cache: keyed by `id:baseURL:apiKey`
+// Provider cache includes every setting baked into the provider instance. The
+// name matters because it also defines the providerOptions namespace.
 const providerCache = new Map<string, ReturnType<typeof createOpenAICompatible>>()
 const googleProviderCache = new Map<string, ReturnType<typeof createGoogleGenerativeAI>>()
 
-function isGeminiProvider(provider: { preset?: string; baseURL: string }) {
-  return provider.preset === 'gemini' || provider.baseURL.includes('generativelanguage.googleapis.com')
-}
-
-function normalizeGeminiBaseURL(baseURL: string) {
-  return baseURL.replace(/\/+$/, '').replace(/\/openai$/, '')
-}
-
 function getCachedProvider(id: string, baseURL: string, apiKey: string, name: string, customHeaders?: Record<string, string>) {
   const headerStr = customHeaders ? JSON.stringify(customHeaders) : ''
-  const cacheKey = `${id}:${baseURL}:${apiKey}:${headerStr}`
+  const cacheKey = `${id}:${name}:${baseURL}:${apiKey}:${headerStr}`
   let provider = providerCache.get(cacheKey)
   if (!provider) {
     provider = createOpenAICompatible({
@@ -92,7 +97,7 @@ function getCachedGoogleProvider(
   return provider
 }
 
-export type ProviderOptions = Record<string, Record<string, unknown>>
+export type ProviderOptions = NonNullable<ToolLoopAgentSettings['providerOptions']>
 
 /**
  * Build providerOptions that suppress extended thinking / reasoning.
@@ -103,11 +108,55 @@ export function buildProviderOptions(disableThinking: boolean): ProviderOptions 
   return { openaiCompatible: { reasoningEffort: 'none' } }
 }
 
-export interface ResolvedModel {
+/** Provider-boundary translation for OpenAI-compatible sampling extensions. */
+export function translateOpenAICompatibleTopK(
+  params: LanguageModelV3CallOptions,
+  providerOptionsKey: string,
+): LanguageModelV3CallOptions {
+  if (params.topK == null) return params
+  const existing = params.providerOptions?.[providerOptionsKey]
+  const providerOptions = existing && typeof existing === 'object' && !Array.isArray(existing)
+    ? existing
+    : {}
+  return {
+    ...params,
+    topK: undefined,
+    providerOptions: {
+      ...params.providerOptions,
+      [providerOptionsKey]: { ...providerOptions, top_k: params.topK },
+    },
+  }
+}
+
+function openAICompatibleSamplingMiddleware(providerOptionsKey: string): LanguageModelMiddleware {
+  return {
+    specificationVersion: 'v3',
+    transformParams: async ({ params }) => translateOpenAICompatibleTopK(params, providerOptionsKey),
+  }
+}
+
+export interface GenerationGuards {
+  /** Undefined delegates the output length to the provider/model. */
+  maxOutputTokens?: number
+}
+
+/**
+ * Resolve opt-in per-generation safety settings. Output length is deliberately
+ * unbounded by Errata when unset so reasoning-capable models can use the budget
+ * exposed by their provider and context window.
+ */
+export function resolveGenerationGuards(
+  limits?: { maxOutputTokens?: number },
+): GenerationGuards {
+  return {
+    maxOutputTokens: limits?.maxOutputTokens,
+  }
+}
+
+export interface ResolvedModel extends SamplingSettings {
   model: LanguageModel
   providerId: string | null
   modelId: string
-  temperature?: number
   config: {
     providerName: string | null
     baseURL: string | null
@@ -133,12 +182,20 @@ export async function getModel(dataDir: string, storyId?: string, opts: GetModel
   let targetProviderId: string | null = null
   let targetModelId: string | null = null
   let targetTemperature: number | undefined = undefined
+  let targetTopP: number | undefined = undefined
+  let targetTopK: number | undefined = undefined
 
   if (storyId) {
     const story = await getStory(dataDir, storyId)
     if (story?.settings) {
       const overrides = normalizeOverrideKeys(story.settings.modelOverrides ?? {})
       const settings = story.settings as Record<string, unknown>
+
+      for (const r of chain) {
+        const override = overrides[r]
+        if (targetTopP === undefined && override?.topP != null) targetTopP = override.topP
+        if (targetTopK === undefined && override?.topK != null) targetTopK = override.topK
+      }
 
       for (const r of chain) {
         // Check modelOverrides map first
@@ -204,15 +261,18 @@ export async function getModel(dataDir: string, storyId?: string, opts: GetModel
     const modelId = (usingFallback ? null : targetModelId) || provider.defaultModel
     const nativeGemini = isGeminiProvider(provider)
     const baseURL = nativeGemini ? normalizeGeminiBaseURL(provider.baseURL) : provider.baseURL
-    // Locally-hosted thinking models (Qwen-style) behind plain OpenAI-compatible
-    // endpoints emit `<think>...</think>` inside ordinary text deltas. Extract
-    // those into proper reasoning parts so they never leak into saved prose or
-    // JSON parsing. Native Gemini already separates reasoning server-side.
-    const model = nativeGemini
+    const providerOptionsKey = provider.name.split('.')[0].trim()
+    const rawModel = nativeGemini
       ? getCachedGoogleProvider(provider.id, baseURL, provider.apiKey, provider.customHeaders)(modelId)
+      : getCachedProvider(provider.id, provider.baseURL, provider.apiKey, provider.name, provider.customHeaders).chatModel(modelId)
+    const model = nativeGemini
+      ? rawModel
       : wrapLanguageModel({
-          model: getCachedProvider(provider.id, provider.baseURL, provider.apiKey, provider.name, provider.customHeaders).chatModel(modelId),
-          middleware: extractReasoningMiddleware({ tagName: 'think' }),
+          model: rawModel,
+          middleware: [
+            openAICompatibleSamplingMiddleware(providerOptionsKey),
+            extractReasoningMiddleware({ tagName: 'think' }),
+          ],
         })
     // Story-level temperature takes precedence over provider-level
     const temperature = targetTemperature ?? provider.temperature
@@ -221,6 +281,8 @@ export async function getModel(dataDir: string, storyId?: string, opts: GetModel
       providerId: provider.id,
       modelId,
       temperature,
+      topP: targetTopP,
+      topK: targetTopK,
       config: {
         providerName: provider.name,
         baseURL,
@@ -233,4 +295,54 @@ export async function getModel(dataDir: string, storyId?: string, opts: GetModel
 
   // 5. No provider found — throw descriptive error
   throw new Error('No LLM provider configured. Add a provider in Settings > Providers.')
+}
+
+/**
+ * Everything an agent's `ToolLoopAgent` construction needs beyond its role's
+ * resolved model: the thinking toggle and the per-generation safety caps, both
+ * derived from `story.settings` rather than the role. Bundling them here means
+ * a new cross-cutting knob (the next one, whatever it is) is a one-place change
+ * instead of a re-edit of every agent construction site.
+ */
+export interface AgentRuntime extends ResolvedModel {
+  providerOptions?: ProviderOptions
+  guards: GenerationGuards
+}
+
+/** Settings that can be spread directly into AI SDK generation calls. */
+export function samplingCallSettings(runtime: SamplingSettings): SamplingSettings {
+  return {
+    temperature: runtime.temperature,
+    topP: runtime.topP,
+    topK: runtime.topK,
+  }
+}
+
+/** Serializable effective settings for logs and saved diagnostics. */
+export function samplingDiagnostics(runtime: SamplingSettings): SamplingSettings {
+  return {
+    ...(runtime.temperature !== undefined ? { temperature: runtime.temperature } : {}),
+    ...(runtime.topP !== undefined ? { topP: runtime.topP } : {}),
+    ...(runtime.topK !== undefined ? { topK: runtime.topK } : {}),
+  }
+}
+
+/**
+ * Resolve a role's model plus the story-level runtime knobs (`disableThinking`,
+ * `generationLimits`) in one call. Takes `story` rather than reloading it —
+ * every call site already has it (fetched for its own settings checks), so this
+ * never hides a redundant fetch behind a "just resolve everything" call.
+ */
+export async function resolveAgentRuntime(
+  dataDir: string,
+  storyId: string,
+  role: string,
+  story: StoryMeta,
+): Promise<AgentRuntime> {
+  const resolved = await getModel(dataDir, storyId, { role })
+  return {
+    ...resolved,
+    providerOptions: buildProviderOptions(story.settings.disableThinking ?? false),
+    guards: resolveGenerationGuards(story.settings.generationLimits),
+  }
 }

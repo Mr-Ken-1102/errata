@@ -16,7 +16,7 @@ Join the community on Discord: https://discord.gg/ywVFKvdH49
 - **Character Chat mode** — story-scoped chat with streaming responses, provider/model selection, and character portraits
 - **Block-based context** — visual editor for reordering, overriding, and extending LLM prompt structure, including JavaScript-powered script blocks with live preview
 - **Agent context panel** — per-agent block editor for customizing any agent's prompt, disabling tools, and setting model overrides
-- **Librarian memory tools** — rolling continuity, hierarchical summaries, contradiction tracking, and summary compaction controls
+- **Librarian memory tools** — source-linked story summaries, recursive background roll-ups, rolling continuity, contradiction tracking, and record-maintenance proposals
 - **Universal import/export** — drag-and-drop JSON, bundle ZIPs, and SillyTavern/Tavern cards (PNG/JSON with lorebook support)
 - **Story cover images** — cover art with gallery grid layout on the story list
 - **Plugin system** — bundled + external runtime plugins with iframe UI panels
@@ -47,13 +47,25 @@ Switch from prose view to Character Chat to run in-world conversations with your
 ## Quick Start
 
 ```bash
-git clone https://github.com/tealios/errata.git
+git clone https://github.com/Viscerous/errata.git
 cd errata
 bun install
 bun run dev
 ```
 
 Open `http://localhost:7739`. Configure an LLM provider in the onboarding wizard or Settings > Providers.
+
+### Windows source launcher
+
+From an unpacked source checkout on Windows, you can double-click `start.bat` or run:
+
+```bat
+start.bat          rem Electron desktop development mode
+start.bat web      rem Browser development server
+start.bat check    rem Validate Bun and required desktop files only
+```
+
+The launcher changes into the repository directory before starting and defaults `DATA_DIR` to `<repo>\data`. That source data is separate from the installed Electron application's OS user-data directory. If you intentionally set `DATA_DIR` yourself, the launcher preserves your value.
 
 ## Development
 
@@ -66,12 +78,12 @@ powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
 Or run it directly from the web without cloning first:
 
 ```powershell
-irm https://raw.githubusercontent.com/tealios/errata/master/scripts/setup.ps1 | iex
+irm https://raw.githubusercontent.com/Viscerous/errata/main/scripts/setup.ps1 | iex
 ```
 
 ## Download
 
-Pre-built binaries are available on the [Releases](https://github.com/tealios/errata/releases) page for Windows, Linux, and macOS. Extract the zip and run — no runtime dependencies required.
+Pre-built binaries are available on the [Releases](https://github.com/Viscerous/errata/releases) page for Windows, Linux, and macOS. Extract the zip and run — no runtime dependencies required.
 
 ```bash
 # Windows
@@ -118,7 +130,7 @@ src/                    App code (routes, server, components, lib)
   components/           React UI (prose, fragments, blocks, generation, sidebar)
   lib/api/              Typed frontend API client
 plugins/                Bundled plugins (diceroll, keybinds, names) + templates
-packages/               Plugin SDK (@tealios/errata-plugin-sdk)
+packages/               Plugin SDK (@viscerous/errata-plugin-sdk)
 tests/                  Vitest suites
 docs/                   Documentation
 ```
@@ -134,11 +146,11 @@ Plugins can register fragment types, LLM tools, API routes, and pipeline hooks. 
 - [Plugin authoring guide](docs/third-party-plugins.md)
 - [Runtime plugins + binary packaging](docs/runtime-plugins-and-binary-packaging.md)
 - [Plugin templates](plugins/templates/README.md)
-- SDK: `@tealios/errata-plugin-sdk`
+- SDK: `@viscerous/errata-plugin-sdk`
 
 ## Documentation
 
-- [Architecture & data model](PLAN.md)
+- [Architecture and feature documentation](docs/README.md)
 - [Generation pipeline](docs/generation-pipeline.md)
 - [Context block system](docs/context-blocks.md)
 - [Instruction registry](docs/instruction-registry.md)
@@ -146,8 +158,15 @@ Plugins can register fragment types, LLM tools, API routes, and pipeline hooks. 
 - [Prose Writing Panel](docs/prose-writing-panel.md)
 - [Component ID contract](docs/component-ids.md)
 - [Publishing the plugin SDK](docs/publishing-plugin-sdk.md)
-- [Full docs index](docs/README.md)
 
 ---
 
-Built by [nokusukun](https://github.com/nokusukun)
+## License and lineage
+
+Licensed under [GPL-2.0](LICENSE).
+
+Errata originated as a fork of [tealios/errata](https://github.com/tealios/errata), created by
+[nokusukun](https://github.com/nokusukun). This tree has since diverged substantially and is
+maintained independently — please raise issues here rather than upstream.
+
+Copyright © Tealios and Errata contributors.

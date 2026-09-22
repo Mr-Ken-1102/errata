@@ -1,18 +1,25 @@
 import { createServer, request, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
 import { connect as netConnect } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { getSharingConfig } from '../config/storage'
 import type { SharingConfig } from '../config/schema'
 import { checkBasicAuth } from './auth'
 import { appPort, getLanUrl } from './network'
 import { ensureCloudflared, parseTunnelUrl } from './cloudflared'
+import { proxyBlockReason } from './policy'
 import { createLogger } from '../logging'
 
 const logger = createLogger('sharing')
 
-/** Preferred port for the LAN/auth proxy; falls back upward if taken. */
-const SHARE_PORT = 7740
-const SHARE_PORT_MAX = SHARE_PORT + 20
+/**
+ * Preferred port for the LAN/auth proxy; falls back upward if taken. The override
+ * keeps a second instance (or a test beside a live app) off the neighbour's
+ * fallback port, where it would authenticate against the wrong config.
+ */
+function sharePort(): number {
+  return Number(process.env.ERRATA_SHARE_PORT) || 7740
+}
 
 export type TunnelStatus = 'stopped' | 'downloading' | 'starting' | 'running' | 'error'
 
@@ -48,9 +55,33 @@ function authReady(s: SharingConfig | null): boolean {
   return !!s && s.authEnabled && !!s.passwordHash
 }
 
-function handleProxyRequest(req: IncomingMessage, res: ServerResponse) {
+function requestIsAuthorized(req: IncomingMessage): boolean {
   const s = state.current
-  if (!authReady(s) || !checkBasicAuth(req.headers.authorization, s!.username, s!.passwordHash)) {
+  return authReady(s) && checkBasicAuth(req.headers.authorization, s!.username, s!.passwordHash)
+}
+
+/** Vite dev rejects unknown Hosts (allowedHosts); harmless in production. */
+function upstreamHeaders(req: IncomingMessage, port: number) {
+  return { ...req.headers, host: `localhost:${port}` }
+}
+
+/**
+ * Rejections are logged: a remote client that silently gets 401s looks exactly
+ * like one whose requests never arrive, and only this side can tell them apart.
+ */
+function logRejected(req: IncomingMessage, kind: 'request' | 'upgrade'): void {
+  logger.warn('Proxy rejected an unauthenticated request', {
+    kind,
+    method: req.method,
+    url: req.url,
+    hasAuthorization: !!req.headers.authorization,
+    configured: authReady(state.current),
+  })
+}
+
+function handleProxyRequest(req: IncomingMessage, res: ServerResponse) {
+  if (!requestIsAuthorized(req)) {
+    logRejected(req, 'request')
     res.writeHead(401, {
       'WWW-Authenticate': 'Basic realm="Errata", charset="UTF-8"',
       'Content-Type': 'text/plain',
@@ -58,40 +89,121 @@ function handleProxyRequest(req: IncomingMessage, res: ServerResponse) {
     res.end('Authentication required.')
     return
   }
+  // Checked after auth: an authenticated remote client still does not get the
+  // credential endpoints, and an unauthenticated one learns nothing about them.
+  const blocked = proxyBlockReason(req.method ?? 'GET', req.url)
+  if (blocked) {
+    logger.warn('Proxy refused a local-only request', { method: req.method, url: req.url })
+    res.writeHead(403, { 'Content-Type': 'text/plain' })
+    res.end(blocked)
+    return
+  }
   const port = appPort()
-  // Rewrite Host to the local app so the upstream never sees the external
-  // hostname — required because Vite dev rejects unknown Hosts (allowedHosts),
-  // and it's harmless in production.
-  const headers = { ...req.headers, host: `localhost:${port}` }
+  const headers = upstreamHeaders(req, port)
   const proxyReq = request(
     { hostname: state.upstreamHost, port, path: req.url, method: req.method, headers },
     (proxyRes) => {
       res.writeHead(proxyRes.statusCode || 502, proxyRes.headers)
+      // writeHead only stores the head; a stream slow to its first token would
+      // otherwise leave the client's fetch() unresolved and looking broken.
+      res.flushHeaders()
       proxyRes.pipe(res)
     },
   )
-  proxyReq.on('error', () => {
+  proxyReq.on('error', (err) => {
+    // Logged for the same reason as a rejection: a remote client only sees a
+    // failed request, and the upstream hop is visible from nowhere else.
+    logger.error('Proxy could not reach the app', {
+      method: req.method, url: req.url, host: state.upstreamHost, port, error: String(err),
+    })
     if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' })
     res.end('Bad gateway: the app is not reachable.')
   })
   req.pipe(proxyReq)
 }
 
-function listen(server: Server, port: number): Promise<number> {
+/**
+ * Forward protocol upgrades through the same door as everything else. Answered as
+ * an ordinary request, an upgrade dies; a built app opens no sockets, so only dev
+ * (HMR) noticed.
+ */
+function handleProxyUpgrade(req: IncomingMessage, clientSocket: Duplex, head: Buffer) {
+  if (!requestIsAuthorized(req)) {
+    // No ServerResponse on this path, so the 401 is spoken as raw HTTP.
+    clientSocket.end(
+      'HTTP/1.1 401 Unauthorized\r\n'
+      + 'WWW-Authenticate: Basic realm="Errata", charset="UTF-8"\r\n'
+      + 'Connection: close\r\n\r\n',
+    )
+    return
+  }
+
+  if (proxyBlockReason(req.method ?? 'GET', req.url)) {
+    clientSocket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+    return
+  }
+
+  const port = appPort()
+  const proxyReq = request({
+    hostname: state.upstreamHost,
+    port,
+    path: req.url,
+    method: req.method,
+    headers: upstreamHeaders(req, port),
+  })
+
+  proxyReq.on('upgrade', (proxyRes, upstreamSocket, upstreamHead) => {
+    // Replay the upstream's handshake verbatim; the client validates it.
+    const lines = [`HTTP/1.1 ${proxyRes.statusCode} ${proxyRes.statusMessage}`]
+    for (const [key, value] of Object.entries(proxyRes.headers)) {
+      for (const one of Array.isArray(value) ? value : [value]) {
+        if (one !== undefined) lines.push(`${key}: ${one}`)
+      }
+    }
+    clientSocket.write(`${lines.join('\r\n')}\r\n\r\n`)
+
+    // Bytes each side had already sent past its handshake belong to the tunnel.
+    if (upstreamHead?.length) clientSocket.write(upstreamHead)
+    if (head?.length) upstreamSocket.write(head)
+
+    const drop = () => { upstreamSocket.destroy(); clientSocket.destroy() }
+    upstreamSocket.on('error', drop)
+    clientSocket.on('error', drop)
+    upstreamSocket.pipe(clientSocket)
+    clientSocket.pipe(upstreamSocket)
+  })
+
+  proxyReq.on('error', () => clientSocket.destroy())
+  clientSocket.on('error', () => proxyReq.destroy())
+  proxyReq.end()
+}
+
+/**
+ * Bind the first free port at or above `port`, resolving with the port actually
+ * bound — read off the socket, so the advertised port cannot disagree with it.
+ *
+ * Both listeners must be removed symmetrically: `server.listen(port, cb)` makes
+ * `cb` a one-shot 'listening' listener, so dropping only the 'error' one left it
+ * to fire on the retry and resolve with the port that had just failed.
+ */
+function listen(server: Server, port: number, maxPort = port + 20): Promise<number> {
   return new Promise((resolve, reject) => {
-    const onError = (err: NodeJS.ErrnoException) => {
+    const onListening = () => {
       server.removeListener('error', onError)
-      if (err.code === 'EADDRINUSE' && port < SHARE_PORT_MAX) {
-        listen(server, port + 1).then(resolve, reject)
+      const address = server.address()
+      resolve(typeof address === 'object' && address !== null ? address.port : port)
+    }
+    const onError = (err: NodeJS.ErrnoException) => {
+      server.removeListener('listening', onListening)
+      if (err.code === 'EADDRINUSE' && port < maxPort) {
+        listen(server, port + 1, maxPort).then(resolve, reject)
       } else {
         reject(err)
       }
     }
-    server.on('error', onError)
-    server.listen(port, '0.0.0.0', () => {
-      server.removeListener('error', onError)
-      resolve(port)
-    })
+    server.once('listening', onListening)
+    server.once('error', onError)
+    server.listen(port, '0.0.0.0')
   })
 }
 
@@ -118,9 +230,10 @@ async function startProxy(): Promise<void> {
   state.upstreamHost = await probeUpstreamHost(appPort())
   logger.info('Upstream host probed', { host: state.upstreamHost, port: appPort() })
   const server = createServer(handleProxyRequest)
+  server.on('upgrade', handleProxyUpgrade)
   // Don't let a proxy connection error crash the process.
   server.on('error', (err) => logger.error('Proxy server error', { error: String(err) }))
-  const port = await listen(server, SHARE_PORT)
+  const port = await listen(server, sharePort())
   state.proxy = server
   state.proxyPort = port
   logger.info('Auth proxy listening', { port })

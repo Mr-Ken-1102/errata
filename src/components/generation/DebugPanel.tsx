@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api, type GenerationLog, type GenerationLogSummary } from '@/lib/api'
+import { api, type GenerationLog, type GenerationLogSummary, type SamplingSettings } from '@/lib/api'
+import { qk, useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -10,6 +11,7 @@ import { BlockContentView } from '@/components/blocks/BlockContentView'
 import { X, ChevronDown, ChevronRight, Copy, Check, Brain, FileText } from 'lucide-react'
 import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 
 interface DebugPanelProps {
   storyId: string
@@ -18,13 +20,29 @@ interface DebugPanelProps {
   onClose: () => void
 }
 
+function formatSampling(settings: SamplingSettings | undefined): string | null {
+  if (!settings) return null
+  const parts = [
+    settings.temperature !== undefined ? `T ${settings.temperature}` : null,
+    settings.topP !== undefined ? `P ${settings.topP}` : null,
+    settings.topK !== undefined ? `K ${settings.topK}` : null,
+  ].filter((part): part is string => part !== null)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+function SamplingLabel({ settings, title }: { settings?: SamplingSettings; title: string }) {
+  const label = formatSampling(settings)
+  return label ? <span title={title}>{label}</span> : null
+}
+
 export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelProps) {
   const [selectedLogId, setSelectedLogId] = useState<string | null>(logId ?? null)
   const [activeTab, setActiveTab] = useState<'prompt' | 'prewriter-prompt' | 'tools' | 'output'>('prompt')
   const directLookup = !!(logId || fragmentId)
+  const branchId = useActiveBranchId(storyId)
 
   const { data: logs } = useQuery({
-    queryKey: ['generation-logs', storyId],
+    queryKey: qk.generationLogs(storyId, branchId),
     queryFn: () => api.generation.listLogs(storyId),
   })
 
@@ -36,7 +54,7 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
   }
 
   const { data: selectedLog, isLoading: logLoading } = useQuery({
-    queryKey: ['generation-log', storyId, selectedLogId],
+    queryKey: qk.generationLog(storyId, branchId, selectedLogId),
     queryFn: () => api.generation.getLog(storyId, selectedLogId!),
     enabled: !!selectedLogId,
   })
@@ -118,6 +136,7 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
                     </Badge>
                   )}
                   <span>{selectedLog.model}</span>
+                  <SamplingLabel settings={selectedLog.sampling} title="Writer sampling settings" />
                   <span>{selectedLog.durationMs}ms</span>
                   <span>{selectedLog.stepCount ?? 1} steps</span>
                   {selectedLog.totalUsage && (
@@ -132,12 +151,20 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
                   {selectedLog.stepsExceeded && (
                     <Badge variant="destructive" className="text-[0.5625rem] h-3.5">EXCEEDED</Badge>
                   )}
+                  {selectedLog.commitStatus === 'rejected' && (
+                    <Badge variant="destructive" className="text-[0.5625rem] h-3.5">REJECTED</Badge>
+                  )}
                 </div>
               </div>
 
               {selectedLog.stepsExceeded && (
                 <div className="px-6 py-2 text-xs text-destructive bg-destructive/5 border-b border-border/50">
                   Generation hit the 10-step limit. Output may be incomplete.
+                </div>
+              )}
+              {selectedLog.commitStatus === 'rejected' && selectedLog.rejectionReason && (
+                <div className="px-6 py-2 text-xs text-destructive bg-destructive/5 border-b border-border/50">
+                  {selectedLog.rejectionReason}
                 </div>
               )}
 
@@ -261,12 +288,11 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       e.stopPropagation()
-      navigator.clipboard.writeText(text).then(() => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      })
+      if (!await copyText(text)) return
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
     },
     [text],
   )

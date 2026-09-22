@@ -1,20 +1,37 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Fragment, type FragmentVersion } from '@/lib/api'
+import { api, ApiError, type Fragment, type FragmentVersion } from '@/lib/api'
+import { qk, q, useActiveBranchId } from '@/lib/query-keys'
 import { componentId, fragmentComponentId } from '@/lib/dom-ids'
+import { cn } from '@/lib/utils'
+import { diffRows } from '@/lib/diff'
+import { DiffRowsView } from '@/components/DiffRowsView'
 import { parseVisualRefs, readImageUrl, type BoundaryBox } from '@/lib/fragment-visuals'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Pin, Trash2, X, Monitor, User, Upload, ImagePlus, Link2, Unlink, Crop, Archive, Undo2, Copy, Check, Sparkles, Lock, Unlock, Snowflake } from 'lucide-react'
 import type { FrozenSection } from '@/lib/api/types'
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
+import { VoiceField } from '@/components/fragments/VoiceField'
 import { copyFragmentToClipboard } from '@/lib/fragment-clipboard'
 import { CropDialog } from '@/components/fragments/CropDialog'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Hint, EmptyHint, MetaLabel } from '@/components/ui/prose-text'
+import {
+  compareFragmentTypeVisuals,
+  getFragmentTypeVisual,
+  isVersionedFragmentType,
+} from '@/components/fragments/fragment-type-icons'
+import { describeVersionReason } from './fragment-version-label'
 
 export interface FragmentPrefill {
   name: string
@@ -28,6 +45,7 @@ interface FragmentEditorProps {
   mode: 'view' | 'edit'
   onClose: () => void
   onSaved: () => void
+  onFragmentChange?: (fragment: Fragment | null) => void
 }
 
 export function FragmentEditor({
@@ -36,9 +54,25 @@ export function FragmentEditor({
   mode,
   onClose,
   onSaved,
+  onFragmentChange,
 }: FragmentEditorProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const confirm = useConfirm()
+
+  // Fetch live fragment data so sticky/placement updates are reflected immediately.
+  // initialDataUpdatedAt prevents TanStack Query from treating initialData as immediately
+  // stale and firing a background refetch on every fragment selection.
+  const { data: liveFragment } = useQuery({
+    ...q.fragment(storyId, branchId, fragmentProp?.id),
+    enabled: !!fragmentProp?.id,
+    initialData: fragmentProp ?? undefined,
+    initialDataUpdatedAt: fragmentProp ? Date.now() : undefined,
+  })
+
+  const fragment = liveFragment ?? fragmentProp
+  const isVersionedType = !!fragment && isVersionedFragmentType(fragment.type)
+
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
@@ -57,31 +91,9 @@ export function FragmentEditor({
   const savedStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const userEditedRef = useRef(false)
 
-  // Fetch live fragment data so sticky/placement updates are reflected immediately.
-  // initialDataUpdatedAt prevents TanStack Query from treating initialData as immediately
-  // stale and firing a background refetch on every fragment selection.
-  const { data: liveFragment } = useQuery({
-    queryKey: ['fragment', storyId, fragmentProp?.id],
-    queryFn: () => api.fragments.get(storyId, fragmentProp!.id),
-    enabled: !!fragmentProp?.id,
-    initialData: fragmentProp ?? undefined,
-    initialDataUpdatedAt: fragmentProp ? Date.now() : undefined,
-  })
-
-  const fragment = liveFragment ?? fragmentProp
-  const isVersionedType = !!fragment && ['prose', 'character', 'guideline', 'knowledge'].includes(fragment.type)
-
   // Media queries for clipboard copy (embed attached images)
-  const { data: _imageFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'image'],
-    queryFn: () => api.fragments.list(storyId, 'image'),
-    staleTime: 10_000,
-  })
-  const { data: _iconFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'icon'],
-    queryFn: () => api.fragments.list(storyId, 'icon'),
-    staleTime: 10_000,
-  })
+  const { data: _imageFragments } = useQuery({ ...q.fragments(storyId, branchId, 'image'), staleTime: 10_000 })
+  const { data: _iconFragments } = useQuery({ ...q.fragments(storyId, branchId, 'icon'), staleTime: 10_000 })
   const mediaById = useMemo(() => {
     const map = new Map<string, Fragment>()
     for (const f of _imageFragments ?? []) map.set(f.id, f)
@@ -90,10 +102,29 @@ export function FragmentEditor({
   }, [_imageFragments, _iconFragments])
 
   const { data: versionData } = useQuery({
-    queryKey: ['fragment-versions', storyId, fragment?.id],
-    queryFn: () => api.fragments.listVersions(storyId, fragment!.id),
+    ...q.fragmentVersions(storyId, branchId, fragment?.id),
     enabled: !!fragment?.id && isVersionedType,
   })
+
+  const { data: story } = useQuery({
+    queryKey: ['story', storyId],
+    queryFn: () => api.stories.get(storyId),
+  })
+
+  const { data: fragmentTypes } = useQuery({
+    queryKey: ['fragment-types', storyId],
+    queryFn: () => api.fragments.types(storyId),
+  })
+
+  const sortedTypes = useMemo(() => {
+    if (!fragmentTypes) return []
+    const customTypes = story?.settings.customFragmentTypes ?? []
+    return [...fragmentTypes].sort((a, b) => {
+      const visualA = getFragmentTypeVisual(a.type, customTypes)
+      const visualB = getFragmentTypeVisual(b.type, customTypes)
+      return compareFragmentTypeVisuals(visualA, visualB)
+    })
+  }, [fragmentTypes, story?.settings.customFragmentTypes])
 
   // Sync local state from the source fragment (prop or live query data).
   // Uses liveFragment so that external updates (e.g. refinement agent) are reflected.
@@ -120,6 +151,26 @@ export function FragmentEditor({
     }
   }, [sourceFragment, fragmentProp?.id])
 
+  // When the active timeline changes, the branch-scoped version list refetches but the
+  // fragment query is seeded with `initialData` and suppresses its own refetch, leaving
+  // `fragment.version` on the old branch — desyncing the "current version" highlight and
+  // any open preview. Force-load the fragment for the new branch (realigning the cache),
+  // drop the stale preview, and close the editor if the fragment is gone on the new
+  // branch rather than leaving a phantom on screen.
+  const prevBranchIdRef = useRef(branchId)
+  useEffect(() => {
+    if (branchId === prevBranchIdRef.current) return
+    prevBranchIdRef.current = branchId
+    setPreviewVersion(null)
+    const id = fragmentProp?.id
+    if (!id) return
+    queryClient
+      .fetchQuery({ ...q.fragment(storyId, branchId, id), staleTime: 0, retry: false })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) onClose()
+      })
+  }, [branchId, fragmentProp?.id, storyId, queryClient, onClose])
+
   const invalidate = async (overrideType?: string) => {
     const fType = overrideType ?? fragment?.type
     const promises: Promise<void>[] = [
@@ -130,27 +181,31 @@ export function FragmentEditor({
     queryClient.invalidateQueries({
       queryKey: ['fragments', storyId],
       predicate: (q) => {
-        const typeSlot = q.queryKey[2]
+        const typeSlot = q.queryKey[3]
         return typeSlot === undefined || typeSlot === fType
       },
     })
     if (fType === 'prose') {
       promises.push(queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] }))
-      // Prose edits invalidate librarian analysis server-side — refresh the
-      // stale-analysis indicator instead of waiting for the poll interval.
+      // Prose edits trigger re-analysis, so refresh the freshness indicator's index.
       promises.push(queryClient.invalidateQueries({ queryKey: ['librarian-analysis-index', storyId] }))
     }
     if (fragment?.id) {
-      promises.push(queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragment.id] }))
+      promises.push(queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragment.id) }))
+      // Each save writes a new version — refresh the history panel so it appears.
+      promises.push(queryClient.invalidateQueries({ queryKey: qk.fragmentVersions(storyId, branchId, fragment.id) }))
     }
     await Promise.all(promises)
   }
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name: string; description: string; content: string }) =>
-      api.fragments.update(storyId, fragment!.id, data),
-    onSuccess: () => {
+    mutationFn: (data: { name: string; description: string; content: string; type?: string }) =>
+      api.fragments.update(storyId, fragment!.id, data, branchId),
+    onSuccess: (data) => {
       invalidate()
+      if (data.idChanged) {
+        onFragmentChange?.(data)
+      }
       onSaved()
     },
   })
@@ -194,17 +249,19 @@ export function FragmentEditor({
     },
   })
 
-  // Auto-save mutation — only invalidates list queries, not the individual fragment,
-  // so the sync effect doesn't overwrite the user's in-progress edits.
+  // Auto-save never refetches qk.fragment — that would let the sync effect
+  // overwrite in-progress edits. Version metadata is patched by hand below.
   const autoSaveMutation = useMutation({
-    mutationFn: (data: { name: string; description: string; content: string }) =>
-      api.fragments.update(storyId, fragment!.id, data),
-    onSuccess: () => {
+    mutationFn: (data: { name: string; description: string; content: string; type?: string }) =>
+      // 'autosave' lets the server coalesce this typing session into a single version
+      // instead of appending one per debounced save. Deliberate saves omit the reason.
+      api.fragments.update(storyId, fragment!.id, { ...data, reason: 'autosave' }, branchId),
+    onSuccess: (saved) => {
       const fType = fragment?.type
       queryClient.invalidateQueries({
         queryKey: ['fragments', storyId],
         predicate: (q) => {
-          const typeSlot = q.queryKey[2]
+          const typeSlot = q.queryKey[3]
           return typeSlot === undefined || typeSlot === fType
         },
       })
@@ -212,6 +269,15 @@ export function FragmentEditor({
       if (fType === 'prose') {
         queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
         queryClient.invalidateQueries({ queryKey: ['librarian-analysis-index', storyId] })
+      }
+      if (fragment?.id && isVersionedType) {
+        // Surface the new version in the history panel, and mark it current by
+        // patching only the version fields (keep cached content out of the editor).
+        queryClient.invalidateQueries({ queryKey: qk.fragmentVersions(storyId, branchId, fragment.id) })
+        queryClient.setQueryData<Fragment>(
+          qk.fragment(storyId, branchId, fragment.id),
+          (prev) => prev ? { ...prev, version: saved.version, versions: saved.versions } : prev,
+        )
       }
       setSaveStatus('saved')
       if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current)
@@ -275,7 +341,7 @@ export function FragmentEditor({
         description: fragment.description,
         content: fragment.content,
         meta: newMeta,
-      })
+      }, branchId)
     },
     onSuccess: () => {
       invalidate()
@@ -359,31 +425,30 @@ export function FragmentEditor({
     onSuccess: () => {
       invalidate()
       if (fragment?.id) {
-        queryClient.invalidateQueries({ queryKey: ['fragment-versions', storyId, fragment.id] })
+        queryClient.invalidateQueries({ queryKey: qk.fragmentVersions(storyId, branchId, fragment.id) })
+      }
+    },
+  })
+
+  const deleteVersionMutation = useMutation({
+    mutationFn: (version: number) => api.fragments.deleteVersion(storyId, fragment!.id, version),
+    onSuccess: (_data, version) => {
+      if (previewVersion?.version === version) setPreviewVersion(null)
+      if (fragment?.id) {
+        queryClient.invalidateQueries({ queryKey: qk.fragmentVersions(storyId, branchId, fragment.id) })
       }
     },
   })
 
   const versions = (versionData?.versions ?? []).slice().sort((a, b) => b.version - a.version)
 
-  const versionDiffLines = useMemo(() => {
-    if (!fragment || !previewVersion) return [] as string[]
-    const current = fragment.content.split('\n')
-    const target = previewVersion.content.split('\n')
-    const max = Math.max(current.length, target.length)
-    const out: string[] = []
-    for (let i = 0; i < max; i += 1) {
-      const a = current[i]
-      const b = target[i]
-      if (a === b) {
-        if (a !== undefined) out.push(`  ${a}`)
-        continue
-      }
-      if (a !== undefined) out.push(`- ${a}`)
-      if (b !== undefined) out.push(`+ ${b}`)
-    }
-    return out
-  }, [fragment, previewVersion])
+  const versionDiffRows = useMemo(() => {
+    if (!previewVersion) return []
+    // before = the live editor buffer, after = the selected version. Use the buffer,
+    // not fragment.content: after an autosave the cached fragment is intentionally left
+    // stale (to avoid clobbering in-progress edits) and would make the diff read empty.
+    return diffRows(content, previewVersion.content)
+  }, [content, previewVersion])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -391,7 +456,6 @@ export function FragmentEditor({
   }
 
   const isEditing = mode === 'edit'
-  const isPending = updateMutation.isPending
   const isMediaType = type === 'image' || type === 'icon'
 
   const handleImageUpload = async (file: File) => {
@@ -439,7 +503,31 @@ export function FragmentEditor({
           {fragment && (
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[0.625rem] font-mono text-muted-foreground hidden sm:inline">{fragment.id}</span>
-              <Badge variant="secondary" className="text-[0.625rem] h-4">{fragment.type}</Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Badge variant="secondary" className="text-[0.625rem] h-4 cursor-pointer hover:bg-secondary/80 transition-colors">
+                    {fragment.type}
+                  </Badge>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  {sortedTypes.map((t) => (
+                    <DropdownMenuItem
+                      key={t.type}
+                      className="text-xs"
+                      onClick={() => {
+                        updateMutation.mutate({
+                          type: t.type,
+                          name: name || fragment.name,
+                          description: description || fragment.description,
+                          content: content || fragment.content
+                        })
+                      }}
+                    >
+                      {t.type}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               {fragment.sticky && (
                 <Badge className="text-[0.625rem] h-4 gap-0.5">
                   <Pin className="size-2" />
@@ -458,7 +546,7 @@ export function FragmentEditor({
                   variant="ghost"
                   className="h-7 text-xs gap-1"
                   onClick={async () => {
-                    await copyFragmentToClipboard(fragment, mediaById)
+                    if (!await copyFragmentToClipboard(fragment, mediaById)) return
                     setCopied(true)
                     setTimeout(() => setCopied(false), 2000)
                   }}
@@ -649,6 +737,15 @@ export function FragmentEditor({
               required
             />
           </div>
+
+          {type === 'character' && (
+            <VoiceField
+              storyId={storyId}
+              branchId={branchId}
+              fragment={fragment}
+              disabled={!isEditing}
+            />
+          )}
         </div>
 
         <div className="h-px bg-border/30 mx-6" />
@@ -866,14 +963,29 @@ export function FragmentEditor({
                     <span className="text-[0.625rem] text-muted-foreground">Current v{fragment.version ?? 1}</span>
                   </div>
                   {versions.length === 0 ? (
-                    <Hint>No previous versions yet.</Hint>
+                    <Hint>No version history yet.</Hint>
                   ) : (
                     <div className="space-y-1.5 max-h-36 overflow-auto pr-1">
-                      {versions.map((v: FragmentVersion) => (
-                        <div key={v.version} className="flex items-center justify-between rounded-md border border-border/40 px-2 py-1.5">
+                      {versions.map((v: FragmentVersion) => {
+                        const isCurrent = v.version === (fragment.version ?? 1)
+                        // `versions` is sorted descending, so [0] is the tip/latest.
+                        const reasonLabel = describeVersionReason(v.reason, v.version === versions[0]?.version)
+                        return (
+                        <div
+                          key={v.version}
+                          className={cn(
+                            'flex items-center justify-between rounded-md border px-2 py-1.5',
+                            isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/40',
+                          )}
+                        >
                           <div className="min-w-0">
-                            <p className="text-xs font-medium">v{v.version}</p>
-                            <p className="text-[0.625rem] text-muted-foreground truncate">{new Date(v.createdAt).toLocaleString()}</p>
+                            <p className="text-xs font-medium flex items-center gap-1.5">
+                              v{v.version}
+                              {isCurrent && <span className="text-[0.5625rem] uppercase tracking-wide text-primary/80">current</span>}
+                            </p>
+                            <p className="text-[0.625rem] text-muted-foreground truncate" title={v.reason}>
+                              {new Date(v.createdAt).toLocaleString()}{reasonLabel ? ` · ${reasonLabel}` : ''}
+                            </p>
                           </div>
                           <div className="flex items-center gap-1">
                             <Button
@@ -891,13 +1003,25 @@ export function FragmentEditor({
                               variant="ghost"
                               className="h-6 text-xs"
                               onClick={() => revertVersionMutation.mutate(v.version)}
-                              disabled={revertVersionMutation.isPending}
+                              disabled={revertVersionMutation.isPending || isCurrent}
                             >
-                              Restore
+                              Switch
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="size-6 text-muted-foreground hover:text-destructive"
+                              onClick={() => deleteVersionMutation.mutate(v.version)}
+                              disabled={deleteVersionMutation.isPending || isCurrent}
+                              title={isCurrent ? 'Switch to another version before deleting this one' : 'Delete this version'}
+                            >
+                              <Trash2 className="size-3" />
                             </Button>
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                   {previewVersion && (
@@ -914,9 +1038,13 @@ export function FragmentEditor({
                           Close
                         </Button>
                       </div>
-                      <p className="text-[0.625rem] text-muted-foreground">`-` current content, `+` selected version</p>
-                      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-border/30 bg-background/50 p-2 text-[0.6875rem] leading-4">
-                        {versionDiffLines.join('\n') || 'No content differences.'}
+                      <p className="text-[0.625rem] text-muted-foreground">`-` current content, `+` selected version; `~` edited line shows word-level changes inline</p>
+                      <pre className="max-h-40 overflow-auto rounded border border-border/30 bg-background/50 p-2 text-[0.6875rem] leading-4">
+                        {versionDiffRows.length === 0 ? (
+                          'No content differences.'
+                        ) : (
+                          <DiffRowsView rows={versionDiffRows} />
+                        )}
                       </pre>
                     </div>
                   )}
@@ -953,6 +1081,7 @@ export function FragmentEditor({
 
 function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [cropTarget, setCropTarget] = useState<{
     fragmentId: string
     kind: 'icon' | 'image'
@@ -961,20 +1090,9 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
     boundary?: BoundaryBox
   } | null>(null)
 
-  const { data: currentFragment } = useQuery({
-    queryKey: ['fragment', storyId, fragmentId],
-    queryFn: () => api.fragments.get(storyId, fragmentId),
-  })
-
-  const { data: imageFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'image'],
-    queryFn: () => api.fragments.list(storyId, 'image'),
-  })
-
-  const { data: iconFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'icon'],
-    queryFn: () => api.fragments.list(storyId, 'icon'),
-  })
+  const { data: currentFragment } = useQuery(q.fragment(storyId, branchId, fragmentId))
+  const { data: imageFragments } = useQuery(q.fragments(storyId, branchId, 'image'))
+  const { data: iconFragments } = useQuery(q.fragments(storyId, branchId, 'icon'))
 
   const media = [...(iconFragments ?? []), ...(imageFragments ?? [])]
   const visualRefs = parseVisualRefs(currentFragment?.meta)
@@ -994,10 +1112,10 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
           ...currentFragment.meta,
           visualRefs: nextRefs,
         },
-      })
+      }, branchId)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragmentId] })
+      queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragmentId) })
       queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
     },
   })
@@ -1032,8 +1150,8 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
         order: currentFragment.order,
         placement: currentFragment.placement,
         meta: { ...currentFragment.meta, visualRefs: nextRefs },
-      })
-      queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragmentId] })
+      }, branchId)
+      queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragmentId) })
       queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
     } catch {
       // silently ignored
@@ -1223,20 +1341,21 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
 
 // --- Tags sub-component ---
 
-function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+export function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [newTag, setNewTag] = useState('')
 
   const { data } = useQuery({
-    queryKey: ['tags', storyId, fragmentId],
+    queryKey: qk.tags(storyId, branchId, fragmentId),
     queryFn: () => api.fragments.getTags(storyId, fragmentId),
   })
 
   const addMutation = useMutation({
     mutationFn: (tag: string) => api.fragments.addTag(storyId, fragmentId, tag),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tags', storyId, fragmentId] })
-      queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragmentId] })
+      queryClient.invalidateQueries({ queryKey: qk.tags(storyId, branchId, fragmentId) })
+      queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragmentId) })
       setNewTag('')
     },
   })
@@ -1244,8 +1363,8 @@ function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
   const removeMutation = useMutation({
     mutationFn: (tag: string) => api.fragments.removeTag(storyId, fragmentId, tag),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tags', storyId, fragmentId] })
-      queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragmentId] })
+      queryClient.invalidateQueries({ queryKey: qk.tags(storyId, branchId, fragmentId) })
+      queryClient.invalidateQueries({ queryKey: qk.fragment(storyId, branchId, fragmentId) })
     },
   })
 
@@ -1283,7 +1402,7 @@ function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
           placeholder="Add tag..."
           className="h-7 text-xs bg-transparent"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               handleAddTag()
             }
@@ -1306,19 +1425,20 @@ function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
 
 // --- Refs sub-component ---
 
-function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+export function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [newRefId, setNewRefId] = useState('')
 
   const { data } = useQuery({
-    queryKey: ['refs', storyId, fragmentId],
+    queryKey: qk.refs(storyId, branchId, fragmentId),
     queryFn: () => api.fragments.getRefs(storyId, fragmentId),
   })
 
   const addMutation = useMutation({
     mutationFn: (targetId: string) => api.fragments.addRef(storyId, fragmentId, targetId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['refs', storyId, fragmentId] })
+      queryClient.invalidateQueries({ queryKey: qk.refs(storyId, branchId, fragmentId) })
       setNewRefId('')
     },
   })
@@ -1326,7 +1446,7 @@ function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
   const removeMutation = useMutation({
     mutationFn: (targetId: string) => api.fragments.removeRef(storyId, fragmentId, targetId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['refs', storyId, fragmentId] })
+      queryClient.invalidateQueries({ queryKey: qk.refs(storyId, branchId, fragmentId) })
     },
   })
 
@@ -1374,7 +1494,7 @@ function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: str
           placeholder="Fragment ID (e.g. ch-bokura)"
           className="h-7 text-xs bg-transparent"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
               handleAddRef()
             }

@@ -1,17 +1,23 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createTempDir, makeTestSettings } from '../setup'
-import { createStory } from '@/server/fragments/storage'
+import { getContentRoot } from '@/server/fragments/branches'
+import { createFragment, createStory, getFragment, updateFragment } from '@/server/fragments/storage'
+import { analysisSourceRevision } from '@/server/librarian/continuity-source'
 import {
   saveAnalysis,
+  deleteAnalysis,
   getAnalysis,
   listAnalyses,
   getState,
   saveState,
   getLatestAnalysisIdsByFragment,
+  getAnalysisIndex,
   rebuildAnalysisIndex,
   type LibrarianAnalysis,
-  type LibrarianState,
 } from '@/server/librarian/storage'
+import type { StoredLibrarianState } from '@/contracts/librarian'
 
 function makeAnalysis(overrides: Partial<LibrarianAnalysis> = {}): LibrarianAnalysis {
   return {
@@ -19,9 +25,9 @@ function makeAnalysis(overrides: Partial<LibrarianAnalysis> = {}): LibrarianAnal
     createdAt: new Date().toISOString(),
     fragmentId: 'pr-0001',
     summaryUpdate: 'The hero entered the cave.',
-    mentionedCharacters: ['ch-0001'],
+    mentions: [{ fragmentId: 'ch-0001', text: 'hero' }],
     contradictions: [],
-    fragmentSuggestions: [],
+    fragmentChangeProposals: [],
     timelineEvents: [],
     ...overrides,
   }
@@ -41,7 +47,6 @@ describe('librarian storage', () => {
       name: 'Test Story',
       description: 'For librarian tests',
     coverImage: null,
-      summary: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       settings: makeTestSettings(),
@@ -61,9 +66,51 @@ describe('librarian storage', () => {
       expect(loaded).toEqual(analysis)
     })
 
+    it('returns isolated values from the analysis read cache', async () => {
+      const analysis = makeAnalysis({ id: 'analysis-isolated' })
+      await saveAnalysis(dataDir, storyId, analysis)
+
+      const first = await getAnalysis(dataDir, storyId, analysis.id)
+      first!.summaryUpdate = 'Caller-local mutation'
+
+      const second = await getAnalysis(dataDir, storyId, analysis.id)
+      expect(second!.summaryUpdate).toBe('The hero entered the cave.')
+    })
+
     it('returns null for non-existent analysis', async () => {
       const loaded = await getAnalysis(dataDir, storyId, 'nonexistent')
       expect(loaded).toBeNull()
+    })
+
+    it('rejects a non-v2 continuity projection before writing it', async () => {
+      const analysis = makeAnalysis({
+        id: 'analysis-invalid-save',
+        continuityProjection: {
+          version: 1,
+          temporalFrame: { relation: 'forward' },
+        } as never,
+      })
+
+      await expect(saveAnalysis(dataDir, storyId, analysis)).rejects.toThrow()
+      expect(await getAnalysis(dataDir, storyId, analysis.id)).toBeNull()
+    })
+
+    it('rejects a malformed continuity projection when reading storage', async () => {
+      const root = await getContentRoot(dataDir, storyId)
+      const dir = join(root, 'librarian', 'analyses')
+      await mkdir(dir, { recursive: true })
+      const analysis = makeAnalysis({ id: 'analysis-invalid-read' }) as unknown as Record<string, unknown>
+      analysis.continuityProjection = {
+        version: 2,
+        scene: { transition: 'enter-flashback', line: 'present' },
+        stateOperations: [],
+        threadOperations: [],
+        threadFocus: [],
+        knowledgeOperations: [],
+      }
+      await writeFile(join(dir, 'analysis-invalid-read.json'), JSON.stringify(analysis), 'utf-8')
+
+      await expect(getAnalysis(dataDir, storyId, 'analysis-invalid-read')).rejects.toThrow()
     })
 
     it('lists analyses sorted newest first', async () => {
@@ -87,26 +134,102 @@ describe('librarian storage', () => {
         id: 'analysis-counts',
         contradictions: [
           { description: 'Eye color changed', fragmentIds: ['pr-0001', 'pr-0002'] },
+          { description: 'Dismissed old finding', fragmentIds: ['pr-0001'], dismissed: true },
         ],
-        fragmentSuggestions: [
-          { type: 'knowledge' as const, name: 'Cave', description: 'The dark cave', content: 'A cave in the mountains' },
+        fragmentChangeProposals: [
+          {
+            operations: [{ operationId: 'op-1', action: 'create_fragment', type: 'knowledge', name: 'Cave', description: 'The dark cave', content: 'A cave in the mountains' }],
+            validation: [{ operationId: 'op-1', action: 'create_fragment', status: 'valid' }],
+          },
+          {
+            operations: [{ operationId: 'op-2', action: 'replace_text', fragmentId: 'ch-0001', field: 'content', oldText: 'old', newText: 'new', replaceAll: false }],
+            validation: [{ operationId: 'op-2', action: 'replace_text', status: 'valid', target: { fragmentId: 'ch-0001', field: 'content' } }],
+          },
         ],
         timelineEvents: [
-          { event: 'Entered cave', position: 'during' },
+          { event: 'Entered cave', position: 'before' },
           { event: 'Found sword', position: 'after' },
         ],
       }))
 
       const summaries = await listAnalyses(dataDir, storyId)
       expect(summaries[0].contradictionCount).toBe(1)
-      expect(summaries[0].suggestionCount).toBe(1)
-      expect(summaries[0].pendingSuggestionCount).toBe(1)
+      expect(summaries[0].suggestionCount).toBe(2)
+      expect(summaries[0].pendingSuggestionCount).toBe(2)
       expect(summaries[0].timelineEventCount).toBe(2)
     })
 
     it('returns empty list when no analyses exist', async () => {
       const summaries = await listAnalyses(dataDir, storyId)
       expect(summaries).toEqual([])
+    })
+
+    /**
+     * Summaries are memoized per file so a five-second poll stops re-parsing
+     * every trace. Rewriting an analysis — dismissing a contradiction, accepting
+     * a proposal — must invalidate that, or the panel keeps showing counts the
+     * user has already acted on.
+     */
+    it('reflects a rewritten analysis rather than a memoized summary', async () => {
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-rewritten',
+        contradictions: [
+          { description: 'First', fragmentIds: ['ch-0001'] },
+          { description: 'Second', fragmentIds: ['ch-0001'] },
+        ],
+      }))
+      expect((await listAnalyses(dataDir, storyId))[0].contradictionCount).toBe(2)
+
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-rewritten',
+        contradictions: [
+          { description: 'First', fragmentIds: ['ch-0001'], dismissed: true },
+          { description: 'Second', fragmentIds: ['ch-0001'] },
+        ],
+      }))
+      expect((await listAnalyses(dataDir, storyId))[0].contradictionCount).toBe(1)
+    })
+
+    // The fold rejects a projection whose source prose changed. Without a flag
+    // here that rejection is invisible: the passage's state and knowledge just
+    // stop reaching the Writer with nothing prompting a re-analysis.
+    it('flags an analysis whose source prose changed after it ran', async () => {
+      await createFragment(dataDir, storyId, {
+        id: 'pr-stale',
+        type: 'prose',
+        name: 'Passage',
+        description: '',
+        content: 'The original passage.',
+        tags: [],
+        refs: [],
+        sticky: false,
+        placement: 'user',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        order: 1,
+        meta: {},
+      })
+      const prose = (await getFragment(dataDir, storyId, 'pr-stale'))!
+      const projection = {
+        version: 2 as const,
+        scene: { transition: 'continue' as const, line: 'present' as const },
+        stateOperations: [],
+        threadOperations: [],
+        threadFocus: [],
+        knowledgeOperations: [],
+      }
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-fresh',
+        fragmentId: 'pr-stale',
+        sourceRevision: analysisSourceRevision(prose),
+        continuityProjection: projection,
+      }))
+
+      expect((await listAnalyses(dataDir, storyId))[0].continuityStale).toBeUndefined()
+
+      await updateFragment(dataDir, storyId, { ...prose, content: 'The passage was rewritten.' })
+
+      expect((await listAnalyses(dataDir, storyId))[0].continuityStale).toBe(true)
     })
 
     it('updates latest-analysis index on save and reanalysis', async () => {
@@ -131,6 +254,69 @@ describe('librarian storage', () => {
       expect(latest.get('pr-0002')).toBe('analysis-other')
     })
 
+    it('indexes the latest analysis and latest completed projection independently', async () => {
+      const projection = {
+        version: 2 as const,
+        scene: { transition: 'continue' as const },
+        stateOperations: [], threadOperations: [], threadFocus: [], knowledgeOperations: [],
+      }
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-complete', fragmentId: 'pr-0001',
+        createdAt: '2025-01-01T00:00:00.000Z', continuityProjection: projection,
+      }))
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-partial', fragmentId: 'pr-0001',
+        createdAt: '2025-01-02T00:00:00.000Z',
+      }))
+
+      const index = await getAnalysisIndex(dataDir, storyId)
+      expect(index?.latestByFragmentId['pr-0001']?.analysisId).toBe('analysis-partial')
+      expect(index?.latestProjectionByFragmentId['pr-0001']?.analysisId).toBe('analysis-complete')
+    })
+
+    it('rebuilds an obsolete index into the current dual-pointer shape', async () => {
+      const projection = {
+        version: 2 as const,
+        scene: { transition: 'continue' as const },
+        stateOperations: [], threadOperations: [], threadFocus: [], knowledgeOperations: [],
+      }
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-complete', continuityProjection: projection,
+      }))
+      const root = await getContentRoot(dataDir, storyId)
+      await writeFile(join(root, 'librarian', 'index.json'), JSON.stringify({
+        version: 1,
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        latestByFragmentId: { 'pr-0001': { analysisId: 'analysis-complete', createdAt: '2025-01-01T00:00:00.000Z' } },
+      }), 'utf-8')
+
+      const rebuilt = await getAnalysisIndex(dataDir, storyId)
+      expect(rebuilt?.version).toBe(2)
+      expect(rebuilt?.latestProjectionByFragmentId['pr-0001']?.analysisId).toBe('analysis-complete')
+    })
+
+    it('promotes both index pointers when the latest completed analysis is deleted', async () => {
+      const projection = {
+        version: 2 as const,
+        scene: { transition: 'continue' as const },
+        stateOperations: [], threadOperations: [], threadFocus: [], knowledgeOperations: [],
+      }
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-older', fragmentId: 'pr-0001',
+        createdAt: '2025-01-01T00:00:00.000Z', continuityProjection: projection,
+      }))
+      await saveAnalysis(dataDir, storyId, makeAnalysis({
+        id: 'analysis-newer', fragmentId: 'pr-0001',
+        createdAt: '2025-01-02T00:00:00.000Z', continuityProjection: projection,
+      }))
+
+      expect(await deleteAnalysis(dataDir, storyId, 'analysis-newer')).toBe(true)
+
+      const index = await getAnalysisIndex(dataDir, storyId)
+      expect(index?.latestByFragmentId['pr-0001']?.analysisId).toBe('analysis-older')
+      expect(index?.latestProjectionByFragmentId['pr-0001']?.analysisId).toBe('analysis-older')
+    })
+
     it('rebuilds analysis index from analysis files', async () => {
       await saveAnalysis(dataDir, storyId, makeAnalysis({
         id: 'analysis-a',
@@ -145,6 +331,7 @@ describe('librarian storage', () => {
 
       const rebuilt = await rebuildAnalysisIndex(dataDir, storyId)
       expect(rebuilt.latestByFragmentId['pr-0001']?.analysisId).toBe('analysis-b')
+      expect(rebuilt.latestProjectionByFragmentId['pr-0001']).toBeUndefined()
 
       const latest = await getLatestAnalysisIdsByFragment(dataDir, storyId)
       expect(latest.get('pr-0001')).toBe('analysis-b')
@@ -156,16 +343,14 @@ describe('librarian storage', () => {
       const state = await getState(dataDir, storyId)
       expect(state).toEqual({
         lastAnalyzedFragmentId: null,
-        summarizedUpTo: null,
         recentMentions: {},
         timeline: [],
       })
     })
 
     it('saves and loads state', async () => {
-      const state: LibrarianState = {
+      const state: StoredLibrarianState = {
         lastAnalyzedFragmentId: 'pr-0001',
-        summarizedUpTo: null,
         recentMentions: {
           'ch-0001': ['pr-0001', 'pr-0002'],
         },
@@ -182,14 +367,12 @@ describe('librarian storage', () => {
     it('overwrites previous state on save', async () => {
       await saveState(dataDir, storyId, {
         lastAnalyzedFragmentId: 'pr-0001',
-        summarizedUpTo: null,
         recentMentions: {},
         timeline: [],
       })
 
       await saveState(dataDir, storyId, {
         lastAnalyzedFragmentId: 'pr-0002',
-        summarizedUpTo: null,
         recentMentions: { 'ch-0001': ['pr-0002'] },
         timeline: [{ event: 'Battle', fragmentId: 'pr-0002' }],
       })

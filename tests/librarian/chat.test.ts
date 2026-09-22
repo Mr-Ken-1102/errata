@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTempDir, seedTestProvider, makeTestSettings } from '../setup'
+import { getSessionUsage } from '@/server/llm/token-tracker'
 import {
   createStory,
   createFragment,
 } from '@/server/fragments/storage'
 import { initProseChain } from '@/server/fragments/prose-chain'
+import { appendChatMessage, createConversation } from '@/server/librarian/storage'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
 // Mock the AI SDK ToolLoopAgent
@@ -36,7 +38,6 @@ function makeStory(overrides: Partial<StoryMeta> = {}): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: 'A hero enters a forest.',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(),
@@ -72,6 +73,22 @@ async function* createMockFullStream(events: Array<{ type: string; [key: string]
   }
 }
 
+// Helper to consume a Response stream completely to prevent background write races in cleanup
+async function consumeStream(res: Response): Promise<void> {
+  if (!res.body) return
+  const reader = res.body.getReader()
+  try {
+    while (true) {
+      const { done } = await reader.read()
+      if (done) break
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  // Wait a brief moment to allow microtasks/promises to settle
+  await new Promise((resolve) => setTimeout(resolve, 10))
+}
+
 describe('librarian chat endpoint', () => {
   let dataDir: string
   let cleanup: () => Promise<void>
@@ -89,6 +106,8 @@ describe('librarian chat endpoint', () => {
   })
 
   afterEach(async () => {
+    // Allow any lingering async disk I/O to finish before removing the directory
+    await new Promise((resolve) => setTimeout(resolve, 50))
     await cleanup()
   })
 
@@ -115,7 +134,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
@@ -146,12 +165,67 @@ describe('librarian chat endpoint', () => {
     // Should have text events and a finish event
     const textEvents = events.filter((e) => e.type === 'text')
     expect(textEvents.length).toBeGreaterThan(0)
-    expect(textEvents[0].text).toBe('Hello')
-    expect(textEvents[1].text).toBe(' world')
+    // The server-owned run registry deliberately batches adjacent text deltas
+    // before assigning sequence numbers; event boundaries are not semantic.
+    expect(textEvents.map((event) => event.text).join('')).toBe('Hello world')
 
     const finishEvent = events.find((e) => e.type === 'finish')
     expect(finishEvent).toBeDefined()
     expect(finishEvent!.finishReason).toBe('stop')
+  })
+
+  it('injects a captured conversation POV into chat context and exposes the chat-only voice tool', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+    await createFragment(dataDir, story.id, makeFragment({
+      id: 'ch-maya',
+      name: 'Maya',
+      meta: { voice: 'Tôi quan sát kỹ, nói ít, tránh phô trương.' },
+    }))
+    const conversation = await createConversation(
+      dataDir,
+      story.id,
+      'Refine in Maya POV',
+      'ch-maya',
+    )
+
+    mockAgentStream.mockResolvedValue({
+      fullStream: createMockFullStream([
+        { type: 'text-delta', text: 'Understood.' },
+        { type: 'finish', finishReason: 'stop' },
+      ]),
+      text: Promise.resolve('Understood.'),
+      reasoning: Promise.resolve(''),
+      toolCalls: Promise.resolve([]),
+      finishReason: Promise.resolve('stop'),
+      steps: Promise.resolve([]),
+    })
+
+    const res = await app.fetch(
+      new Request(
+        `http://localhost/api/stories/${story.id}/librarian/conversations/${conversation.id}/chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'Refine the passage.' }),
+        },
+      ),
+    )
+    expect(res.status).toBe(200)
+    await consumeStream(res)
+
+    const streamArgs = mockAgentStream.mock.calls.at(-1)?.[0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const context = streamArgs.messages.map(message => message.content).join('\n')
+    expect(context).toContain("Maya's point of view")
+    expect(context).toContain('Tôi quan sát kỹ, nói ít, tránh phô trương.')
+    expect(context).not.toContain('{{voice}}')
+
+    const constructorConfig = mockAgentCtor.mock.calls.at(-1)?.[0] as {
+      tools?: Record<string, unknown>
+    }
+    expect(constructorConfig.tools).toHaveProperty('setCharacterVoice')
   })
 
   it('streams tool-call and tool-result events', async () => {
@@ -168,13 +242,13 @@ describe('librarian chat endpoint', () => {
         {
           type: 'tool-call',
           toolCallId: 'tc-1',
-          toolName: 'editProse',
-          input: { oldText: 'test', newText: 'modified' },
+          toolName: 'proposeProseChanges',
+          input: { edits: [{ oldText: 'test', newText: 'modified' }] },
         },
         {
           type: 'tool-result',
           toolCallId: 'tc-1',
-          toolName: 'editProse',
+          toolName: 'proposeProseChanges',
           output: { ok: true },
         },
         { type: 'finish', finishReason: 'stop' },
@@ -191,7 +265,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Edit the prose' }],
+          message: 'Edit the prose',
         }),
       }),
     )
@@ -218,11 +292,11 @@ describe('librarian chat endpoint', () => {
 
     const toolCallEvent = events.find((e) => e.type === 'tool-call')
     expect(toolCallEvent).toBeDefined()
-    expect(toolCallEvent!.toolName).toBe('editProse')
+    expect(toolCallEvent!.toolName).toBe('proposeProseChanges')
 
     const toolResultEvent = events.find((e) => e.type === 'tool-result')
     expect(toolResultEvent).toBeDefined()
-    expect(toolResultEvent!.toolName).toBe('editProse')
+    expect(toolResultEvent!.toolName).toBe('proposeProseChanges')
   })
 
   it('streams reasoning events', async () => {
@@ -247,7 +321,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Why is the sky blue?' }],
+          message: 'Why is the sky blue?',
         }),
       }),
     )
@@ -292,15 +366,16 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'List characters' }],
+          message: 'List characters',
         }),
       }),
     )
+    await consumeStream(res)
 
     // Verify ToolLoopAgent was created with tools
     expect(mockAgentCtor).toHaveBeenCalled()
@@ -309,7 +384,42 @@ describe('librarian chat endpoint', () => {
     expect(Object.keys(config.tools).length).toBeGreaterThan(0)
   })
 
-  it('includes reanalyzeFragment tool', async () => {
+  it('reports token usage once the stream completes', async () => {
+    const story = makeStory()
+    await createStory(dataDir, story)
+
+    mockAgentStream.mockResolvedValue({
+      fullStream: createMockFullStream([{ type: 'finish', finishReason: 'stop', stepCount: 1 }]),
+      text: Promise.resolve(''),
+      reasoning: Promise.resolve(''),
+      toolCalls: Promise.resolve([]),
+      finishReason: Promise.resolve('stop'),
+      steps: Promise.resolve([]),
+      totalUsage: Promise.resolve({ inputTokens: 30, outputTokens: 12 }),
+    })
+
+    const res = await app.fetch(
+      new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Hello',
+        }),
+      }),
+    )
+    await consumeStream(res)
+    // Usage is reported after the completion promise resolves, one tick after
+    // the stream finishes draining.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(getSessionUsage(story.id).sources['librarian.chat']).toBeDefined()
+    expect(getSessionUsage(story.id).total).toMatchObject({
+      inputTokens: 30,
+      outputTokens: 12,
+    })
+  })
+
+  it('includes invokeAgent tool', async () => {
     const story = makeStory()
     await createStory(dataDir, story)
 
@@ -322,20 +432,22 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Reanalyze the prose' }],
+          message: 'Reanalyze the prose',
         }),
       }),
     )
+    await consumeStream(res)
 
     expect(mockAgentCtor).toHaveBeenCalled()
     const config = mockAgentCtor.mock.calls[0][0]
-    expect(config.tools.reanalyzeFragment).toBeDefined()
-    expect(config.instructions).toContain('reanalyzeFragment')
+    // The tool is provided via the SDK schema (not enumerated in the prompt).
+    expect(config.tools.invokeAgent).toBeDefined()
+    expect(config.tools.readContinuity).toBeDefined()
   })
 
   it('includes conversation history in messages', async () => {
@@ -351,19 +463,17 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    await appendChatMessage(dataDir, story.id, { role: 'user', content: 'Hello' })
+    await appendChatMessage(dataDir, story.id, { role: 'assistant', content: 'Hi there!' })
+
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'user', content: 'Hello' },
-            { role: 'assistant', content: 'Hi there!' },
-            { role: 'user', content: 'How are you?' },
-          ],
-        }),
+        body: JSON.stringify({ message: 'How are you?' }),
       }),
     )
+    await consumeStream(res)
 
     expect(mockAgentStream).toHaveBeenCalled()
     const callArgs = mockAgentStream.mock.calls[0][0]
@@ -389,25 +499,33 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
+    await consumeStream(res)
 
     expect(mockAgentCtor).toHaveBeenCalled()
     const config = mockAgentCtor.mock.calls[0][0]
-    expect(config.instructions).toContain('librarian')
+    expect(config.instructions).toContain('Librarian')
     expect(config.instructions).toContain('editProse')
   })
 
   it('includes story context in messages', async () => {
-    const story = makeStory({ summary: 'Epic fantasy tale' })
+    const story = makeStory()
     await createStory(dataDir, story)
+
+    await createFragment(dataDir, story.id, makeFragment({
+      type: 'summary',
+      id: 'sm-authored',
+      name: 'Author overview',
+      content: 'Epic fantasy tale',
+    }))
 
     const fragment = makeFragment({ type: 'prose', id: 'pr-0001', name: 'Opening' })
     await createFragment(dataDir, story.id, fragment)
@@ -422,15 +540,16 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
+    await consumeStream(res)
 
     expect(mockAgentStream).toHaveBeenCalled()
     const callArgs = mockAgentStream.mock.calls[0][0]
@@ -453,16 +572,16 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
-          maxSteps: 3,
+          message: 'Hello',
         }),
       }),
     )
+    await consumeStream(res)
 
     expect(mockAgentCtor).toHaveBeenCalled()
     const config = mockAgentCtor.mock.calls[0][0]
@@ -485,15 +604,16 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
-    await app.fetch(
+    const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello librarian' }],
+          message: 'Hello librarian',
         }),
       }),
     )
+    await consumeStream(res)
 
     // Wait for async persistence
     await new Promise((r) => setTimeout(r, 100))

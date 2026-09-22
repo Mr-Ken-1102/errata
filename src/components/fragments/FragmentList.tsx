@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useCallback, memo, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api, type Fragment, type Folder } from '@/lib/api'
+import { qk, q, useActiveBranchId } from '@/lib/query-keys'
 import { componentId, fragmentComponentId } from '@/lib/dom-ids'
-import { resolveFragmentVisual, generateBubbles, hexagonPoints, diamondPoints, type Bubble } from '@/lib/fragment-visuals'
+import { resolveFragmentVisual, generateBubbles } from '@/lib/fragment-visuals'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,8 +18,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pin, GripVertical, FileDown, UserPlus, Archive, FolderPlus, ChevronRight, MoreHorizontal, Pencil, Trash2, FolderOpen, ListFilter } from 'lucide-react'
+import { Plus, Pin, GripVertical, FileDown, UserPlus, Archive, FolderPlus, ChevronRight, MoreHorizontal, Pencil, Trash2, FolderOpen, ListFilter, BookOpen } from 'lucide-react'
 import { Caption } from '@/components/ui/prose-text'
+import { FragmentBubbleShape } from './FragmentBubbleShape'
 
 interface FragmentListProps {
   storyId: string
@@ -29,23 +31,8 @@ interface FragmentListProps {
   onCreateNew: () => void
   onImport?: () => void
   onImportCard?: () => void
+  onImportLorebook?: () => void
   selectedId?: string
-}
-
-function BubbleSvgShape({ b }: { b: Bubble; i: number }) {
-  const transform = b.shape !== 'circle' ? `rotate(${b.rotation} ${b.cx} ${b.cy})` : undefined
-  switch (b.shape) {
-    case 'rounded-rect':
-      return <rect key={`${b.cx}-${b.cy}`} x={b.cx - b.r * 0.8} y={b.cy - b.r * 0.6} width={b.r * 1.6} height={b.r * 1.2} rx={b.r * 0.2} fill={b.color} opacity={b.opacity} transform={transform} />
-    case 'hexagon':
-      return <polygon key={`${b.cx}-${b.cy}`} points={hexagonPoints(b.cx, b.cy, b.r)} fill={b.color} opacity={b.opacity} transform={transform} />
-    case 'ellipse':
-      return <ellipse key={`${b.cx}-${b.cy}`} cx={b.cx} cy={b.cy} rx={b.r * 1.2} ry={b.r * 0.7} fill={b.color} opacity={b.opacity} transform={transform} />
-    case 'diamond':
-      return <polygon key={`${b.cx}-${b.cy}`} points={diamondPoints(b.cx, b.cy, b.r)} fill={b.color} opacity={b.opacity} transform={transform} />
-    default:
-      return <circle key={`${b.cx}-${b.cy}`} cx={b.cx} cy={b.cy} r={b.r} fill={b.color} opacity={b.opacity} />
-  }
 }
 
 // --- Memoized fragment row ---
@@ -131,8 +118,8 @@ const FragmentRow = memo(function FragmentRow({
         <div className="size-9 shrink-0 rounded-lg overflow-hidden">
           <svg viewBox="0 0 36 36" className="size-full" aria-hidden>
             <rect width="36" height="36" fill={bubbleSet.bg} />
-            {bubbleSet.bubbles.map((b, i) => (
-              <BubbleSvgShape key={`${b.cx}-${b.cy}`} b={b} i={i} />
+            {bubbleSet.bubbles.map((bubble) => (
+              <FragmentBubbleShape key={`${bubble.cx}-${bubble.cy}`} bubble={bubble} />
             ))}
           </svg>
         </div>
@@ -430,6 +417,7 @@ export function FragmentList({
   onCreateNew,
   onImport,
   onImportCard,
+  onImportLorebook,
   selectedId,
 }: FragmentListProps) {
   const [search, setSearch] = useState('')
@@ -448,32 +436,29 @@ export function FragmentList({
   const [renameValue, setRenameValue] = useState('')
   const [newFolderId, setNewFolderId] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState('all')
+  const branchId = useActiveBranchId(storyId)
+
+  // Branch-scoped and shaped `['fragments', storyId, branchId, type, scope]` so
+  // `type` stays at index 3 for the invalidation predicates below (it may be
+  // undefined for an all-types list — keep the slot explicit).
+  const fragmentsQueryKey = ['fragments', storyId, branchId, type, allowedTypes?.join(',') ?? 'all']
 
   const { data: fragments, isLoading } = useQuery({
-    queryKey: ['fragments', storyId, type, allowedTypes?.join(',') ?? 'all'],
-    queryFn: () => api.fragments.list(storyId, type),
+    queryKey: fragmentsQueryKey,
+    queryFn: () => api.fragments.list(storyId, type, branchId),
     staleTime: 2_000,
   })
 
   const { data: foldersData } = useQuery({
-    queryKey: ['folders', storyId],
+    queryKey: qk.folders(storyId, branchId),
     queryFn: () => api.folders.list(storyId),
     staleTime: 5_000,
   })
   const folders = foldersData?.folders
   const folderAssignments = foldersData?.assignments ?? {}
 
-  const { data: imageFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'image'],
-    queryFn: () => api.fragments.list(storyId, 'image'),
-    staleTime: 10_000,
-  })
-
-  const { data: iconFragments } = useQuery({
-    queryKey: ['fragments', storyId, 'icon'],
-    queryFn: () => api.fragments.list(storyId, 'icon'),
-    staleTime: 10_000,
-  })
+  const { data: imageFragments } = useQuery({ ...q.fragments(storyId, branchId, 'image'), staleTime: 10_000 })
+  const { data: iconFragments } = useQuery({ ...q.fragments(storyId, branchId, 'icon'), staleTime: 10_000 })
 
   const pinMutation = useMutation({
     mutationFn: (fragment: Fragment) =>
@@ -487,15 +472,13 @@ export function FragmentList({
       queryClient.invalidateQueries({
         queryKey: ['fragments', storyId],
         predicate: (q) => {
-          const typeSlot = q.queryKey[2]
+          const typeSlot = q.queryKey[3]
           return typeSlot === undefined || typeSlot === fragment.type
         },
       })
-      queryClient.invalidateQueries({ queryKey: ['fragment', storyId, fragment.id] })
+      queryClient.invalidateQueries({ queryKey: ['fragment', storyId] })
     },
   })
-
-  const fragmentsQueryKey = ['fragments', storyId, type, allowedTypes?.join(',') ?? 'all']
 
   const reorderMutation = useMutation({
     mutationFn: (items: Array<{ id: string; order: number }>) =>
@@ -521,7 +504,7 @@ export function FragmentList({
       queryClient.invalidateQueries({
         queryKey: ['fragments', storyId],
         predicate: (q) => {
-          const typeSlot = q.queryKey[2]
+          const typeSlot = q.queryKey[3]
           return typeSlot === undefined || typeSlot === type
         },
       })
@@ -579,8 +562,8 @@ export function FragmentList({
       api.folders.reorder(storyId, items),
     onMutate: async (items) => {
       await queryClient.cancelQueries({ queryKey: ['folders', storyId] })
-      const previous = queryClient.getQueryData<Folder[]>(['folders', storyId])
-      queryClient.setQueryData<Folder[]>(['folders', storyId], (old) => {
+      const previous = queryClient.getQueryData<Folder[]>(qk.folders(storyId, branchId))
+      queryClient.setQueryData<Folder[]>(qk.folders(storyId, branchId), (old) => {
         if (!old) return old
         const orderMap = new Map(items.map((item) => [item.id, item.order]))
         return old
@@ -591,7 +574,7 @@ export function FragmentList({
     },
     onError: (_err, _items, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(['folders', storyId], context.previous)
+        queryClient.setQueryData(qk.folders(storyId, branchId), context.previous)
       }
     },
     onSettled: () => {
@@ -1099,6 +1082,16 @@ export function FragmentList({
                 <TooltipContent side="bottom">Import character card</TooltipContent>
               </Tooltip>
             )}
+            {onImportLorebook && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" variant="ghost" className="size-6 text-muted-foreground hover:text-foreground" onClick={onImportLorebook} data-component-id={componentId(listIdBase ?? type ?? 'fragment', 'import-lorebook-button')}>
+                    <BookOpen className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Import standalone lorebook</TooltipContent>
+              </Tooltip>
+            )}
             {onImport && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1125,7 +1118,7 @@ export function FragmentList({
       <div className="px-3 py-2.5 border-b border-border/30">
         <p className="text-[0.625rem] text-muted-foreground leading-relaxed">
           <Pin className="size-2.5 inline -mt-0.5 mr-0.5" />
-          Pinned fragments are always sent to the model. Unpinned ones appear as a shortlist.
+          Pinned fragments are sent in full. Unpinned ones appear as catalog rows.
         </p>
       </div>
 

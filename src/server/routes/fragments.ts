@@ -11,6 +11,7 @@ import {
   restoreFragment,
   listFragmentVersions,
   revertFragmentToVersion,
+  deleteFragmentVersion,
 } from '../fragments/storage'
 import {
   addTag,
@@ -21,22 +22,16 @@ import {
   getBackRefs,
 } from '../fragments/associations'
 import { generateFragmentId } from '@/lib/fragment-ids'
+import { withBranch } from '../fragments/branches'
+import { renameFragmentIdAcrossStory } from '../fragments/rename'
 import { registry } from '../fragments/registry'
-import { reanalyzeAfterProseChange } from '../librarian/reanalyze'
-import { createLogger } from '../logging'
+import { reanalyzeAfterProseChange } from '../librarian/scheduler'
 import { installFragmentBundle } from '../erratanet/pack-install'
+import { revertAppliedChanges, RevertConflictError, type AppliedChange } from '../fragments/change-apply'
 import type { Fragment } from '../fragments/schema'
 import type { FragmentBundleData } from '@/lib/fragment-clipboard'
 
-function hasMaterialProseChange(before: Fragment, after: Fragment): boolean {
-  return before.name !== after.name
-    || before.description !== after.description
-    || before.content !== after.content
-}
-
 export function fragmentRoutes(dataDir: string) {
-  const logger = createLogger('api:fragments', { dataDir })
-
   return new Elysia({ detail: { tags: ['Fragments'] } })
     .post('/stories/:storyId/fragments', async ({ params, body, set }) => {
       const story = await getStory(dataDir, params.storyId)
@@ -69,7 +64,18 @@ export function fragmentRoutes(dataDir: string) {
         order: 0,
         meta: body.meta ?? {},
         version: 1,
-        versions: [],
+        // Seed v1 with a 'created' reason so the opening editing session coalesces
+        // into it (see updateFragmentVersioned) instead of jumping straight to v2.
+        versions: [
+          {
+            version: 1,
+            name: body.name,
+            description: body.description,
+            content: body.content,
+            createdAt: now,
+            reason: 'created',
+          },
+        ],
       }
       await createFragment(dataDir, params.storyId, fragment)
       return fragment
@@ -123,24 +129,43 @@ export function fragmentRoutes(dataDir: string) {
     .get('/stories/:storyId/fragments', async ({ params, query }) => {
       const type = query.type as string | undefined
       const includeArchived = (query as Record<string, string>).includeArchived === 'true'
-      return listFragments(dataDir, params.storyId, type, { includeArchived })
-    }, { detail: { summary: 'List fragments, optionally filtered by type' } })
-
-    .get('/stories/:storyId/fragments/:fragmentId', async ({ params, set }) => {
-      const fragment = await getFragment(
+      // `branch` pins the read to a specific timeline so the client can cache the
+      // list per branch (branches share fragment IDs, so an active-branch read
+      // would otherwise poison another timeline's cache). Omitted → active branch.
+      return withBranch(
         dataDir,
         params.storyId,
-        params.fragmentId
+        () => listFragments(dataDir, params.storyId, type, { includeArchived }),
+        query.branch,
+      )
+    }, {
+      query: t.Object({
+        type: t.Optional(t.String()),
+        includeArchived: t.Optional(t.String()),
+        branch: t.Optional(t.String()),
+      }),
+      detail: { summary: 'List fragments, optionally filtered by type' },
+    })
+
+    .get('/stories/:storyId/fragments/:fragmentId', async ({ params, query, set }) => {
+      const fragment = await withBranch(
+        dataDir,
+        params.storyId,
+        () => getFragment(dataDir, params.storyId, params.fragmentId),
+        query.branch,
       )
       if (!fragment) {
         set.status = 404
         return { error: 'Fragment not found' }
       }
       return fragment
-    }, { detail: { summary: 'Get a fragment by ID' } })
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'Get a fragment by ID' },
+    })
 
-    .put('/stories/:storyId/fragments/:fragmentId', async ({ params, body, set }) => {
-      const requestLogger = logger.child({ storyId: params.storyId, extra: { fragmentId: params.fragmentId } })
+    .put('/stories/:storyId/fragments/:fragmentId', async ({ params, body, query, set }) => {
+      return withBranch(dataDir, params.storyId, async () => {
       const existing = await getFragment(
         dataDir,
         params.storyId,
@@ -159,7 +184,7 @@ export function fragmentRoutes(dataDir: string) {
           description: body.description,
           content: body.content,
         },
-        { reason: 'manual-update' },
+        { reason: body.reason ?? 'manual-update' },
       )
       if (!versioned) {
         set.status = 404
@@ -167,6 +192,7 @@ export function fragmentRoutes(dataDir: string) {
       }
       const updated: Fragment = {
         ...versioned,
+        ...(body.type !== undefined ? { type: body.type } : {}),
         ...(body.sticky !== undefined ? { sticky: body.sticky } : {}),
         ...(body.order !== undefined ? { order: body.order } : {}),
         ...(body.placement !== undefined ? { placement: body.placement } : {}),
@@ -175,18 +201,25 @@ export function fragmentRoutes(dataDir: string) {
       }
       await updateFragment(dataDir, params.storyId, updated)
 
-      if (existing.type === 'prose' && hasMaterialProseChange(existing, updated)) {
-        await reanalyzeAfterProseChange(dataDir, params.storyId, updated).catch((err) => {
-          requestLogger.error('librarian re-analysis failed after prose update', {
-            error: err instanceof Error ? err.message : String(err),
-          })
-        })
+      let idChanged = false
+      let finalId = updated.id
+      if (body.type && body.type !== existing.type) {
+        finalId = await renameFragmentIdAcrossStory(dataDir, params.storyId, updated.id, body.type)
+        if (finalId !== updated.id) {
+          idChanged = true
+          updated.id = finalId
+        }
       }
 
-      return updated
+      await reanalyzeAfterProseChange(dataDir, params.storyId, existing, updated)
+
+      return { ...updated, idChanged }
+      }, query.branch)
     }, {
       detail: { summary: 'Update a fragment (full replace, versioned)' },
+      query: t.Object({ branch: t.Optional(t.String()) }),
       body: t.Object({
+        type: t.Optional(t.String()),
         name: t.String(),
         description: t.String(),
         content: t.String(),
@@ -194,11 +227,11 @@ export function fragmentRoutes(dataDir: string) {
         order: t.Optional(t.Number()),
         placement: t.Optional(t.Union([t.Literal('system'), t.Literal('user')])),
         meta: t.Optional(t.Record(t.String(), t.Any())),
+        reason: t.Optional(t.String()),
       }),
     })
 
     .patch('/stories/:storyId/fragments/:fragmentId', async ({ params, body, set }) => {
-      const requestLogger = logger.child({ storyId: params.storyId, extra: { fragmentId: params.fragmentId } })
       const existing = await getFragment(
         dataDir,
         params.storyId,
@@ -221,13 +254,7 @@ export function fragmentRoutes(dataDir: string) {
         return { error: 'Fragment not found' }
       }
 
-      if (existing.type === 'prose' && hasMaterialProseChange(existing, updated)) {
-        await reanalyzeAfterProseChange(dataDir, params.storyId, updated).catch((err) => {
-          requestLogger.error('librarian re-analysis failed after prose edit', {
-            error: err instanceof Error ? err.message : String(err),
-          })
-        })
-      }
+      await reanalyzeAfterProseChange(dataDir, params.storyId, existing, updated)
 
       return updated
     }, {
@@ -253,14 +280,22 @@ export function fragmentRoutes(dataDir: string) {
       return { ok: true }
     }, { detail: { summary: 'Permanently delete an archived fragment' } })
 
-    .get('/stories/:storyId/fragments/:fragmentId/versions', async ({ params, set }) => {
-      const versions = await listFragmentVersions(dataDir, params.storyId, params.fragmentId)
+    .get('/stories/:storyId/fragments/:fragmentId/versions', async ({ params, query, set }) => {
+      const versions = await withBranch(
+        dataDir,
+        params.storyId,
+        () => listFragmentVersions(dataDir, params.storyId, params.fragmentId),
+        query.branch,
+      )
       if (!versions) {
         set.status = 404
         return { error: 'Fragment not found' }
       }
       return { versions }
-    }, { detail: { summary: 'List version history' } })
+    }, {
+      query: t.Object({ branch: t.Optional(t.String()) }),
+      detail: { summary: 'List version history' },
+    })
 
     .post('/stories/:storyId/fragments/:fragmentId/versions/:version/revert', async ({ params, set }) => {
       const story = await getStory(dataDir, params.storyId)
@@ -285,6 +320,20 @@ export function fragmentRoutes(dataDir: string) {
       }
       return updated
     }, { detail: { summary: 'Revert to a specific version' } })
+
+    .delete('/stories/:storyId/fragments/:fragmentId/versions/:version', async ({ params, set }) => {
+      const targetVersion = Number.parseInt(params.version, 10)
+      if (Number.isNaN(targetVersion) || targetVersion < 1) {
+        set.status = 422
+        return { error: 'Invalid version' }
+      }
+      const updated = await deleteFragmentVersion(dataDir, params.storyId, params.fragmentId, targetVersion)
+      if (!updated) {
+        set.status = 404
+        return { error: `Fragment or version ${targetVersion} not found` }
+      }
+      return updated
+    }, { detail: { summary: 'Delete a single version snapshot' } })
 
     // --- Archive / Restore ---
     .post('/stories/:storyId/fragments/:fragmentId/archive', async ({ params, set }) => {
@@ -490,4 +539,27 @@ export function fragmentRoutes(dataDir: string) {
       await updateFragment(dataDir, params.storyId, updated)
       return updated
     }, { detail: { summary: 'Revert to previous version' } })
+
+    // Reverse a batch of applied fragment changes (the chat edit-card Undo).
+    // Shares the hash-guarded revert core with the librarian proposal revert.
+    .post('/stories/:storyId/fragments/revert-applied', async ({ params, body, set }) => {
+      const story = await getStory(dataDir, params.storyId)
+      if (!story) {
+        set.status = 404
+        return { error: 'Story not found' }
+      }
+      try {
+        return await revertAppliedChanges(dataDir, params.storyId, body.appliedChanges as AppliedChange[])
+      } catch (error) {
+        if (error instanceof RevertConflictError) {
+          set.status = 409
+          return { error: error.message, ...(error.partial ? { partial: error.partial } : {}) }
+        }
+        set.status = 422
+        return { error: error instanceof Error ? error.message : String(error) }
+      }
+    }, {
+      body: t.Object({ appliedChanges: t.Array(t.Any()) }),
+      detail: { summary: 'Reverse a batch of applied fragment changes' },
+    })
 }

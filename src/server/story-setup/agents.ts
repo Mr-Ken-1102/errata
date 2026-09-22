@@ -12,6 +12,7 @@ const StorySetupChatInputSchema = z.object({
     role: z.union([z.literal('user'), z.literal('assistant')]),
     content: z.string(),
   })),
+  mode: z.enum(['assess', 'continue']).optional(),
 })
 
 declare module '../agents/agent-instance' {
@@ -25,7 +26,12 @@ const chatDefinition: AgentDefinition<typeof StorySetupChatInputSchema> = {
   description: 'Open-ended conversation that helps a writer shape a new story.',
   inputSchema: StorySetupChatInputSchema,
   allowedCalls: [],
-  run: async (ctx, input) => storySetupChat(ctx.dataDir, ctx.storyId, input),
+  run: async (ctx, input) => storySetupChat(
+    ctx.dataDir,
+    ctx.storyId,
+    input,
+    { abortSignal: ctx.abortSignal },
+  ),
 }
 
 let registered = false

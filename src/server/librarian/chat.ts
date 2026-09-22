@@ -1,6 +1,8 @@
-import { tool, ToolLoopAgent, stepCountIs } from 'ai'
+import { tool, ToolLoopAgent, stepCountIs, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
-import { getModel } from '../llm/client'
+import { resolveAgentRuntime, samplingCallSettings, samplingDiagnostics } from '../llm/client'
+import { resolveAndReportServedUsage } from '../llm/usage-normalizer'
+import { MISSING_SYSTEM_PROMPT_FALLBACK } from '../instructions'
 import { getFragment, getStory } from '../fragments/storage'
 import { buildContextState } from '../llm/context-builder'
 import { createFragmentTools } from '../llm/tools'
@@ -8,6 +10,7 @@ import { pluginRegistry } from '../plugins/registry'
 import { collectPluginTools } from '../plugins/tools'
 import { createLogger } from '../logging'
 import { createEventStream } from '../agents/create-event-stream'
+import { holdLibrarianAnalysis } from './scheduler'
 import { compileAgentContext } from '../agents/compile-agent-context'
 import { createAgentInstance } from '../agents/agent-instance'
 import { getFragmentsByTag } from '../fragments/associations'
@@ -15,7 +18,10 @@ import { inspectGenerationForFragment, type InspectAspect } from './inspect-gene
 import { runLibrarian } from './agent'
 import { withBranch } from '../fragments/branches'
 import type { ChatStreamEvent, ChatResult } from '../agents/stream-types'
-import type { AgentBlockContext } from '../agents/agent-block-context'
+import { type AgentBlockContext, baseBlockContext } from '../agents/agent-block-context'
+import { loadSystemPromptFragments } from '../agents/block-helpers'
+import { renderContinuity } from './continuity-view'
+import { createSetCharacterVoiceTool } from './character-voice-tool'
 
 export type { ChatStreamEvent, ChatResult }
 
@@ -29,20 +35,113 @@ export interface ChatMessage {
 export interface ChatOptions {
   messages: ChatMessage[]
   maxSteps?: number
+  /** POV captured when a prose-refine conversation is created. */
+  povCharacterId?: string
+}
+
+/**
+ * Chat-only tools beyond the standard fragment tools. A factory so the chat
+ * handler and the agent's `resolveTools` (for the preview) share one source —
+ * no drift between what the model gets and what the preview shows.
+ */
+export function createLibrarianChatBespokeTools(
+  dataDir: string,
+  storyId: string,
+  continuitySource?: AgentBlockContext,
+): ToolSet {
+  const log = logger.child({ storyId })
+
+  const invokeAgent = tool({
+    description: 'Invoke a specialized librarian agent for a focused task. Use this instead of hand-running a specialized workflow when analysis, refinement, or character optimization is requested.',
+    inputSchema: z.object({
+      agent: z.enum(['librarian.analyze', 'librarian.refine', 'librarian.optimize-character']),
+      fragmentId: z.string().describe('The target fragment ID. analyze expects prose; optimize-character expects character; refine expects a non-prose fragment.'),
+      instructions: z.string().optional().describe('Optional instructions for refine or optimize-character.'),
+    }),
+    execute: async (
+      { agent, fragmentId, instructions }: { agent: 'librarian.analyze' | 'librarian.refine' | 'librarian.optimize-character'; fragmentId: string; instructions?: string },
+      options?: { abortSignal?: AbortSignal },
+    ) => {
+      log.info('Invoking librarian agent via chat tool', { agent, fragmentId })
+      try {
+        if (agent === 'librarian.analyze') {
+          const analysis = await runLibrarian(dataDir, storyId, fragmentId, { abortSignal: options?.abortSignal })
+          return {
+            ok: true,
+            agent,
+            analysisId: analysis.id,
+            summary: analysis.summaryUpdate,
+            mentionCount: analysis.mentions.length,
+            contradictionCount: analysis.contradictions.length,
+            suggestionCount: analysis.fragmentChangeProposals.length,
+            timelineEventCount: analysis.timelineEvents.length,
+          }
+        }
+
+        const instance = createAgentInstance(agent, { dataDir, storyId })
+        const result = await instance.execute({ fragmentId, instructions })
+        await result.completion
+        return {
+          ok: true,
+          agent,
+          fragmentId,
+        }
+      } catch (err) {
+        // `ok` on one branch only left the model inferring failure from the
+        // shape of the result; every tool that can report a failure says so.
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  })
+
+  const inspectRun = tool({
+    description:
+      "Inspect run/debug details behind a generated prose fragment: model, prompt/context, tools, token usage, reasoning, and prewriter brief. Use this to explain why a passage came out the way it did, or to trace a continuity issue.",
+    inputSchema: z.object({
+      fragmentId: z.string().describe('The generated prose fragment ID to inspect (e.g. pr-bakumo)'),
+      aspect: z
+        .enum(['summary', 'prompt', 'tools', 'prewriter', 'reasoning'])
+        .optional()
+        .describe(
+          'Which detail to return. Default "summary" is an overview; "prompt" is the full assembled context, "tools" is what the model looked up, "prewriter" is the writing brief, "reasoning" is the model\'s thinking.',
+        ),
+    }),
+    execute: async ({ fragmentId, aspect }: { fragmentId: string; aspect?: InspectAspect }) => {
+      log.info('Inspecting run via chat tool', { fragmentId, aspect: aspect ?? 'summary' })
+      return inspectGenerationForFragment(dataDir, storyId, fragmentId, aspect ?? 'summary')
+    },
+  })
+
+  const readContinuity = tool({
+    description: 'Read the folded continuity registry: current state, unresolved threads (including dormant ones), and explicit character knowledge. Use only when the request concerns continuity or current story state.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const source = continuitySource ?? await buildContextState(dataDir, storyId, '')
+      return {
+        continuity: renderContinuity(source, 'librarian.chat') ?? '(no folded continuity yet)',
+      }
+    },
+  })
+
+  const setCharacterVoice = createSetCharacterVoiceTool(dataDir, storyId)
+
+  return { invokeAgent, inspectRun, readContinuity, setCharacterVoice }
 }
 
 export async function librarianChat(
   dataDir: string,
   storyId: string,
   opts: ChatOptions,
+  execution: { abortSignal?: AbortSignal } = {},
 ): Promise<ChatResult> {
-  return withBranch(dataDir, storyId, () => librarianChatInner(dataDir, storyId, opts))
+  return withBranch(dataDir, storyId, () => librarianChatInner(dataDir, storyId, opts, execution))
 }
 
 async function librarianChatInner(
   dataDir: string,
   storyId: string,
   opts: ChatOptions,
+  execution: { abortSignal?: AbortSignal },
 ): Promise<ChatResult> {
   const requestLogger = logger.child({ storyId })
   requestLogger.info('Starting librarian chat...', { messageCount: opts.messages.length })
@@ -54,22 +153,20 @@ async function librarianChatInner(
   }
 
   // Build context
-  const ctxState = await buildContextState(dataDir, storyId, '')
+  const ctxState = await buildContextState(
+    dataDir,
+    storyId,
+    '',
+    opts.povCharacterId ? { povCharacterId: opts.povCharacterId } : {},
+  )
 
   // Load system prompt fragments
-  const sysFragIds = await getFragmentsByTag(dataDir, storyId, 'pass-to-librarian-system-prompt')
-  const systemPromptFragments = []
-  for (const id of sysFragIds) {
-    const frag = await getFragment(dataDir, storyId, id)
-    if (frag) {
-      requestLogger.debug('Adding system prompt fragment to context', { fragmentId: frag.id, name: frag.name })
-      systemPromptFragments.push(frag)
-    }
-  }
+  const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
 
   // Resolve model early so modelId is available for instruction resolution
-  const { model, modelId, temperature } = await getModel(dataDir, storyId, { role: 'librarian.chat' })
-  requestLogger.info('Resolved model', { modelId })
+  const runtime = await resolveAgentRuntime(dataDir, storyId, 'librarian.chat', story)
+  const { model, modelId, providerId, providerOptions, guards } = runtime
+  requestLogger.info('Resolved model', { modelId, sampling: samplingDiagnostics(runtime) })
 
   // Create write-enabled fragment tools + enabled plugin tools
   const enabledPlugins = (story.settings.enabledPlugins ?? [])
@@ -77,70 +174,6 @@ async function librarianChatInner(
     .filter((p): p is NonNullable<typeof p> => Boolean(p))
   const fragmentTools = createFragmentTools(dataDir, storyId, { readOnly: false })
   const pluginTools = collectPluginTools(enabledPlugins, dataDir, storyId)
-
-  const reanalyzeFragmentTool = tool({
-    description: 'Re-run librarian analysis on a prose fragment. Updates its summary, detects mentions, flags contradictions, and suggests knowledge.',
-    inputSchema: z.object({
-      fragmentId: z.string().describe('The prose fragment ID to reanalyze (e.g. pr-bakumo)'),
-    }),
-    execute: async ({ fragmentId }: { fragmentId: string }) => {
-      requestLogger.info('Reanalyzing fragment via chat tool', { fragmentId })
-      try {
-        const analysis = await runLibrarian(dataDir, storyId, fragmentId)
-        return {
-          ok: true,
-          analysisId: analysis.id,
-          summary: analysis.summaryUpdate,
-          mentionCount: analysis.mentionedCharacters.length,
-          contradictionCount: analysis.contradictions.length,
-          suggestionCount: analysis.fragmentSuggestions.length,
-          timelineEventCount: analysis.timelineEvents.length,
-        }
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) }
-      }
-    },
-  })
-
-  const optimizeCharacterTool = tool({
-    description: 'Optimize a character sheet using depth-focused writing methodology. Rewrites the character with causality, Egri dimensions, friction, and contrast.',
-    inputSchema: z.object({
-      fragmentId: z.string().describe('The character fragment ID to optimize (e.g. ch-bakumo)'),
-      instructions: z.string().optional().describe('Optional specific instructions for the optimization'),
-    }),
-    execute: async ({ fragmentId, instructions }: { fragmentId: string; instructions?: string }) => {
-      requestLogger.info('Optimizing character via chat tool', { fragmentId })
-      const agent = createAgentInstance('librarian.optimize-character', { dataDir, storyId })
-      try {
-        const result = await agent.execute({ fragmentId, instructions })
-        await result.completion
-        return { ok: true, fragmentId }
-      } catch (err) {
-        agent.fail(err)
-        return { error: err instanceof Error ? err.message : String(err) }
-      }
-    },
-  })
-
-  const inspectGenerationTool = tool({
-    description:
-      "Inspect the generation (debug) details behind a generated prose fragment: the model used, the exact prompt/context it was given, the tools it called, token usage, the model's reasoning, and the prewriter brief. Use this to explain why a passage came out the way it did, or to trace a continuity issue back to what the model actually saw.",
-    inputSchema: z.object({
-      fragmentId: z.string().describe('The generated prose fragment ID to inspect (e.g. pr-bakumo)'),
-      aspect: z
-        .enum(['summary', 'prompt', 'tools', 'prewriter', 'reasoning'])
-        .optional()
-        .describe(
-          'Which detail to return. Default "summary" is an overview; "prompt" is the full assembled context, "tools" is what the model looked up, "prewriter" is the writing brief, "reasoning" is the model\'s thinking.',
-        ),
-    }),
-    execute: async ({ fragmentId, aspect }: { fragmentId: string; aspect?: InspectAspect }) => {
-      requestLogger.info('Inspecting generation via chat tool', { fragmentId, aspect: aspect ?? 'summary' })
-      return inspectGenerationForFragment(dataDir, storyId, fragmentId, aspect ?? 'summary')
-    },
-  })
-
-  const allTools = { ...fragmentTools, ...pluginTools, reanalyzeFragment: reanalyzeFragmentTool, optimizeCharacter: optimizeCharacterTool, inspectGeneration: inspectGenerationTool }
 
   // Build plugin tool descriptions for the block context
   const pluginToolDescriptions = Object.entries(pluginTools).map(([name, def]) => ({
@@ -150,17 +183,16 @@ async function librarianChatInner(
 
   // Build agent block context
   const blockContext: AgentBlockContext = {
-    story: ctxState.story,
-    proseFragments: ctxState.proseFragments,
-    stickyGuidelines: ctxState.stickyGuidelines,
-    stickyKnowledge: ctxState.stickyKnowledge,
-    stickyCharacters: ctxState.stickyCharacters,
-    guidelineShortlist: ctxState.guidelineShortlist,
-    knowledgeShortlist: ctxState.knowledgeShortlist,
-    characterShortlist: ctxState.characterShortlist,
+    ...baseBlockContext(ctxState, ctxState.story),
     systemPromptFragments,
     pluginToolDescriptions,
     modelId,
+  }
+
+  const allTools = {
+    ...fragmentTools,
+    ...pluginTools,
+    ...createLibrarianChatBespokeTools(dataDir, storyId, blockContext),
   }
 
   // Compile context via block system
@@ -178,11 +210,13 @@ async function librarianChatInner(
 
   const chatAgent = new ToolLoopAgent({
     model,
-    instructions: systemMessage?.content || 'You are a helpful assistant.',
+    instructions: systemMessage?.content || MISSING_SYSTEM_PROMPT_FALLBACK,
     tools: compiled.tools,
     toolChoice: 'auto',
     stopWhen: stepCountIs(opts.maxSteps ?? 10),
-    temperature,
+    ...samplingCallSettings(runtime),
+    providerOptions,
+    maxOutputTokens: guards.maxOutputTokens,
   })
 
   // Build messages: context as first user message, then conversation history
@@ -195,10 +229,47 @@ async function librarianChatInner(
     })),
   ]
 
-  // Stream with write tools
-  const result = await chatAgent.stream({
-    messages: aiMessages,
-  })
+  // Stream with write tools. Hold analysis so multi-step prose edits analyze once on the
+  // final state, not per edit (see holdLibrarianAnalysis). The abort wiring matches
+  // createStreamingRunner's: a client that stops reading stops the LLM call, rather
+  // than leaving a write-enabled agent stepping against a consumer that has gone.
+  const abortController = new AbortController()
+  const abortFromCaller = () => abortController.abort()
+  if (execution.abortSignal?.aborted) abortController.abort()
+  else execution.abortSignal?.addEventListener('abort', abortFromCaller, { once: true })
 
-  return createEventStream(result.fullStream)
+  let result: Awaited<ReturnType<typeof chatAgent.stream>>
+  try {
+    result = abortController.signal.aborted
+      ? { fullStream: (async function* () {})() } as unknown as Awaited<ReturnType<typeof chatAgent.stream>>
+      : await chatAgent.stream({
+          messages: aiMessages,
+          abortSignal: abortController.signal,
+        })
+  } catch (error) {
+    execution.abortSignal?.removeEventListener('abort', abortFromCaller)
+    throw error
+  }
+  const releaseAnalysis = holdLibrarianAnalysis(storyId)
+  // Active-marker/activity-trace/history for this run come from createAgentInstance
+  // (the only caller — routes/librarian.ts), which wraps this whole call in
+  // beginAgentRun and tees the event stream into the trace. Not duplicated here.
+  const stream = createEventStream(
+    result.fullStream,
+    () => abortController.abort(),
+    abortController.signal,
+  )
+  const unlinkAbort = () => execution.abortSignal?.removeEventListener('abort', abortFromCaller)
+  void stream.completion.then(unlinkAbort, unlinkAbort)
+  void stream.completion.then(releaseAnalysis, releaseAnalysis)
+  stream.completion
+    .then((completion) => resolveAndReportServedUsage(dataDir, storyId, 'librarian.chat', result.totalUsage, {
+      providerId,
+      configuredModelId: modelId,
+      servedModelId: completion.servedModelId,
+    }))
+    .catch(() => {
+      // Stream errored — skip usage tracking
+    })
+  return stream
 }

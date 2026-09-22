@@ -10,15 +10,17 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { GitBranch, Plus, MoreVertical, Pencil, Trash2, EyeOff } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { onActiveBranchChanged } from '@/lib/branch-cache'
 
 interface TimelineTabsProps {
   storyId: string
   branches: BranchMeta[]
   activeBranchId: string
+  rootBranchId: string
   onHide: () => void
 }
 
-export function TimelineTabs({ storyId, branches, activeBranchId, onHide }: TimelineTabsProps) {
+export function TimelineTabs({ storyId, branches, activeBranchId, rootBranchId, onHide }: TimelineTabsProps) {
   const queryClient = useQueryClient()
   const confirm = useConfirm()
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -26,21 +28,20 @@ export function TimelineTabs({ storyId, branches, activeBranchId, onHide }: Time
   const [creatingTimeline, setCreatingTimeline] = useState(false)
   const [newTimelineName, setNewTimelineName] = useState('')
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['branches', storyId] })
-    queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
-    queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
-  }
+  // The active timeline changed — refresh the index and reset every per-branch
+  // cache so the passage list can't keep showing the old timeline.
+  const branchChanged = () => onActiveBranchChanged(queryClient, storyId)
 
   const switchMutation = useMutation({
     mutationFn: (branchId: string) => api.branches.switchActive(storyId, branchId),
-    onSuccess: invalidate,
+    onSuccess: branchChanged,
   })
 
   const createMutation = useMutation({
     mutationFn: (name: string) => api.branches.create(storyId, { name, parentBranchId: activeBranchId }),
+    // create auto-switches to the new branch on the server
     onSuccess: () => {
-      invalidate()
+      branchChanged()
       setCreatingTimeline(false)
       setNewTimelineName('')
     },
@@ -49,15 +50,17 @@ export function TimelineTabs({ storyId, branches, activeBranchId, onHide }: Time
   const renameMutation = useMutation({
     mutationFn: ({ branchId, name }: { branchId: string; name: string }) =>
       api.branches.rename(storyId, branchId, name),
+    // rename touches only the timeline index, not the active branch or content
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['branches', storyId] })
       setRenamingId(null)
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (branchId: string) => api.branches.delete(storyId, branchId),
-    onSuccess: invalidate,
+    // deleting the active branch auto-switches to its parent/root on the server
+    onSuccess: branchChanged,
   })
 
   const startRename = (branch: BranchMeta) => {
@@ -75,7 +78,7 @@ export function TimelineTabs({ storyId, branches, activeBranchId, onHide }: Time
     <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border/30 bg-muted/20 overflow-x-auto" data-component-id="timeline-tabs">
       {branches.map((branch) => {
         const isActive = branch.id === activeBranchId
-        const isMain = branch.id === 'main'
+        const isRoot = branch.id === rootBranchId
 
         if (renamingId === branch.id) {
           return (
@@ -109,7 +112,7 @@ export function TimelineTabs({ storyId, branches, activeBranchId, onHide }: Time
               }}
               data-component-id={`timeline-tab-${branch.id}`}
             >
-              {!isMain && <GitBranch className="size-3 opacity-50" />}
+              {!isRoot && <GitBranch className="size-3 opacity-50" />}
               {branch.name}
             </button>
 
@@ -125,7 +128,7 @@ export function TimelineTabs({ storyId, branches, activeBranchId, onHide }: Time
                     <Pencil className="size-3 mr-2" />
                     Rename
                   </DropdownMenuItem>
-                  {!isMain && (
+                  {!isRoot && (
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={async () => {

@@ -1,17 +1,55 @@
 import { readFile, mkdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
-import { z } from 'zod/v4'
-import { BlockConfigSchema, type CustomBlockDefinition, type BlockOverride } from '../blocks/schema'
+import type { CustomBlockDefinition, BlockOverride } from '../blocks/schema'
+import {
+  AgentBlockConfigSchema,
+  type AgentBlockConfig,
+  type AgentBlockConfigInput,
+} from '@/contracts/block-config'
 import { getContentRoot } from '../fragments/branches'
-import { writeJsonAtomic } from '../fs-utils'
+import { writeJsonAtomic, withStorageLock } from '../fs-utils'
 
-export const AgentBlockConfigSchema = BlockConfigSchema.extend({
-  disabledTools: z.array(z.string()).default([]),
-  disableAutoAnalysis: z.boolean().default(false),
-})
+export { AgentBlockConfigSchema }
+export type { AgentBlockConfig, AgentBlockConfigInput }
 
-export type AgentBlockConfig = z.infer<typeof AgentBlockConfigSchema>
+const DISABLED_TOOL_MIGRATIONS: Record<string, string[]> = {
+  getFragment: ['readFragments'],
+  searchFragments: ['findFragments'],
+  getStorySummary: ['readStorySummary'],
+  updateStorySummary: ['editFragments'],
+  createFragment: ['editFragments'],
+  updateFragment: ['editFragments'],
+  editFragment: ['editFragments'],
+  deleteFragment: ['editFragments'],
+  suggestFragment: ['editFragments'],
+  suggestEdit: ['editFragments'],
+  // Legacy write-tool names → the single direct edit tools.
+  proposeProseChanges: ['editProse'],
+  applyProposedChanges: ['editFragments'],
+  updateSummary: ['reportAnalysis'],
+  reportMentions: ['reportAnalysis'],
+  reportContradictions: ['reportAnalysis'],
+  reportTimeline: ['reportAnalysis'],
+  suggestDirections: ['proposeDirections'],
+  askQuestions: ['askClarifyingQuestions'],
+  reanalyzeFragment: ['invokeAgent'],
+  optimizeCharacter: ['invokeAgent'],
+  inspectGeneration: ['inspectRun'],
+}
+
+function normalizeDisabledTools(disabledTools: string[]): string[] {
+  const normalized = new Set<string>()
+  for (const toolName of disabledTools) {
+    const replacement = DISABLED_TOOL_MIGRATIONS[toolName]
+    if (replacement) {
+      for (const migrated of replacement) normalized.add(migrated)
+    } else {
+      normalized.add(toolName)
+    }
+  }
+  return [...normalized]
+}
 
 async function agentBlockConfigPath(dataDir: string, storyId: string, agentName: string): Promise<string> {
   const root = await getContentRoot(dataDir, storyId)
@@ -24,20 +62,45 @@ function emptyConfig(): AgentBlockConfig {
 
 export async function getAgentBlockConfig(dataDir: string, storyId: string, agentName: string): Promise<AgentBlockConfig> {
   const path = await agentBlockConfigPath(dataDir, storyId, agentName)
-  if (!existsSync(path)) return emptyConfig()
+  return readAgentBlockConfig(path)
+}
 
+async function readAgentBlockConfig(path: string): Promise<AgentBlockConfig> {
+  if (!existsSync(path)) return emptyConfig()
   try {
     const raw = await readFile(path, 'utf-8')
-    return AgentBlockConfigSchema.parse(JSON.parse(raw))
-  } catch {
-    return emptyConfig()
+    const parsed = AgentBlockConfigSchema.parse(JSON.parse(raw))
+    return { ...parsed, disabledTools: normalizeDisabledTools(parsed.disabledTools) }
+  } catch (error) {
+    throw new Error(`Unable to read agent block configuration at ${path}; the original file was left untouched`, { cause: error })
   }
 }
 
-export async function saveAgentBlockConfig(dataDir: string, storyId: string, agentName: string, config: AgentBlockConfig): Promise<void> {
-  const path = await agentBlockConfigPath(dataDir, storyId, agentName)
+async function writeAgentBlockConfig(path: string, config: AgentBlockConfigInput): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
-  await writeJsonAtomic(path, config)
+  const parsed = AgentBlockConfigSchema.parse(config)
+  await writeJsonAtomic(path, { ...parsed, disabledTools: normalizeDisabledTools(parsed.disabledTools) })
+}
+
+export async function saveAgentBlockConfig(dataDir: string, storyId: string, agentName: string, config: AgentBlockConfigInput): Promise<void> {
+  const path = await agentBlockConfigPath(dataDir, storyId, agentName)
+  await withStorageLock(path, () => writeAgentBlockConfig(path, config))
+}
+
+async function mutateAgentBlockConfig(
+  dataDir: string,
+  storyId: string,
+  agentName: string,
+  mutate: (config: AgentBlockConfig) => AgentBlockConfig | null,
+): Promise<AgentBlockConfig | null> {
+  const path = await agentBlockConfigPath(dataDir, storyId, agentName)
+  return withStorageLock(path, async () => {
+    const config = await readAgentBlockConfig(path)
+    const result = mutate(config)
+    if (!result) return null
+    await writeAgentBlockConfig(path, result)
+    return result
+  })
 }
 
 export async function addAgentCustomBlock(
@@ -46,11 +109,11 @@ export async function addAgentCustomBlock(
   agentName: string,
   block: CustomBlockDefinition,
 ): Promise<AgentBlockConfig> {
-  const config = await getAgentBlockConfig(dataDir, storyId, agentName)
-  config.customBlocks.push(block)
-  config.blockOrder.push(block.id)
-  await saveAgentBlockConfig(dataDir, storyId, agentName, config)
-  return config
+  return (await mutateAgentBlockConfig(dataDir, storyId, agentName, (config) => {
+    config.customBlocks.push(block)
+    config.blockOrder.push(block.id)
+    return config
+  }))!
 }
 
 export async function updateAgentCustomBlock(
@@ -60,13 +123,12 @@ export async function updateAgentCustomBlock(
   blockId: string,
   updates: Partial<Omit<CustomBlockDefinition, 'id'>>,
 ): Promise<AgentBlockConfig | null> {
-  const config = await getAgentBlockConfig(dataDir, storyId, agentName)
-  const idx = config.customBlocks.findIndex(b => b.id === blockId)
-  if (idx === -1) return null
-
-  config.customBlocks[idx] = { ...config.customBlocks[idx], ...updates }
-  await saveAgentBlockConfig(dataDir, storyId, agentName, config)
-  return config
+  return mutateAgentBlockConfig(dataDir, storyId, agentName, (config) => {
+    const idx = config.customBlocks.findIndex(b => b.id === blockId)
+    if (idx === -1) return null
+    config.customBlocks[idx] = { ...config.customBlocks[idx], ...updates }
+    return config
+  })
 }
 
 export async function deleteAgentCustomBlock(
@@ -75,12 +137,12 @@ export async function deleteAgentCustomBlock(
   agentName: string,
   blockId: string,
 ): Promise<AgentBlockConfig> {
-  const config = await getAgentBlockConfig(dataDir, storyId, agentName)
-  config.customBlocks = config.customBlocks.filter(b => b.id !== blockId)
-  config.blockOrder = config.blockOrder.filter(id => id !== blockId)
-  delete config.overrides[blockId]
-  await saveAgentBlockConfig(dataDir, storyId, agentName, config)
-  return config
+  return (await mutateAgentBlockConfig(dataDir, storyId, agentName, (config) => {
+    config.customBlocks = config.customBlocks.filter(b => b.id !== blockId)
+    config.blockOrder = config.blockOrder.filter(id => id !== blockId)
+    delete config.overrides[blockId]
+    return config
+  }))!
 }
 
 export async function updateAgentBlockOverrides(
@@ -90,15 +152,13 @@ export async function updateAgentBlockOverrides(
   overrides: Record<string, BlockOverride>,
   blockOrder?: string[],
 ): Promise<AgentBlockConfig> {
-  const config = await getAgentBlockConfig(dataDir, storyId, agentName)
-  for (const [id, override] of Object.entries(overrides)) {
-    config.overrides[id] = { ...config.overrides[id], ...override }
-  }
-  if (blockOrder !== undefined) {
-    config.blockOrder = blockOrder
-  }
-  await saveAgentBlockConfig(dataDir, storyId, agentName, config)
-  return config
+  return (await mutateAgentBlockConfig(dataDir, storyId, agentName, (config) => {
+    for (const [id, override] of Object.entries(overrides)) {
+      config.overrides[id] = { ...config.overrides[id], ...override }
+    }
+    if (blockOrder !== undefined) config.blockOrder = blockOrder
+    return config
+  }))!
 }
 
 export async function updateAgentDisabledTools(
@@ -107,8 +167,8 @@ export async function updateAgentDisabledTools(
   agentName: string,
   disabledTools: string[],
 ): Promise<AgentBlockConfig> {
-  const config = await getAgentBlockConfig(dataDir, storyId, agentName)
-  config.disabledTools = disabledTools
-  await saveAgentBlockConfig(dataDir, storyId, agentName, config)
-  return config
+  return (await mutateAgentBlockConfig(dataDir, storyId, agentName, (config) => {
+    config.disabledTools = normalizeDisabledTools(disabledTools)
+    return config
+  }))!
 }

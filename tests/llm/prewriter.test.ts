@@ -4,8 +4,10 @@ import { createTempDir, seedTestProvider, makeTestSettings } from '../setup'
 import {
   createStory,
   createFragment,
+  listFragments,
 } from '@/server/fragments/storage'
 import { saveAgentBlockConfig } from '@/server/agents/agent-block-storage'
+import { pluginRegistry } from '@/server/plugins/registry'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
 const { mockAgentCtor, mockAgentStream } = vi.hoisted(() => ({
@@ -41,7 +43,6 @@ function makeStory(overrides?: Partial<StoryMeta['settings']>): StoryMeta {
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: 'A summary of the test story.',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(overrides),
@@ -113,7 +114,7 @@ function createMockPrewriterToolLoopResult(firstText: string, secondText: string
     yield {
       type: 'tool-call' as const,
       toolCallId: 'call-directions',
-      toolName: 'suggestDirections',
+      toolName: 'proposeDirections',
       input: {
         directions: [
           { pacing: 'linger', title: 'Linger', description: 'Stay here.', instruction: 'Stay here.' },
@@ -125,7 +126,7 @@ function createMockPrewriterToolLoopResult(firstText: string, secondText: string
     yield {
       type: 'tool-result' as const,
       toolCallId: 'call-directions',
-      toolName: 'suggestDirections',
+      toolName: 'proposeDirections',
       output: { ok: true },
     }
     yield { type: 'finish' as const, finishReason: 'tool-calls' }
@@ -141,7 +142,7 @@ function createMockPrewriterToolLoopResult(firstText: string, secondText: string
 
 /**
  * Prewriter stream where the model writes the brief in one step, then re-emits
- * it in a second step before calling suggestDirections (a common multi-step
+ * it in a second step before calling proposeDirections (a common multi-step
  * pattern). Uses finish-step boundaries like a real AI SDK v6 stream.
  */
 function createMockPrewriterDuplicateBriefAcrossSteps(brief: string) {
@@ -149,12 +150,12 @@ function createMockPrewriterDuplicateBriefAcrossSteps(brief: string) {
     // Step 1: writes the brief, no terminal tool yet.
     yield { type: 'text-delta' as const, text: brief }
     yield { type: 'finish-step' as const }
-    // Step 2: re-writes the same brief, then calls suggestDirections.
+    // Step 2: re-writes the same brief, then calls proposeDirections.
     yield { type: 'text-delta' as const, text: brief }
     yield {
       type: 'tool-call' as const,
       toolCallId: 'call-directions',
-      toolName: 'suggestDirections',
+      toolName: 'proposeDirections',
       input: {
         directions: [
           { pacing: 'linger', title: 'Linger', description: 'Stay.', instruction: 'Stay.' },
@@ -166,12 +167,37 @@ function createMockPrewriterDuplicateBriefAcrossSteps(brief: string) {
     yield {
       type: 'tool-result' as const,
       toolCallId: 'call-directions',
-      toolName: 'suggestDirections',
+      toolName: 'proposeDirections',
       output: { ok: true },
     }
     yield { type: 'finish-step' as const }
     yield { type: 'finish' as const, finishReason: 'tool-calls' }
   }
+  return {
+    fullStream: generateFullStream(),
+    totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
+  }
+}
+
+function createMockPrewriterLookupThenBrief(fragmentId: string, brief: string) {
+  async function* generateFullStream() {
+    yield {
+      type: 'tool-call' as const,
+      toolCallId: 'call-lookup',
+      toolName: 'readFragments',
+      input: { fragmentIds: [fragmentId] },
+    }
+    yield {
+      type: 'tool-result' as const,
+      toolCallId: 'call-lookup',
+      toolName: 'readFragments',
+      output: { fragments: [{ id: fragmentId, type: 'character', name: 'Looked Up', content: 'Looked-up sheet.' }] },
+    }
+    yield { type: 'finish-step' as const }
+    yield { type: 'text-delta' as const, text: brief }
+    yield { type: 'finish' as const, finishReason: 'stop' }
+  }
+
   return {
     fullStream: generateFullStream(),
     totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
@@ -187,6 +213,13 @@ async function parseNDJSON(res: Response): Promise<Array<Record<string, unknown>
     .map((line) => JSON.parse(line))
 }
 
+function streamMessagesText(callIndex: number): string {
+  const args = mockAgentStream.mock.calls[callIndex][0] as any
+  return args.messages!
+    .map((m: any) => typeof m.content === 'string' ? m.content : m.content?.map((p: any) => p.text).join('') ?? '')
+    .join('\n')
+}
+
 describe('prewriter', () => {
   beforeAll(() => {
     ensureCoreAgentsRegistered()
@@ -200,9 +233,10 @@ describe('prewriter', () => {
         stickyGuidelines: [],
         stickyKnowledge: [],
         stickyCharacters: [],
-        guidelineShortlist: [],
-        knowledgeShortlist: [],
-        characterShortlist: [],
+        guidelineCatalog: [],
+        knowledgeCatalog: [],
+        characterCatalog: [],
+        customFragmentCatalogs: [],
         systemPromptFragments: [],
       }
 
@@ -237,26 +271,27 @@ describe('prewriter', () => {
         makeFragment({ id: 'pr-0002', content: 'She opened the door.' }),
       ]
       const brief = 'Write a continuation focusing on character dialogue.'
-      const toolLines = [
-        '- getCharacter(id): Get full content of a character fragment',
-        '- listCharacters(): List all character fragments',
-      ]
 
-      const blocks = createWriterBriefBlocks(proseFragments, brief, toolLines)
+      const blocks = createWriterBriefBlocks(proseFragments, brief)
 
       const ids = blocks.map((b) => b.id)
       expect(ids).toContain('instructions')
       expect(ids).toContain('tools')
-      expect(ids).toContain('prose')
+      expect(ids).toContain('prose-recent')
       expect(ids).toContain('writing-brief')
+
+      // The tools block carries usage policy only — no enumerated catalog.
+      const tools = blocks.find((b) => b.id === 'tools')!
+      expect(tools.content).not.toContain('getCharacter')
+      expect(tools.content).not.toContain('## Available Tools')
 
       // Should NOT contain any of the full context blocks
       expect(ids).not.toContain('story-info')
       expect(ids).not.toContain('summary')
       expect(ids).not.toContain('user-fragments')
-      expect(ids).not.toContain('shortlist-guidelines')
-      expect(ids).not.toContain('shortlist-knowledge')
-      expect(ids).not.toContain('shortlist-characters')
+      expect(ids).not.toContain('guideline-shortlist')
+      expect(ids).not.toContain('knowledge-shortlist')
+      expect(ids).not.toContain('character-shortlist')
       expect(ids).not.toContain('author-input')
       expect(ids).not.toContain('system-fragments')
 
@@ -265,7 +300,7 @@ describe('prewriter', () => {
       expect(instructions.content).toContain('WRITING BRIEF')
 
       // Prose should contain the fragment content
-      const prose = blocks.find((b) => b.id === 'prose')!
+      const prose = blocks.find((b) => b.id === 'prose-recent')!
       expect(prose.content).toContain('The rain fell softly.')
       expect(prose.content).toContain('She opened the door.')
 
@@ -275,23 +310,24 @@ describe('prewriter', () => {
     })
 
     it('does not duplicate a leading writing brief heading from the prewriter', () => {
-      const blocks = createWriterBriefBlocks([], '## Writing Brief\n\nFocus on dialogue.', [])
+      const blocks = createWriterBriefBlocks([], '## Writing Brief\n\nFocus on dialogue.')
       const writingBrief = blocks.find((b) => b.id === 'writing-brief')!
 
       expect(writingBrief.content.match(/## Writing Brief/g)).toHaveLength(1)
       expect(writingBrief.content).toBe('## Writing Brief\n\nFocus on dialogue.')
     })
 
-    it('omits tools block when no tool lines provided', () => {
-      const blocks = createWriterBriefBlocks([], 'A brief.', [])
-      const ids = blocks.map((b) => b.id)
-      expect(ids).not.toContain('tools')
+    it('always includes a policy-only tools block', () => {
+      const blocks = createWriterBriefBlocks([], 'A brief.')
+      const tools = blocks.find((b) => b.id === 'tools')!
+      expect(tools).toBeDefined()
+      expect(tools.content).not.toContain('## Available Tools')
     })
 
     it('omits prose block when no prose fragments provided', () => {
-      const blocks = createWriterBriefBlocks([], 'A brief.', ['- someTool(): Do something'])
+      const blocks = createWriterBriefBlocks([], 'A brief.')
       const ids = blocks.map((b) => b.id)
-      expect(ids).not.toContain('prose')
+      expect(ids).not.toContain('prose-recent')
     })
   })
 
@@ -318,6 +354,8 @@ describe('prewriter', () => {
     })
 
     afterEach(async () => {
+      pluginRegistry.unregister('prewriter-final-hook')
+      await new Promise((resolve) => setTimeout(resolve, 50))
       await cleanup()
     })
 
@@ -376,8 +414,8 @@ describe('prewriter', () => {
       const events = await parseNDJSON(res)
       const phaseEvents = events.filter((e) => e.type === 'phase')
       expect(phaseEvents).toHaveLength(2)
-      expect(phaseEvents[0]).toEqual({ type: 'phase', phase: 'prewriting' })
-      expect(phaseEvents[1]).toEqual({ type: 'phase', phase: 'writing' })
+      expect(phaseEvents[0]).toMatchObject({ type: 'phase', phase: 'prewriting' })
+      expect(phaseEvents[1]).toMatchObject({ type: 'phase', phase: 'writing' })
 
       // Two ToolLoopAgent instances: prewriter + writer
       expect(mockAgentCtor).toHaveBeenCalledTimes(2)
@@ -389,6 +427,11 @@ describe('prewriter', () => {
       // Writer agent should have toolChoice='auto'
       const writerConfig = mockAgentCtor.mock.calls[1][0] as any
       expect(writerConfig.toolChoice).toBe('auto')
+
+      // With no story override, both agents delegate output length to the
+      // provider/model rather than imposing an Errata default.
+      expect(prewriterConfig.maxOutputTokens).toBeUndefined()
+      expect(writerConfig.maxOutputTokens).toBeUndefined()
     })
 
     it('prewriter mode passes stripped context to writer', async () => {
@@ -625,6 +668,7 @@ describe('prewriter', () => {
         overrides: {},
         blockOrder: [],
         disabledTools: [],
+        disableAutoAnalysis: false,
       })
 
       let callCount = 0
@@ -731,6 +775,7 @@ describe('prewriter', () => {
         overrides: {},
         blockOrder: [],
         disabledTools: [],
+        disableAutoAnalysis: false,
       })
 
       let callCount = 0
@@ -757,6 +802,174 @@ describe('prewriter', () => {
       expect(writerText).not.toContain('PREWRITER_ONLY_SENTINEL')
     })
 
+    it('applies disabled tools from the prewriter config independently of the writer config', async () => {
+      await createStory(dataDir, makeStory({ generationMode: 'prewriter' }))
+      await createFragment(dataDir, storyId, makeFragment({
+        id: 'kn-catalog',
+        type: 'knowledge',
+        sticky: false,
+        name: 'Sealed Archive',
+        description: 'A record available on demand',
+      }))
+
+      await saveAgentBlockConfig(dataDir, storyId, 'generation.prewriter', {
+        customBlocks: [],
+        overrides: {},
+        blockOrder: [],
+        disabledTools: ['readFragments'],
+        disableAutoAnalysis: false,
+      })
+
+      let callCount = 0
+      mockAgentStream.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) return createMockStreamResult('A brief.') as any
+        return createMockStreamResult('Some prose.') as any
+      })
+
+      const res = await apiCall(`/stories/${storyId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: 'Continue', saveResult: false }),
+      })
+      expect(res.status).toBe(200)
+      await res.text()
+
+      const prewriterConfig = mockAgentCtor.mock.calls[0][0] as any
+      const writerConfig = mockAgentCtor.mock.calls[1][0] as any
+      expect(prewriterConfig.tools).not.toHaveProperty('readFragments')
+      expect(writerConfig.tools).toHaveProperty('readFragments')
+      const prewriterPrompt = streamMessagesText(0)
+      expect(prewriterPrompt).toContain('[@block=full-context:fragment-catalog]')
+      expect(prewriterPrompt).toContain('You cannot open these rows')
+      expect(prewriterPrompt).not.toContain('[user]\n')
+    })
+
+    it('evaluates prewriter custom script blocks with the real generation context', async () => {
+      await createStory(dataDir, makeStory({ generationMode: 'prewriter' }))
+      await createFragment(dataDir, storyId, makeFragment({
+        id: 'pr-ctx01',
+        type: 'prose',
+        name: 'Opening',
+        content: 'The opening passage.',
+      }))
+
+      await saveAgentBlockConfig(dataDir, storyId, 'generation.prewriter', {
+        customBlocks: [
+          {
+            id: 'cb-context',
+            name: 'Context Probe',
+            role: 'user',
+            order: 250,
+            enabled: true,
+            type: 'script',
+            content: "return `CTX_SENTINEL ${ctx.story.name} ${ctx.proseFragments.length}`",
+          },
+        ],
+        overrides: {},
+        blockOrder: [],
+        disabledTools: [],
+        disableAutoAnalysis: false,
+      })
+
+      let callCount = 0
+      mockAgentStream.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) return createMockStreamResult('A brief.') as any
+        return createMockStreamResult('Some prose.') as any
+      })
+
+      const res = await apiCall(`/stories/${storyId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: 'Continue', saveResult: false }),
+      })
+      expect(res.status).toBe(200)
+      await res.text()
+
+      expect(streamMessagesText(0)).toContain('CTX_SENTINEL Test Story 1')
+    })
+
+    it('records prewriter fragment lookups in the saved context receipt', async () => {
+      await createStory(dataDir, makeStory({
+        generationMode: 'prewriter',
+        disableLibrarianAutoAnalysis: true,
+      }))
+      await createFragment(dataDir, storyId, makeFragment({
+        id: 'ch-0002',
+        type: 'character',
+        name: 'Planner Character',
+        description: 'Only the prewriter looked this up',
+        content: 'Planner-only character sheet.',
+      }))
+
+      let callCount = 0
+      mockAgentStream.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) return createMockPrewriterLookupThenBrief('ch-0002', 'Use the looked-up character.') as any
+        return createMockStreamResult('Generated prose.') as any
+      })
+
+      const res = await apiCall(`/stories/${storyId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: 'Continue', saveResult: true }),
+      })
+      expect(res.status).toBe(200)
+      await res.text()
+
+      let saved: Fragment | undefined
+      for (let i = 0; i < 10; i++) {
+        const prose = await listFragments(dataDir, storyId, 'prose')
+        saved = prose.find((fragment) => fragment.content === 'Generated prose.')
+        if (saved) break
+        await new Promise((r) => setTimeout(r, 25))
+      }
+      expect(saved).toBeDefined()
+      expect(saved!.meta?.writerContextIds).toBeUndefined()
+      expect(saved!.meta?.contextReceipt).toMatchObject({
+        version: 1,
+        entries: expect.arrayContaining([
+          {
+            fragmentId: 'ch-0002',
+            access: 'read',
+            actor: 'prewriter',
+            reason: 'explicit-read',
+          },
+        ]),
+      })
+    })
+
+    it('applies plugin beforeGeneration hooks to the final writer context in prewriter mode', async () => {
+      pluginRegistry.register({
+        manifest: { name: 'prewriter-final-hook', version: '1.0.0', description: 'test' },
+        hooks: {
+          beforeGeneration: (messages) => [
+            ...messages,
+            { role: 'system' as const, content: 'FINAL_WRITER_HOOK_SENTINEL' },
+          ],
+        },
+      })
+      await createStory(dataDir, makeStory({ generationMode: 'prewriter', enabledPlugins: ['prewriter-final-hook'] }))
+
+      let callCount = 0
+      mockAgentStream.mockImplementation(() => {
+        callCount++
+        if (callCount === 1) return createMockStreamResult('A brief.') as any
+        return createMockStreamResult('Some prose.') as any
+      })
+
+      const res = await apiCall(`/stories/${storyId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: 'Continue', saveResult: false }),
+      })
+      expect(res.status).toBe(200)
+      await res.text()
+
+      expect(streamMessagesText(1)).toContain('FINAL_WRITER_HOOK_SENTINEL')
+    })
+
     it('writer writing-brief disabled override is respected in prewriter mode', async () => {
       await createStory(dataDir, makeStory({ generationMode: 'prewriter' }))
 
@@ -765,6 +978,7 @@ describe('prewriter', () => {
         overrides: { 'writing-brief': { enabled: false } },
         blockOrder: [],
         disabledTools: [],
+        disableAutoAnalysis: false,
       })
 
       let callCount = 0

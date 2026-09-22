@@ -7,6 +7,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { GripVertical, Monitor, User } from 'lucide-react'
 import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
+import { BUILTIN_FRAGMENT_TYPES } from '@/components/fragments/fragment-type-icons'
+import { q, useActiveBranchId } from '@/lib/query-keys'
 
 interface ContextOrderPanelProps {
   storyId: string
@@ -15,24 +17,15 @@ interface ContextOrderPanelProps {
 
 export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const dragItem = useRef<number | null>(null)
   const dragOverItem = useRef<number | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
 
-  const { data: characters } = useQuery({
-    queryKey: ['fragments', storyId, 'character'],
-    queryFn: () => api.fragments.list(storyId, 'character'),
-  })
-
-  const { data: guidelines } = useQuery({
-    queryKey: ['fragments', storyId, 'guideline'],
-    queryFn: () => api.fragments.list(storyId, 'guideline'),
-  })
-
-  const { data: knowledge } = useQuery({
-    queryKey: ['fragments', storyId, 'knowledge'],
-    queryFn: () => api.fragments.list(storyId, 'knowledge'),
-  })
+  const { data: characters } = useQuery(q.fragments(storyId, branchId, 'character'))
+  const { data: guidelines } = useQuery(q.fragments(storyId, branchId, 'guideline'))
+  const { data: knowledge } = useQuery(q.fragments(storyId, branchId, 'knowledge'))
+  const { data: allFragments } = useQuery(q.fragments(storyId, branchId))
 
   const settingsMutation = useMutation({
     mutationFn: (data: { fragmentOrder?: string[] }) =>
@@ -50,12 +43,27 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
     },
   })
 
-  // Get all sticky non-prose fragments, ordered by fragmentOrder then order field
+  const customFragmentTypeIds = useMemo(
+    () => new Set(
+      (story.settings.customFragmentTypes ?? [])
+        .map((def) => def.type)
+        .filter((type) => !BUILTIN_FRAGMENT_TYPES.has(type)),
+    ),
+    [story.settings.customFragmentTypes],
+  )
+
+  const customFragments = useMemo(
+    () => (allFragments ?? []).filter((fragment) => customFragmentTypeIds.has(fragment.type)),
+    [allFragments, customFragmentTypeIds],
+  )
+
+  // Get all sticky context fragments, ordered by fragmentOrder then order field
   const stickyFragments = useMemo(() => {
     const all: Fragment[] = [
       ...(characters ?? []),
       ...(guidelines ?? []),
       ...(knowledge ?? []),
+      ...customFragments,
     ].filter((f) => f.sticky)
 
     const fragmentOrder = story.settings.fragmentOrder ?? []
@@ -71,7 +79,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
       // Fallback to order field
       return a.order - b.order || a.createdAt.localeCompare(b.createdAt)
     })
-  }, [characters, guidelines, knowledge, story.settings.fragmentOrder])
+  }, [characters, guidelines, knowledge, customFragments, story.settings.fragmentOrder])
 
   const handleDragStart = useCallback((index: number) => {
     dragItem.current = index
@@ -109,7 +117,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
     return (
       <div className="p-6 text-center">
         <EmptyHint size="sm">
-          No pinned fragments. Pin fragments from the Characters, Guidelines, or Knowledge panels.
+          No pinned fragments. Pin fragments from the Characters, Guidelines, Knowledge, or custom fragment panels.
         </EmptyHint>
       </div>
     )
@@ -123,7 +131,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
         </p>
       </div>
 
-      <ScrollArea className="flex-1 [&>[data-slot=scroll-area-viewport]>div]:!block">
+      <ScrollArea className="flex-1 min-h-0 [&>[data-slot=scroll-area-viewport]>div]:!block">
         <div className="px-2 py-3 space-y-1">
           {stickyFragments.map((fragment, index) => (
             <div
@@ -152,7 +160,10 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
                   </span>
                   <Badge
                     variant="outline"
-                    className={cn('text-[0.5625rem] h-3.5 px-1', typeBadgeColor[fragment.type] ?? '')}
+                    className={cn(
+                      'text-[0.5625rem] h-3.5 px-1',
+                      typeBadgeColor[fragment.type] ?? 'bg-muted/40 text-muted-foreground border-border/50',
+                    )}
                   >
                     {fragment.type}
                   </Badge>

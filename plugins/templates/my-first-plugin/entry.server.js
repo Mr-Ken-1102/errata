@@ -1,7 +1,7 @@
 import { tool, generateText } from 'ai'
 import { z } from 'zod/v4'
 import { t } from 'elysia'
-import { definePlugin } from '@tealios/errata-plugin-sdk'
+import { definePlugin } from '@viscerous/errata-plugin-sdk'
 import { listFragments } from '../../src/server/fragments/storage'
 import { getModel } from '../../src/server/llm/client'
 
@@ -22,7 +22,7 @@ const plugin = definePlugin({
       contextRenderer(fragment) {
         return `### Idea: ${fragment.name}\n${fragment.content}`
       },
-      shortlistFields: ['id', 'name', 'description'],
+      catalogFields: ['id', 'name', 'description'],
       llmTools: true,
     },
   ],

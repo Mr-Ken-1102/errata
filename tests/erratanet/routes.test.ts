@@ -98,7 +98,6 @@ describe('erratanet routes', () => {
       name: 'Enet Story',
       description: 'For erratanet tests',
       coverImage: null,
-      summary: '',
       createdAt: '2025-01-01T00:00:00.000Z',
       updatedAt: '2025-01-01T00:00:00.000Z',
       settings: makeTestSettings(),
@@ -258,6 +257,36 @@ describe('erratanet routes', () => {
     // The zip is real bytes.
     expect(callArgs[3]).toBeInstanceOf(Uint8Array)
     expect(callArgs[3].byteLength).toBeGreaterThan(0)
+  })
+
+  /**
+   * The publish body is the publisher's half of a manifest only. Derived fields
+   * are the build's to compute from the payload it just assembled, so a client
+   * neither needs to send them nor could get them right — the browser cannot hash
+   * the payload at all over LAN HTTP, where `crypto.subtle` is absent.
+   */
+  it('POST /erratanet/publish derives payloadHash and ignores one sent by the client', async () => {
+    await post('/erratanet/config', { hubUrl: 'https://hub.example.com', token: 'tok' })
+    hubMocks.publishVersion.mockResolvedValue({ id: '@me/test-pack', version: '1.0.0' })
+
+    const bundleJson = makeBundleJson()
+    const clientHash = `sha256:${'0'.repeat(64)}`
+    const res = await post('/erratanet/publish', {
+      bundleJson,
+      manifest: { ...manifest, payloadHash: clientHash, fragmentCount: 99, contentKind: 'story' },
+    })
+    expect(res.status).toBe(200)
+
+    const builtManifest = hubMocks.publishVersion.mock.calls[0][2]
+    expect(builtManifest.payloadHash).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(builtManifest.payloadHash).not.toBe(clientHash)
+    // Facets come from the payload too, not from what the caller claimed.
+    expect(builtManifest.fragmentCount).toBe(1)
+    expect(builtManifest.contentKind).toBe('fragment-pack')
+
+    // Same payload, same hash: the digest covers the bundle, not the request.
+    await post('/erratanet/publish', { bundleJson, manifest })
+    expect(hubMocks.publishVersion.mock.calls[1][2].payloadHash).toBe(builtManifest.payloadHash)
   })
 
   it('POST /erratanet/publish with a storyId builds a story pack, forwards visibility, stamps provenance', async () => {

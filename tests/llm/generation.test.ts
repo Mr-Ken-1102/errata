@@ -8,7 +8,9 @@ import {
   updateStory,
 } from '@/server/fragments/storage'
 import { saveAgentBlockConfig } from '@/server/agents/agent-block-storage'
+import { listAgentRuns, clearAgentRuns } from '@/server/agents/traces'
 import { clearPending, getPendingCount } from '@/server/librarian/scheduler'
+import { clearRuns, getRun } from '@/server/runs'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
 const { mockAgentCtor, mockAgentStream } = vi.hoisted(() => ({
@@ -33,6 +35,13 @@ vi.mock('ai', async () => {
   }
 })
 
+// Stub only the index's invokeAgent so the librarian run the scheduler now fires stays
+// in-flight; generation.ts imports its own from '../agents/runner', so it's unaffected.
+vi.mock('@/server/agents', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/server/agents')>()
+  return { ...actual, invokeAgent: vi.fn(() => new Promise(() => {})) }
+})
+
 import { createApp } from '@/server/api'
 
 function makeStory(settingsOverrides?: Partial<StoryMeta['settings']>): StoryMeta {
@@ -42,7 +51,6 @@ function makeStory(settingsOverrides?: Partial<StoryMeta['settings']>): StoryMet
     name: 'Test Story',
     description: 'A test story',
     coverImage: null,
-    summary: '',
     createdAt: now,
     updatedAt: now,
     settings: makeTestSettings(settingsOverrides),
@@ -82,7 +90,7 @@ function extractMessageText(messages: Array<{ role: string; content: string | Ar
     .join('\n\n')
 }
 
-function createMockStreamResult(text: string) {
+function createMockStreamResult(text: string, finishReason = 'stop') {
   // Create a minimal mock that mimics the streamText result
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -103,7 +111,7 @@ function createMockStreamResult(text: string) {
   // fullStream: async iterable of AI SDK v6 TextStreamPart events
   async function* generateFullStream() {
     yield { type: 'text-delta' as const, text }
-    yield { type: 'finish' as const, finishReason: 'stop' }
+    yield { type: 'finish' as const, finishReason }
   }
   const fullStream = generateFullStream()
 
@@ -113,7 +121,7 @@ function createMockStreamResult(text: string) {
     text: Promise.resolve(text),
     usage: Promise.resolve({ promptTokens: 10, completionTokens: 20, totalTokens: 30 }),
     totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
-    finishReason: Promise.resolve('stop' as const),
+    finishReason: Promise.resolve(finishReason),
     steps: Promise.resolve([]),
     toTextStreamResponse: () => new Response(stream, {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -137,6 +145,35 @@ function createThrowingStreamResult(partialText: string) {
   }
 }
 
+async function readUntilEvent(
+  response: Response,
+  predicate: (event: any) => boolean,
+): Promise<{ event: any; reader: ReadableStreamDefaultReader<Uint8Array>; runId: string }> {
+  if (!response.body) throw new Error('missing response body')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let runId = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) throw new Error('stream ended before expected event')
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+      const event = JSON.parse(line)
+      if (event.type === 'run-start') runId = event.runId
+      if (predicate(event)) {
+        if (!runId) throw new Error('expected run-start before target event')
+        return { event, reader, runId }
+      }
+    }
+  }
+}
+
 describe('generation endpoint', () => {
   let dataDir: string
   let cleanup: () => Promise<void>
@@ -152,6 +189,7 @@ describe('generation endpoint', () => {
 
   beforeEach(async () => {
     clearPending()
+    clearRuns()
     const tmp = await createTempDir()
     dataDir = tmp.path
     cleanup = tmp.cleanup
@@ -163,6 +201,7 @@ describe('generation endpoint', () => {
 
   afterEach(async () => {
     clearPending()
+    clearRuns()
     await cleanup()
   })
 
@@ -191,6 +230,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
     expect(mockAgentStream).toHaveBeenCalledTimes(1)
 
     const callArgs = mockAgentStream.mock.calls[0][0] as any
@@ -199,6 +239,22 @@ describe('generation endpoint', () => {
     const userText = extractText(msg!.content)
     expect(userText).toContain('Dark gothic style.')
     expect(userText).toContain('Continue the story')
+  })
+
+  it('records the writer run in the agent activity history', async () => {
+    clearAgentRuns(storyId)
+    mockAgentStream.mockResolvedValue(createMockStreamResult('A line.') as any)
+
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: 'Continue the story', saveResult: false }),
+    })
+    expect(res.status).toBe(200)
+    await res.text()
+
+    const runs = listAgentRuns(storyId)
+    expect(runs.some(r => r.agentName === 'generation.writer' && r.status === 'success')).toBe(true)
   })
 
   it('does NOT save a fragment when the stream fails (non-abort error)', async () => {
@@ -219,6 +275,64 @@ describe('generation endpoint', () => {
     const after = await listFragments(dataDir, storyId, 'prose')
     expect(after.length).toBe(before.length) // no phantom fragment persisted
     expect(getPendingCount()).toBe(0) // librarian not triggered for a failed run
+  })
+
+  it('quarantines output that ends at the token limit instead of saving or analyzing it', async () => {
+    mockAgentStream.mockResolvedValue(
+      createMockStreamResult('An unfinished passage that reached the cap.', 'length') as any,
+    )
+
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: 'Continue', saveResult: true }),
+    })
+
+    expect(res.status).toBe(200)
+    const streamed = await res.text()
+    expect(streamed).toContain('"type":"generation-rejected"')
+    expect(streamed).toContain('"code":"incomplete_finish"')
+
+    expect(await listFragments(dataDir, storyId, 'prose')).toHaveLength(0)
+    expect(getPendingCount()).toBe(0)
+
+    const { listGenerationLogs, getGenerationLog } = await import('@/server/llm/generation-logs')
+    const logs = await listGenerationLogs(dataDir, storyId)
+    expect(logs).toHaveLength(1)
+    const log = await getGenerationLog(dataDir, storyId, logs[0].id)
+    expect(log).toMatchObject({
+      fragmentId: null,
+      finishReason: 'length',
+      commitStatus: 'rejected',
+      rejectionCode: 'incomplete_finish',
+    })
+  })
+
+  it('quarantines leaked reasoning sentinels even when the provider reports stop', async () => {
+    mockAgentStream.mockResolvedValue(
+      createMockStreamResult('.thought\nReady. Proceed. Final check. Ready.') as any,
+    )
+
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: 'Continue', saveResult: true }),
+    })
+
+    const streamed = await res.text()
+    expect(streamed).toContain('"code":"reasoning_leak"')
+    expect(await listFragments(dataDir, storyId, 'prose')).toHaveLength(0)
+    expect(getPendingCount()).toBe(0)
+
+    const { listGenerationLogs, getGenerationLog } = await import('@/server/llm/generation-logs')
+    const logs = await listGenerationLogs(dataDir, storyId)
+    const log = await getGenerationLog(dataDir, storyId, logs[0].id)
+    expect(log).toMatchObject({
+      fragmentId: null,
+      finishReason: 'stop',
+      commitStatus: 'rejected',
+      rejectionCode: 'reasoning_leak',
+    })
   })
 
   it('POST /stories/:storyId/generate applies writer instruction replacement from agent config', async () => {
@@ -248,11 +362,12 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentStream.mock.calls[0][0] as any
     const systemText = extractMessageText(callArgs.messages, 'system')
     expect(systemText).toContain('You are a haiku-only writing engine.')
-    expect(systemText).not.toContain('You are a creative writing assistant. Your task is to write prose that continues the story based on the author\'s direction.')
+    expect(systemText).not.toContain('You are a fiction writer continuing an ongoing story. Write the next passage of prose following the author\'s direction.')
   })
 
   it('POST /stories/:storyId/generate applies writer instruction prepend and append from agent config', async () => {
@@ -286,6 +401,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentStream.mock.calls[0][0] as any
     const systemText = extractMessageText(callArgs.messages, 'system')
@@ -293,10 +409,10 @@ describe('generation endpoint', () => {
     expect(systemText).toContain('Do not call tools unless continuity depends on it.')
   })
 
-  it('POST /stories/:storyId/generate passes resolved temperature to the writer agent', async () => {
+  it('POST /stories/:storyId/generate passes resolved sampling settings to the writer agent', async () => {
     const story = makeStory({
       modelOverrides: {
-        'generation.writer': { temperature: 0.42 },
+        'generation.writer': { temperature: 0.42, topP: 0.9, topK: 64 },
       },
     })
     await updateStory(dataDir, story)
@@ -315,9 +431,36 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.temperature).toBe(0.42)
+    expect(callArgs.topP).toBe(0.9)
+    expect(callArgs.topK).toBe(64)
+  })
+
+  it('POST /stories/:storyId/generate caps the writer agent output tokens from generationLimits', async () => {
+    const story = makeStory({ generationLimits: { maxOutputTokens: 4096 } })
+    await updateStory(dataDir, story)
+
+    mockAgentStream.mockResolvedValue(
+      createMockStreamResult('Generated text.') as any,
+    )
+
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: 'Write something',
+        saveResult: false,
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    await res.text()
+
+    const callArgs = mockAgentCtor.mock.calls[0][0] as any
+    expect(callArgs.maxOutputTokens).toBe(4096)
   })
 
   it('POST /stories/:storyId/generate includes fragment tools', async () => {
@@ -335,6 +478,7 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.tools).toBeDefined()
@@ -358,12 +502,13 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.tools).toHaveProperty('listFragmentTypes')
-    expect(callArgs.tools).toHaveProperty('getFragment')
+    expect(callArgs.tools).toHaveProperty('readFragments')
     expect(callArgs.tools).toHaveProperty('listFragments')
-    expect(callArgs.tools).toHaveProperty('searchFragments')
+    expect(callArgs.tools).toHaveProperty('findFragments')
   })
 
   it('POST /stories/:storyId/generate excludes tools listed in disabledTools', async () => {
@@ -371,7 +516,7 @@ describe('generation endpoint', () => {
       customBlocks: [],
       overrides: {},
       blockOrder: [],
-      disabledTools: ['listFragments', 'getFragment', 'searchFragments'],
+      disabledTools: ['listFragments', 'readFragments', 'findFragments'],
     })
 
     mockAgentStream.mockResolvedValue(
@@ -388,12 +533,13 @@ describe('generation endpoint', () => {
     })
 
     expect(res.status).toBe(200)
+    await res.text()
 
     const callArgs = mockAgentCtor.mock.calls[0][0] as any
     expect(callArgs.tools).toHaveProperty('listFragmentTypes')
     expect(callArgs.tools).not.toHaveProperty('listFragments')
-    expect(callArgs.tools).not.toHaveProperty('getFragment')
-    expect(callArgs.tools).not.toHaveProperty('searchFragments')
+    expect(callArgs.tools).not.toHaveProperty('readFragments')
+    expect(callArgs.tools).not.toHaveProperty('findFragments')
   })
 
   it('POST /stories/:storyId/generate saves result when saveResult=true', async () => {
@@ -469,6 +615,103 @@ describe('generation endpoint', () => {
     await new Promise((r) => setTimeout(r, 100))
 
     expect(getPendingCount()).toBe(0)
+  })
+
+  it('continues and commits the full passage after the HTTP subscriber disconnects', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+
+    mockAgentStream.mockImplementation((args: { abortSignal?: AbortSignal }) => ({
+      fullStream: (async function* () {
+        yield { type: 'text-delta' as const, text: 'The first half. ' }
+        await gate
+        if (args.abortSignal?.aborted) throw new Error('provider aborted')
+        yield { type: 'text-delta' as const, text: 'The second half.' }
+        yield { type: 'finish' as const, finishReason: 'stop' }
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
+    }))
+
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: 'Continue after disconnect',
+        saveResult: true,
+        scopeId: 'disconnect-test',
+        clientRequestId: 'disconnect-test-1',
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const { reader, runId } = await readUntilEvent(
+      res,
+      event => event.type === 'text' && event.text.includes('first half'),
+    )
+
+    // Dropping the subscriber is not a Stop.
+    await reader.cancel()
+    release()
+    await getRun(runId)!.done
+
+    expect(getRun(runId)?.status).toBe('complete')
+    const fragments = await listFragments(dataDir, storyId, 'prose')
+    const generated = fragments.find(
+      fragment => fragment.meta?.generatedFrom === 'Continue after disconnect',
+    )
+    expect(generated?.content).toBe('The first half. The second half.')
+  })
+
+  it('explicit Stop aborts the writer and never commits the partial passage', async () => {
+    mockAgentStream.mockImplementation((args: { abortSignal?: AbortSignal }) => ({
+      fullStream: (async function* () {
+        yield { type: 'text-delta' as const, text: 'Partial prose that must not save.' }
+        await new Promise<void>((_resolve, reject) => {
+          if (args.abortSignal?.aborted) {
+            reject(new Error('aborted'))
+            return
+          }
+          args.abortSignal?.addEventListener(
+            'abort',
+            () => reject(new Error('aborted')),
+            { once: true },
+          )
+        })
+      })(),
+      totalUsage: Promise.resolve({ inputTokens: 10, outputTokens: 10 }),
+    }))
+
+    const before = await listFragments(dataDir, storyId, 'prose')
+    const res = await api(`/stories/${storyId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: 'Stop this generation',
+        saveResult: true,
+        scopeId: 'stop-test',
+        clientRequestId: 'stop-test-1',
+      }),
+    })
+
+    const { reader, runId } = await readUntilEvent(
+      res,
+      event => event.type === 'text' && event.text.includes('Partial prose'),
+    )
+
+    const cancel = await api(`/stories/${storyId}/runs/${runId}/cancel`, {
+      method: 'POST',
+    })
+    expect(cancel.status).toBe(200)
+
+    await getRun(runId)!.done
+    expect(getRun(runId)?.status).toBe('cancelled')
+
+    const after = await listFragments(dataDir, storyId, 'prose')
+    expect(after).toHaveLength(before.length)
+    expect(after.some(fragment => fragment.meta?.generatedFrom === 'Stop this generation')).toBe(false)
+    expect(getPendingCount()).toBe(0)
+
+    await reader.cancel()
   })
 
   it('returns 404 for non-existent story', async () => {

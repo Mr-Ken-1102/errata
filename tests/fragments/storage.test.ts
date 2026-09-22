@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createTempDir, makeTestSettings } from '../setup'
 import {
@@ -16,6 +18,7 @@ import {
   restoreFragment,
   listFragmentVersions,
   revertFragmentToVersion,
+  deleteFragmentVersion,
 } from '@/server/fragments/storage'
 import type { Fragment, StoryMeta } from '@/server/fragments/schema'
 
@@ -37,7 +40,6 @@ const makeStory = (overrides: Partial<StoryMeta> = {}): StoryMeta => ({
   name: 'Test Story',
   description: 'A test story',
     coverImage: null,
-  summary: '',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   settings: makeTestSettings(),
@@ -67,6 +69,27 @@ describe('Story CRUD', () => {
     await createStory(dataDir, story)
     const retrieved = await getStory(dataDir, story.id)
     expect(retrieved).toEqual(story)
+  })
+
+  it('strips metadata and settings outside the current story schema before storage', async () => {
+    const story = {
+      ...makeStory(),
+      summary: 'obsolete story summary',
+      settings: {
+        ...makeTestSettings(),
+        summarizationThreshold: 4,
+        summaryCompact: { maxCharacters: 12000, targetCharacters: 9000 },
+        enableHierarchicalSummary: false,
+      },
+    } as StoryMeta
+
+    await createStory(dataDir, story)
+
+    const stored = JSON.parse(await readFile(join(dataDir, 'stories', story.id, 'meta.json'), 'utf8'))
+    expect(stored).not.toHaveProperty('summary')
+    expect(stored.settings).not.toHaveProperty('summarizationThreshold')
+    expect(stored.settings).not.toHaveProperty('summaryCompact')
+    expect(stored.settings).not.toHaveProperty('enableHierarchicalSummary')
   })
 
   it('lists all stories', async () => {
@@ -111,11 +134,18 @@ describe('Fragment CRUD', () => {
     const fragment = makeFragment()
     await createFragment(dataDir, storyId, fragment)
     const retrieved = await getFragment(dataDir, storyId, fragment.id)
-    expect(retrieved).toEqual({
+    expect(retrieved).toMatchObject({
       ...fragment,
       archived: false,
       version: 1,
-      versions: [],
+    })
+    // The current content is represented as v1 in the history.
+    expect(retrieved!.versions).toHaveLength(1)
+    expect(retrieved!.versions![0]).toMatchObject({
+      version: 1,
+      name: fragment.name,
+      description: fragment.description,
+      content: fragment.content,
     })
   })
 
@@ -178,14 +208,105 @@ describe('Fragment CRUD', () => {
     )
 
     expect(updated).not.toBeNull()
+    // An edit appends the new content as a version; the original (v1) is retained.
     expect(updated!.version).toBe(2)
-    expect(updated!.versions).toHaveLength(1)
+    expect(updated!.versions).toHaveLength(2)
     expect(updated!.versions![0].version).toBe(1)
     expect(updated!.versions![0].content).toBe('Original content')
-    expect(updated!.versions![0].reason).toBe('test-refine')
+    expect(updated!.versions![1].version).toBe(2)
+    expect(updated!.versions![1].content).toBe('Updated content')
+    expect(updated!.versions![1].reason).toBe('test-refine')
   })
 
-  it('lists versions and can revert to a specific version', async () => {
+  it('serializes concurrent versioned updates without reusing a version number', async () => {
+    const storyId = 'story-versions-race'
+    await createStory(dataDir, makeStory({ id: storyId }))
+    await createFragment(dataDir, storyId, makeFragment({ id: 'pr-race', content: 'v1' }))
+
+    await Promise.all([
+      updateFragmentVersioned(dataDir, storyId, 'pr-race', { content: 'concurrent-a' }, { reason: 'manual-update' }),
+      updateFragmentVersioned(dataDir, storyId, 'pr-race', { content: 'concurrent-b' }, { reason: 'manual-update' }),
+    ])
+
+    const versions = await listFragmentVersions(dataDir, storyId, 'pr-race')
+    expect(versions?.map((version) => version.version)).toEqual([1, 2, 3])
+  })
+
+  it("folds a new fragment's opening autosaves into its created v1", async () => {
+    // Mirrors the create route, which seeds v1 with reason 'created' so the opening
+    // editing session stays v1 instead of jumping to v2 on the first autosave.
+    const fragment = makeFragment({
+      id: 'ch-1040',
+      type: 'character',
+      name: 'Alice',
+      description: 'v1 desc',
+      content: '',
+      version: 1,
+      versions: [
+        { version: 1, name: 'Alice', description: 'v1 desc', content: '', createdAt: new Date().toISOString(), reason: 'created' },
+      ],
+    })
+    await createFragment(dataDir, storyId, fragment)
+
+    const first = await updateFragmentVersioned(dataDir, storyId, 'ch-1040', { content: 'Once' }, { reason: 'autosave' })
+    const last = await updateFragmentVersioned(dataDir, storyId, 'ch-1040', { content: 'Once upon' }, { reason: 'autosave' })
+
+    // Both autosaves fold into the created v1 — no jump to v2.
+    expect(first!.version).toBe(1)
+    expect(last!.version).toBe(1)
+    expect(last!.versions).toHaveLength(1)
+    expect(last!.content).toBe('Once upon')
+  })
+
+  it('coalesces consecutive autosaves into a single version', async () => {
+    const fragment = makeFragment({
+      id: 'ch-1050',
+      type: 'character',
+      name: 'Alice',
+      description: 'v1 desc',
+      content: 'v1',
+    })
+    await createFragment(dataDir, storyId, fragment)
+
+    // First autosave seals v1 and opens a new version (v1 is not itself an autosave).
+    const first = await updateFragmentVersioned(dataDir, storyId, 'ch-1050', { content: 'v1a' }, { reason: 'autosave' })
+    expect(first!.version).toBe(2)
+    expect(first!.versions).toHaveLength(2)
+
+    // Subsequent autosaves fold into that same version instead of appending.
+    await updateFragmentVersioned(dataDir, storyId, 'ch-1050', { content: 'v1ab' }, { reason: 'autosave' })
+    const last = await updateFragmentVersioned(dataDir, storyId, 'ch-1050', { content: 'v1abc' }, { reason: 'autosave' })
+
+    expect(last!.version).toBe(2)
+    expect(last!.versions).toHaveLength(2)
+    expect(last!.content).toBe('v1abc')
+    expect(last!.versions![1].content).toBe('v1abc')
+    // The sealed v1 snapshot is preserved untouched.
+    expect(last!.versions![0].content).toBe('v1')
+  })
+
+  it('appends a fresh version when a deliberate save follows autosaves', async () => {
+    const fragment = makeFragment({
+      id: 'ch-1060',
+      type: 'character',
+      name: 'Alice',
+      description: 'v1 desc',
+      content: 'v1',
+    })
+    await createFragment(dataDir, storyId, fragment)
+
+    await updateFragmentVersioned(dataDir, storyId, 'ch-1060', { content: 'v2' }, { reason: 'autosave' })
+    await updateFragmentVersioned(dataDir, storyId, 'ch-1060', { content: 'v2b' }, { reason: 'autosave' })
+    // A non-autosave reason never coalesces — it seals the session with a new version.
+    const manual = await updateFragmentVersioned(dataDir, storyId, 'ch-1060', { content: 'v3' }, { reason: 'manual-update' })
+
+    expect(manual!.version).toBe(3)
+    expect(manual!.versions!.map(v => v.version)).toEqual([1, 2, 3])
+    expect(manual!.versions![1].content).toBe('v2b')
+    expect(manual!.versions![2].content).toBe('v3')
+  })
+
+  it('lists all versions and switches to one without creating a new version', async () => {
     const fragment = makeFragment({
       id: 'gl-2000',
       type: 'guideline',
@@ -198,19 +319,75 @@ describe('Fragment CRUD', () => {
     await updateFragmentVersioned(dataDir, storyId, 'gl-2000', { content: 'v2 content', description: 'v2 desc' })
     await updateFragmentVersioned(dataDir, storyId, 'gl-2000', { content: 'v3 content', description: 'v3 desc' })
 
+    // The current version is included in the list.
     const versions = await listFragmentVersions(dataDir, storyId, 'gl-2000')
     expect(versions).not.toBeNull()
-    expect(versions).toHaveLength(2)
-    expect(versions![0].version).toBe(1)
-    expect(versions![1].version).toBe(2)
+    expect(versions!.map(v => v.version)).toEqual([1, 2, 3])
 
+    // Switching is a pointer move: content changes, history is unchanged.
     const reverted = await revertFragmentToVersion(dataDir, storyId, 'gl-2000', 1)
     expect(reverted).not.toBeNull()
     expect(reverted!.id).toBe('gl-2000')
     expect(reverted!.content).toBe('v1 content')
     expect(reverted!.description).toBe('v1 desc')
-    expect(reverted!.version).toBe(4)
+    expect(reverted!.version).toBe(1)
     expect(reverted!.versions).toHaveLength(3)
+  })
+
+  it('deletes a single version snapshot without changing current content', async () => {
+    const fragment = makeFragment({
+      id: 'gl-2100',
+      type: 'guideline',
+      name: 'Tone',
+      description: 'v1 desc',
+      content: 'v1 content',
+    })
+    await createFragment(dataDir, storyId, fragment)
+    await updateFragmentVersioned(dataDir, storyId, 'gl-2100', { content: 'v2 content' })
+    await updateFragmentVersioned(dataDir, storyId, 'gl-2100', { content: 'v3 content' })
+
+    const updated = await deleteFragmentVersion(dataDir, storyId, 'gl-2100', 1)
+    expect(updated).not.toBeNull()
+    // The v1 snapshot is gone; v2 and the current v3 remain; current content untouched.
+    expect(updated!.versions!.map(v => v.version)).toEqual([2, 3])
+    expect(updated!.content).toBe('v3 content')
+    expect(updated!.version).toBe(3)
+  })
+
+  it('refuses to delete the current version', async () => {
+    const fragment = makeFragment({
+      id: 'gl-2102',
+      type: 'guideline',
+      content: 'v1 content',
+    })
+    await createFragment(dataDir, storyId, fragment)
+    await updateFragmentVersioned(dataDir, storyId, 'gl-2102', { content: 'v2 content' })
+    // Current is v2; deleting it must fail.
+    const result = await deleteFragmentVersion(dataDir, storyId, 'gl-2102', 2)
+    expect(result).toBeNull()
+  })
+
+  it('undo (no target) steps back to the previous version', async () => {
+    const fragment = makeFragment({
+      id: 'gl-2103',
+      type: 'guideline',
+      content: 'v1 content',
+    })
+    await createFragment(dataDir, storyId, fragment)
+    await updateFragmentVersioned(dataDir, storyId, 'gl-2103', { content: 'v2 content' })
+    await updateFragmentVersioned(dataDir, storyId, 'gl-2103', { content: 'v3 content' })
+
+    const undone = await revertFragmentToVersion(dataDir, storyId, 'gl-2103')
+    expect(undone!.version).toBe(2)
+    expect(undone!.content).toBe('v2 content')
+    expect(undone!.versions).toHaveLength(3)
+  })
+
+  it('returns null when deleting a missing version', async () => {
+    const fragment = makeFragment({ id: 'gl-2101', type: 'guideline' })
+    await createFragment(dataDir, storyId, fragment)
+    const result = await deleteFragmentVersion(dataDir, storyId, 'gl-2101', 99)
+    expect(result).toBeNull()
   })
 
   it('deletes a fragment', async () => {

@@ -1,19 +1,133 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { GlobalConfigSchema, type GlobalConfig, type ProviderConfig, type SharingConfig, type ErratanetConfig } from './schema'
-import { writeJsonAtomic } from '../fs-utils'
+import {
+  LoadedGlobalConfigSchema,
+  SecretsFileSchema,
+  StoredGlobalConfigSchema,
+  type GlobalConfig,
+  type ProviderConfig,
+  type SecretsFile,
+  type SharingConfig,
+  type ErratanetConfig,
+} from './schema'
+import { readJsonFile, writeJsonAtomic, withStorageLock } from '../fs-utils'
 
 function configPath(dataDir: string): string {
   return join(dataDir, 'config.json')
 }
 
+function secretsPath(dataDir: string): string {
+  return join(dataDir, 'secrets.json')
+}
+
+/** Owner-only where the OS enforces it; on Windows the separate file is the protection, not the bits. */
+const SECRETS_FILE_MODE = 0o600
+
+async function readSecretsFile(dataDir: string): Promise<SecretsFile> {
+  const raw = await readJsonFile(secretsPath(dataDir))
+  // A corrupt secrets file must fail loudly. Defaulting to "no secrets" would
+  // silently sign the user out of every provider and then overwrite the file
+  // that still held the only copy of their keys.
+  return SecretsFileSchema.parse(raw ?? {})
+}
+
+/**
+ * Join config.json with secrets.json.
+ *
+ * Configs written before the split still carry their secrets inline; those are
+ * honoured as a fallback so an un-migrated install keeps working, and the first
+ * write clears them. The secrets file wins wherever it has a value.
+ */
 export async function getGlobalConfig(dataDir: string): Promise<GlobalConfig> {
-  try {
-    const raw = await fs.readFile(configPath(dataDir), 'utf-8')
-    return GlobalConfigSchema.parse(JSON.parse(raw))
-  } catch {
-    return GlobalConfigSchema.parse({})
+  const [raw, secrets] = await Promise.all([
+    readJsonFile(configPath(dataDir)),
+    readSecretsFile(dataDir),
+  ])
+  const config = LoadedGlobalConfigSchema.parse(raw ?? {})
+  return {
+    ...config,
+    providers: config.providers.map((provider) => ({
+      ...provider,
+      apiKey: secrets.providerApiKeys[provider.id] || provider.apiKey,
+    })),
+    sharing: { ...config.sharing, passwordHash: secrets.sharingPasswordHash || config.sharing.passwordHash },
+    erratanet: { ...config.erratanet, token: secrets.erratanetToken || config.erratanet.token },
   }
+}
+
+async function writeGlobalConfigUnlocked(dataDir: string, config: GlobalConfig): Promise<void> {
+  await fs.mkdir(dataDir, { recursive: true })
+  const stored = StoredGlobalConfigSchema.parse(config)
+  const secrets: SecretsFile = {
+    version: 1,
+    // Orphans are dropped by construction: deleting a provider deletes its key.
+    providerApiKeys: Object.fromEntries(
+      config.providers.filter((p) => p.apiKey).map((p) => [p.id, p.apiKey]),
+    ),
+    erratanetToken: config.erratanet.token,
+    sharingPasswordHash: config.sharing.passwordHash,
+  }
+  // Secrets first: a crash between the two writes leaves keys recoverable, and
+  // the join tolerates a secrets file that is ahead of config.json.
+  await writeJsonAtomic(secretsPath(dataDir), secrets, SECRETS_FILE_MODE)
+  await writeJsonAtomic(configPath(dataDir), stored)
+}
+
+export async function mutateGlobalConfig(
+  dataDir: string,
+  mutate: (config: GlobalConfig) => void,
+): Promise<GlobalConfig> {
+  return withStorageLock(configPath(dataDir), async () => {
+    const config = await getGlobalConfig(dataDir)
+    mutate(config)
+    await writeGlobalConfigUnlocked(dataDir, config)
+    return config
+  })
+}
+
+export interface SecretsMigrationResult {
+  migrated: boolean
+  providerKeys: number
+  erratanetToken: boolean
+  sharingPasswordHash: boolean
+}
+
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0
+}
+
+/** Secrets left inline in a config.json written before the split. */
+function countInlineSecrets(raw: unknown): Omit<SecretsMigrationResult, 'migrated'> {
+  const obj = raw as {
+    providers?: Array<{ apiKey?: unknown }>
+    erratanet?: { token?: unknown }
+    sharing?: { passwordHash?: unknown }
+  } | null
+  const providers = Array.isArray(obj?.providers) ? obj.providers : []
+  return {
+    providerKeys: providers.filter((p) => isNonEmptyString(p?.apiKey)).length,
+    erratanetToken: isNonEmptyString(obj?.erratanet?.token),
+    sharingPasswordHash: isNonEmptyString(obj?.sharing?.passwordHash),
+  }
+}
+
+/**
+ * Lift secrets out of a pre-split config.json into secrets.json and rewrite
+ * config.json without them.
+ *
+ * The plaintext is not kept anywhere: the point is that the old file stops
+ * holding secrets, and a backup beside it would defeat that.
+ */
+export async function migrateLegacyPlaintextSecrets(dataDir: string): Promise<SecretsMigrationResult> {
+  return withStorageLock(configPath(dataDir), async () => {
+    const inline = countInlineSecrets(await readJsonFile(configPath(dataDir)))
+    if (!inline.providerKeys && !inline.erratanetToken && !inline.sharingPasswordHash) {
+      return { migrated: false, ...inline }
+    }
+    // The join folds the inline values in; writing the result splits them out.
+    await writeGlobalConfigUnlocked(dataDir, await getGlobalConfig(dataDir))
+    return { migrated: true, ...inline }
+  })
 }
 
 export async function getSharingConfig(dataDir: string): Promise<SharingConfig> {
@@ -21,9 +135,9 @@ export async function getSharingConfig(dataDir: string): Promise<SharingConfig> 
 }
 
 export async function updateSharingConfig(dataDir: string, patch: Partial<SharingConfig>): Promise<SharingConfig> {
-  const config = await getGlobalConfig(dataDir)
-  config.sharing = { ...config.sharing, ...patch }
-  await saveGlobalConfig(dataDir, config)
+  const config = await mutateGlobalConfig(dataDir, (current) => {
+    current.sharing = { ...current.sharing, ...patch }
+  })
   return config.sharing
 }
 
@@ -32,45 +146,36 @@ export async function getErratanetConfig(dataDir: string): Promise<ErratanetConf
 }
 
 export async function updateErratanetConfig(dataDir: string, patch: Partial<ErratanetConfig>): Promise<ErratanetConfig> {
-  const config = await getGlobalConfig(dataDir)
-  config.erratanet = { ...config.erratanet, ...patch }
-  await saveGlobalConfig(dataDir, config)
+  const config = await mutateGlobalConfig(dataDir, (current) => {
+    current.erratanet = { ...current.erratanet, ...patch }
+  })
   return config.erratanet
 }
 
 export async function saveGlobalConfig(dataDir: string, config: GlobalConfig): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true })
-  await writeJsonAtomic(configPath(dataDir), config)
+  await withStorageLock(configPath(dataDir), () => writeGlobalConfigUnlocked(dataDir, config))
 }
 
 export async function addProvider(dataDir: string, provider: ProviderConfig): Promise<GlobalConfig> {
-  const config = await getGlobalConfig(dataDir)
-  config.providers.push(provider)
-  // Auto-set as default if it's the first provider
-  if (config.providers.length === 1) {
-    config.defaultProviderId = provider.id
-  }
-  await saveGlobalConfig(dataDir, config)
-  return config
+  return mutateGlobalConfig(dataDir, (config) => {
+    config.providers.push(provider)
+    if (config.providers.length === 1) config.defaultProviderId = provider.id
+  })
 }
 
 export async function updateProvider(dataDir: string, providerId: string, updates: Partial<Omit<ProviderConfig, 'id' | 'createdAt'>>): Promise<GlobalConfig> {
-  const config = await getGlobalConfig(dataDir)
-  const idx = config.providers.findIndex((p) => p.id === providerId)
-  if (idx === -1) throw new Error(`Provider ${providerId} not found`)
-  config.providers[idx] = { ...config.providers[idx], ...updates }
-  await saveGlobalConfig(dataDir, config)
-  return config
+  return mutateGlobalConfig(dataDir, (config) => {
+    const idx = config.providers.findIndex((p) => p.id === providerId)
+    if (idx === -1) throw new Error(`Provider ${providerId} not found`)
+    config.providers[idx] = { ...config.providers[idx], ...updates }
+  })
 }
 
 export async function deleteProvider(dataDir: string, providerId: string): Promise<GlobalConfig> {
-  const config = await getGlobalConfig(dataDir)
-  config.providers = config.providers.filter((p) => p.id !== providerId)
-  if (config.defaultProviderId === providerId) {
-    config.defaultProviderId = config.providers[0]?.id ?? null
-  }
-  await saveGlobalConfig(dataDir, config)
-  return config
+  return mutateGlobalConfig(dataDir, (config) => {
+    config.providers = config.providers.filter((p) => p.id !== providerId)
+    if (config.defaultProviderId === providerId) config.defaultProviderId = config.providers[0]?.id ?? null
+  })
 }
 
 export async function getProvider(dataDir: string, providerId: string): Promise<ProviderConfig | undefined> {
@@ -79,37 +184,49 @@ export async function getProvider(dataDir: string, providerId: string): Promise<
 }
 
 export async function duplicateProvider(dataDir: string, providerId: string): Promise<GlobalConfig> {
-  const config = await getGlobalConfig(dataDir)
-  const source = config.providers.find((p) => p.id === providerId)
-  if (!source) throw new Error(`Provider ${providerId} not found`)
-  const newId = `prov-${Date.now().toString(36)}`
-  const duplicate: ProviderConfig = {
-    ...source,
-    id: newId,
-    name: `${source.name} (copy)`,
-    createdAt: new Date().toISOString(),
-  }
-  config.providers.push(duplicate)
-  await saveGlobalConfig(dataDir, config)
-  return config
+  return mutateGlobalConfig(dataDir, (config) => {
+    const source = config.providers.find((p) => p.id === providerId)
+    if (!source) throw new Error(`Provider ${providerId} not found`)
+    config.providers.push({
+      ...source,
+      id: `prov-${Date.now().toString(36)}`,
+      name: `${source.name} (copy)`,
+      createdAt: new Date().toISOString(),
+    })
+  })
 }
 
+/** Stand-in for a secret the client must never receive. */
+export const MASK = '••••'
+
 export function maskApiKey(key: string): string {
-  if (key.length <= 4) return '••••'
-  return '••••' + key.slice(-4)
+  if (key.length <= 4) return MASK
+  return MASK + key.slice(-4)
+}
+
+/** Present-or-not, without revealing the value. */
+function maskPresence(secret: string): string {
+  return secret ? MASK : ''
+}
+
+export function maskProviders<T extends { apiKey: string }>(providers: T[]): T[] {
+  return providers.map((p) => ({ ...p, apiKey: maskApiKey(p.apiKey) }))
+}
+
+/**
+ * Spread-and-override rather than rebuilt field by field, so a field added to
+ * the erratanet schema reaches clients instead of silently vanishing here.
+ */
+export function redactErratanetConfig(erratanet: ErratanetConfig): ErratanetConfig {
+  return { ...erratanet, token: maskPresence(erratanet.token) }
 }
 
 export async function getGlobalConfigSafe(dataDir: string): Promise<GlobalConfig> {
   const config = await getGlobalConfig(dataDir)
   return {
     ...config,
-    providers: config.providers.map((p) => ({
-      ...p,
-      apiKey: maskApiKey(p.apiKey),
-    })),
-    // Never expose the password hash to clients.
-    sharing: { ...config.sharing, passwordHash: config.sharing.passwordHash ? '••••' : '' },
-    // Never expose the hub token to clients.
-    erratanet: { ...config.erratanet, token: config.erratanet.token ? '••••' : '' },
+    providers: maskProviders(config.providers),
+    sharing: { ...config.sharing, passwordHash: maskPresence(config.sharing.passwordHash) },
+    erratanet: redactErratanetConfig(config.erratanet),
   }
 }
