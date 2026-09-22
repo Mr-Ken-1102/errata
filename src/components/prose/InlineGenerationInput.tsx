@@ -461,7 +461,7 @@ export function InlineGenerationInput({
     clarifications: Clarification[] = [],
     round = 0,
   ) => {
-    if (!generationInput.trim() || isGenerating) return
+    if (!generationInput.trim() || isGenerating || branchId === undefined) return
 
     onGenerationStart(generationInput)
     startedLocallyRef.current = true
@@ -1008,7 +1008,7 @@ export function InlineGenerationInput({
                 size="sm"
                 className="h-7 text-xs gap-1.5 rounded-lg font-medium"
                 onClick={handleGenerate}
-                disabled={!input.trim()}
+                disabled={!input.trim() || branchId === undefined}
                 data-component-id="inline-generation-submit"
               >
                 <PenLine className="size-3" />
