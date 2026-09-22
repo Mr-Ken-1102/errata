@@ -48,6 +48,7 @@ interface DetailPanelProps {
   }>
   askLibrarianFragmentId?: string | null
   askLibrarianPrefill?: string | null
+  askLibrarianCapturePov?: boolean
   onAskLibrarianConsumed?: () => void
 }
 
@@ -107,6 +108,7 @@ export function DetailPanel({
   enabledPanelPlugins,
   askLibrarianFragmentId,
   askLibrarianPrefill,
+  askLibrarianCapturePov,
   onAskLibrarianConsumed,
 }: DetailPanelProps) {
   const isMobile = useIsMobile()
@@ -258,7 +260,13 @@ export function DetailPanel({
 
       {librarianActivated.current && (
         <div className={activeSection === 'agent-activity' ? 'h-full overflow-hidden' : 'hidden'}>
-          <LibrarianPanel storyId={storyId} askFragmentId={askLibrarianFragmentId} askPrefill={askLibrarianPrefill} onAskFragmentConsumed={onAskLibrarianConsumed} />
+          <LibrarianPanel
+            storyId={storyId}
+            askFragmentId={askLibrarianFragmentId}
+            askPrefill={askLibrarianPrefill}
+            askCapturePov={askLibrarianCapturePov}
+            onAskFragmentConsumed={onAskLibrarianConsumed}
+          />
         </div>
       )}
 
