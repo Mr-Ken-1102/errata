@@ -313,7 +313,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isStreaming || !characterId) return
+    if (!text || isStreaming || !characterId || branchId === undefined) return
 
     setInput('')
     setError(null)
@@ -359,6 +359,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     }
   }, [
     activeConversationStorageKey,
+    branchId,
     characterId,
     conversationId,
     input,
@@ -539,7 +540,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
                   ? `Say something to ${selectedCharacter.name}...`
                   : 'Select a character first...'
               }
-              disabled={isStreaming || !characterId}
+              disabled={isStreaming || !characterId || branchId === undefined}
               className="min-h-[44px] max-h-[400px] resize-none text-[0.8125rem] bg-transparent
                 placeholder:italic placeholder:text-muted-foreground flex-1 border-border/30
                 focus-visible:ring-primary/20"
@@ -548,7 +549,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
             />
             <ChatSendButton
               isStreaming={isStreaming}
-              canSend={!!input.trim() && !!characterId}
+              canSend={branchId !== undefined && !!input.trim() && !!characterId}
               onSend={() => { void handleSend() }}
               onStop={() => { void run.cancel() }}
               stopLabel={`Stop ${selectedCharacter?.name ?? 'the character'}`}
