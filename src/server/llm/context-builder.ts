@@ -791,7 +791,7 @@ export function assembleMessages(state: ContextBuildState): ContextMessage[] {
   const requestLogger = logger.child({ storyId: state.story.id })
   requestLogger.info('Assembling messages...')
 
-  const blocks = createDefaultBlocks(state)
+  const blocks = resolvePovVoicePlaceholders(createDefaultBlocks(state), state.povVoice)
   const messages = compileBlocks(blocks)
 
   requestLogger.info('Messages assembled', {
