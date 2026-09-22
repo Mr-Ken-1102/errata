@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react'
-import { act, render } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '@/components/sidebar/SettingsView'
 import { DetailPanel } from '@/components/sidebar/DetailPanel'
@@ -35,11 +35,12 @@ function detailProps(section: 'settings' | null) {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers()
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-    return window.setTimeout(() => cb(performance.now()), 0)
-  })
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id))
+  let rafId = 0
+  // DetailPanel only needs RAF identities in this lifecycle test. Using
+  // setTimeout as RAF under fake timers mixes timer kinds during cleanup and
+  // contaminates later jsdom tests in the shared worker.
+  vi.stubGlobal('requestAnimationFrame', () => ++rafId)
+  vi.stubGlobal('cancelAnimationFrame', () => {})
 })
 
 afterEach(() => {
@@ -73,12 +74,17 @@ describe('Settings overlay close lifecycle', () => {
 
   it('unmounts the settings portal even when transitionend never fires', async () => {
     const view = render(createElement(DetailPanel, detailProps('settings')))
-    expect(document.querySelector('[data-component-id="settings-view-root"]')).not.toBeNull()
+    await waitFor(() => {
+      expect(document.querySelector('[data-component-id="settings-view-root"]')).not.toBeNull()
+    })
 
+    // The fallback is the behavior under test. Turn on fake timers only after
+    // the lazy SettingsView has resolved so Suspense itself is not timer-bound.
+    vi.useFakeTimers()
     view.rerender(createElement(DetailPanel, detailProps(null)))
 
     await act(async () => {
-      vi.advanceTimersByTime(251)
+      await vi.advanceTimersByTimeAsync(251)
     })
 
     expect(document.querySelector('[data-component-id="settings-view-root"]')).toBeNull()
