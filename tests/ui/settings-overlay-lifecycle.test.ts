@@ -46,7 +46,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
-  document.body.innerHTML = ''
 })
 
 describe('Settings overlay close lifecycle', () => {
