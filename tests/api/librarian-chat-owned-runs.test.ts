@@ -86,6 +86,18 @@ function gatedStream(gate: ReturnType<typeof deferred>, opts?: { tool?: boolean;
   return { eventStream, completion: completionPromise }
 }
 
+async function waitForPersistedToolCall(
+  dataDir: string,
+  storyId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const history = await getChatHistory(dataDir, storyId)
+    if (history.messages.at(-1)?.toolCalls?.[0]?.result !== undefined) return
+    await new Promise(resolve => setTimeout(resolve, 1))
+  }
+  throw new Error('tool result was not persisted before Stop')
+}
+
 async function readRunId(res: Response) {
   if (!res.body) throw new Error('missing response body')
   const reader = res.body.getReader()
@@ -245,8 +257,9 @@ describe('server-owned librarian chat route', () => {
     const response = await post('edit it', 'request-cancel')
     const { runId, reader } = await readRunId(response)
 
-    // Let the tracker consume the initial tool result.
-    await new Promise(resolve => setTimeout(resolve, 0))
+    // Stop only after the tool result has landed durably. This tests the
+    // invariant directly instead of racing an arbitrary event-loop tick.
+    await waitForPersistedToolCall(dataDir, storyId)
 
     const cancel = await app.fetch(new Request(
       `http://localhost/api/stories/${storyId}/runs/${runId}/cancel`,
