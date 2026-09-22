@@ -71,7 +71,7 @@ class StreamStalled extends Error {
 
 async function readWithStallTimeout<T>(
   reader: ReadableStreamDefaultReader<T>,
-): Promise<ReadableStreamReadResult<T>> {
+): Promise<ReadableStreamDefaultReadResult<T>> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
