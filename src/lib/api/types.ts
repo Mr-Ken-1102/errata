@@ -181,6 +181,18 @@ export interface ConversationMeta {
   updatedAt: string
 }
 
+/** Story-independent reusable context bundle for seeding a new story. */
+export interface StoryPresetMeta {
+  id: string
+  name: string
+  description: string
+  sourceStoryName?: string
+  fragmentCount: number
+  countsByType: Record<string, number>
+  createdAt: string
+  updatedAt: string
+}
+
 export interface ProviderConfigSafe {
   id: string
   name: string
