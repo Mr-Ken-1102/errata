@@ -239,6 +239,8 @@ export const ProseBlock = memo(function ProseBlock({
   }
 
   const runRegeneration = async (prompt: string): Promise<boolean> => {
+    if (branchId === undefined) return false
+
     let accumulated = ''
     let accumulatedReasoning = ''
     let rejection: string | undefined
@@ -318,7 +320,7 @@ export const ProseBlock = memo(function ProseBlock({
   }
 
   const handleQuickRegenerate = async () => {
-    if (!canQuickRegenerate || isStreamingAction) return
+    if (!canQuickRegenerate || isStreamingAction || branchId === undefined) return
 
     setActionMode(null)
     setIsStreamingAction(true)
@@ -334,7 +336,7 @@ export const ProseBlock = memo(function ProseBlock({
   }
 
   const handleActionSubmit = async () => {
-    if (!actionInput.trim() || isStreamingAction) return
+    if (!actionInput.trim() || isStreamingAction || branchId === undefined) return
 
     setActionMode(null)
     setShowActions(false)
@@ -362,7 +364,7 @@ export const ProseBlock = memo(function ProseBlock({
   }
 
   const handlePromptSubmit = async () => {
-    if (!actionInput.trim() || isStreamingAction) return
+    if (!actionInput.trim() || isStreamingAction || branchId === undefined) return
     setEditingPrompt(false)
     setShowActions(false)
     setIsStreamingAction(true)
@@ -457,7 +459,7 @@ export const ProseBlock = memo(function ProseBlock({
                   </span>
                   <button
                     className="ml-auto text-[0.625rem] px-1.5 py-0.5 rounded text-primary/70 hover:text-primary hover:bg-primary/10 transition-colors font-medium disabled:opacity-30"
-                    disabled={!actionInput.trim()}
+                    disabled={!actionInput.trim() || branchId === undefined}
                     onClick={handlePromptSubmit}
                   >
                     Regenerate
@@ -622,7 +624,7 @@ export const ProseBlock = memo(function ProseBlock({
                   </button>
                   <button
                     className="px-2.5 py-0.5 rounded-md text-[0.6875rem] font-medium bg-foreground/[0.07] hover:bg-foreground/[0.12] text-foreground disabled:opacity-30 transition-all"
-                    disabled={!actionInput.trim()}
+                    disabled={!actionInput.trim() || branchId === undefined}
                     onClick={handleActionSubmit}
                   >
                     Regenerate
@@ -731,7 +733,7 @@ export const ProseBlock = memo(function ProseBlock({
                     setShowActions(false)
                     handleQuickRegenerate()
                   }}
-                  disabled={!canQuickRegenerate}
+                  disabled={!canQuickRegenerate || branchId === undefined}
                   data-component-id={`prose-${fragment.id}-regenerate`}
                 >
                   <RefreshCw className="size-3.5" />
