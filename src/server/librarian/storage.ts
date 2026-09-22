@@ -491,28 +491,34 @@ export async function listAnalyses(
   const dir = await analysesDir(dataDir, storyId)
   if (!existsSync(dir)) return []
 
-  const entries = await readdir(dir)
-  const summaries: LibrarianAnalysisSummary[] = []
-  const sourceHashes = new Map<string, string | null>()
+  const paths = (await readdir(dir))
+    .filter(entry => entry.endsWith('.json'))
+    .map(entry => join(dir, entry))
 
-  for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue
-    const { summary, projectionContentHash } = await readAnalysisSummary(join(dir, entry))
+  // Cold loads are filesystem-bound. Read independent summaries in parallel;
+  // the summary cache still makes warm polling cheap.
+  const entries = await Promise.all(paths.map(path => readAnalysisSummary(path)))
 
-    let continuityStale = false
-    if (projectionContentHash) {
-      if (!sourceHashes.has(summary.fragmentId)) {
-        const source = await getFragment(dataDir, storyId, summary.fragmentId)
-        sourceHashes.set(summary.fragmentId, source ? proseContentHash(source) : null)
-      }
-      const hash = sourceHashes.get(summary.fragmentId)
-      continuityStale = hash != null && hash !== projectionContentHash
-    }
+  // continuityStale depends on live prose. Resolve each source fragment once,
+  // even when multiple historical analyses belong to the same passage.
+  const sourceIds = [...new Set(
+    entries
+      .filter(entry => entry.projectionContentHash)
+      .map(entry => entry.summary.fragmentId),
+  )]
+  const sourceHashEntries = await Promise.all(sourceIds.map(async (fragmentId) => {
+    const source = await getFragment(dataDir, storyId, fragmentId)
+    return [fragmentId, source ? proseContentHash(source) : null] as const
+  }))
+  const sourceHashes = new Map(sourceHashEntries)
 
-    summaries.push(continuityStale ? { ...summary, continuityStale } : summary)
-  }
+  const summaries = entries.map(({ summary, projectionContentHash }) => {
+    if (!projectionContentHash) return summary
+    const hash = sourceHashes.get(summary.fragmentId)
+    const continuityStale = hash != null && hash !== projectionContentHash
+    return continuityStale ? { ...summary, continuityStale } : summary
+  })
 
-  // Sort newest first
   summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return summaries
 }
