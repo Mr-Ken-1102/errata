@@ -46,7 +46,7 @@ jobs:
       - name: Read package version
         id: version
         shell: bash
-        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: node -e 'const fs=require("fs"); const p=require("./package.json"); fs.appendFileSync(process.env.GITHUB_OUTPUT, "value=" + p.version + "\n")'
 
       - name: Build binary
         run: bun run build:binary
@@ -107,7 +107,7 @@ jobs:
       - name: Read package version
         id: version
         shell: bash
-        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: node -e 'const fs=require("fs"); const p=require("./package.json"); fs.appendFileSync(process.env.GITHUB_OUTPUT, "value=" + p.version + "\n")'
 
       - name: Build binary
         run: bun run build:binary
