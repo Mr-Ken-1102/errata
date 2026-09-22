@@ -96,47 +96,71 @@ export const librarian = {
       }),
     })
   },
-  chat: (storyId: string, message: string, clientRequestId?: string) =>
+  chat: (
+    storyId: string,
+    message: string,
+    clientRequestId?: string,
+    branchId?: string,
+  ) =>
     fetchRunEventStream(`/stories/${storyId}/librarian/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
         ...(clientRequestId ? { clientRequestId } : {}),
+        ...(branchId ? { branchId } : {}),
       }),
     }),
-  getChatHistory: (storyId: string) =>
-    apiFetch<ChatHistory>(`/stories/${storyId}/librarian/chat`),
-  clearChatHistory: (storyId: string) =>
-    apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/chat`, { method: 'DELETE' }),
+  getChatHistory: (storyId: string, branchId?: string) =>
+    apiFetch<ChatHistory>(
+      `/stories/${storyId}/librarian/chat${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+    ),
+  clearChatHistory: (storyId: string, branchId?: string) =>
+    apiFetch<{ ok: boolean }>(
+      `/stories/${storyId}/librarian/chat${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+      { method: 'DELETE' },
+    ),
   // Conversations
-  listConversations: (storyId: string) =>
-    apiFetch<ConversationMeta[]>(`/stories/${storyId}/librarian/conversations`),
-  createConversation: (storyId: string, title?: string, povCharacterId?: string) =>
+  listConversations: (storyId: string, branchId?: string) =>
+    apiFetch<ConversationMeta[]>(
+      `/stories/${storyId}/librarian/conversations${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+    ),
+  createConversation: (
+    storyId: string,
+    title?: string,
+    povCharacterId?: string,
+    branchId?: string,
+  ) =>
     apiFetch<ConversationMeta>(`/stories/${storyId}/librarian/conversations`, {
       method: 'POST',
       body: JSON.stringify({
         title,
         ...(povCharacterId ? { povCharacterId } : {}),
+        ...(branchId ? { branchId } : {}),
       }),
     }),
-  deleteConversation: (storyId: string, conversationId: string) =>
-    apiFetch<{ ok: boolean }>(`/stories/${storyId}/librarian/conversations/${conversationId}`, {
-      method: 'DELETE',
-    }),
-  getConversationHistory: (storyId: string, conversationId: string) =>
-    apiFetch<ChatHistory>(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`),
+  deleteConversation: (storyId: string, conversationId: string, branchId?: string) =>
+    apiFetch<{ ok: boolean }>(
+      `/stories/${storyId}/librarian/conversations/${conversationId}${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+      { method: 'DELETE' },
+    ),
+  getConversationHistory: (storyId: string, conversationId: string, branchId?: string) =>
+    apiFetch<ChatHistory>(
+      `/stories/${storyId}/librarian/conversations/${conversationId}/chat${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`,
+    ),
   conversationChat: (
     storyId: string,
     conversationId: string,
     message: string,
     clientRequestId?: string,
+    branchId?: string,
   ) => fetchRunEventStream(`/stories/${storyId}/librarian/conversations/${conversationId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message,
       ...(clientRequestId ? { clientRequestId } : {}),
+      ...(branchId ? { branchId } : {}),
     }),
   }),
 }
