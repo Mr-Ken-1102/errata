@@ -101,6 +101,7 @@ async function startLibrarianChatRun(args: {
   message: string
   clientRequestId?: string
   maxSteps: number
+  povCharacterId?: string
   logger: Logger
 }): Promise<Run> {
   const {
@@ -111,6 +112,7 @@ async function startLibrarianChatRun(args: {
     message,
     clientRequestId,
     maxSteps,
+    povCharacterId,
     logger,
   } = args
 
@@ -137,6 +139,7 @@ async function startLibrarianChatRun(args: {
     input: {
       messages: providerMessages,
       maxSteps,
+      ...(povCharacterId ? { povCharacterId } : {}),
     },
     onStart: async (runId) => {
       trackerRunId = runId
@@ -725,9 +728,17 @@ export function librarianRoutes(dataDir: string) {
     }, { detail: { summary: 'List chat conversations' } })
 
     .post('/stories/:storyId/librarian/conversations', async ({ params, body }) => {
-      return createConversation(dataDir, params.storyId, body.title ?? 'New chat')
+      return createConversation(
+        dataDir,
+        params.storyId,
+        body.title ?? 'New chat',
+        body.povCharacterId,
+      )
     }, {
-      body: t.Object({ title: t.Optional(t.String()) }),
+      body: t.Object({
+        title: t.Optional(t.String()),
+        povCharacterId: t.Optional(t.String()),
+      }),
       detail: { summary: 'Create a chat conversation' },
     })
 
@@ -754,7 +765,8 @@ export function librarianRoutes(dataDir: string) {
       }
 
       const conversations = await listConversations(dataDir, params.storyId)
-      if (!conversations.some(item => item.id === params.conversationId)) {
+      const conversation = conversations.find(item => item.id === params.conversationId)
+      if (!conversation) {
         set.status = 404
         return { error: 'Conversation not found' }
       }
@@ -802,6 +814,9 @@ export function librarianRoutes(dataDir: string) {
             message: text,
             ...(body.clientRequestId ? { clientRequestId: body.clientRequestId } : {}),
             maxSteps: story.settings.maxSteps ?? 10,
+            ...(conversation.povCharacterId
+              ? { povCharacterId: conversation.povCharacterId }
+              : {}),
             logger: requestLogger,
           })
           return runStreamResponse(run)
