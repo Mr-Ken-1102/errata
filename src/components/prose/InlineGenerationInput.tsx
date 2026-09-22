@@ -679,7 +679,7 @@ export function InlineGenerationInput({
             rows={1}
             className="w-full resize-none bg-transparent border-none outline-none px-4 pt-1.5 pb-2 font-prose text-[0.9375rem] leading-relaxed text-foreground placeholder:text-muted-foreground placeholder:italic disabled:opacity-40"
             style={{ minHeight: '44px', maxHeight: '200px', overflowY: 'auto', scrollbarWidth: 'none' }}
-            disabled={isGenerating}
+            disabled={isGenerating || branchId === undefined}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
                 e.preventDefault()
@@ -696,7 +696,7 @@ export function InlineGenerationInput({
             <div className="flex gap-1.5 mb-1.5">
               <button
                 type="button"
-                disabled={isGenerating}
+                disabled={isGenerating || branchId === undefined}
                 onClick={() => handleGenerateWithInput(story?.settings.guidedContinuePrompt || DEFAULT_CONTINUE_INSTRUCTION)}
                 className={cn(
                   'group flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all duration-200 text-left',
@@ -714,7 +714,7 @@ export function InlineGenerationInput({
               </button>
               <button
                 type="button"
-                disabled={isGenerating}
+                disabled={isGenerating || branchId === undefined}
                 onClick={() => handleGenerateWithInput(story?.settings.guidedSceneSettingPrompt || DEFAULT_SCENE_SETTING_INSTRUCTION)}
                 className={cn(
                   'group flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all duration-200 text-left',
@@ -736,7 +736,7 @@ export function InlineGenerationInput({
             {suggestions.length === 0 && !isFetchingSuggestions && (
               <button
                 type="button"
-                disabled={isGenerating}
+                disabled={isGenerating || branchId === undefined}
                 onClick={handleFetchSuggestions}
                 className={cn(
                   'w-full flex items-center justify-center gap-2 py-1.5 rounded-md transition-all duration-200',
@@ -765,7 +765,7 @@ export function InlineGenerationInput({
                   <span className="text-[0.625rem] text-muted-foreground font-sans uppercase tracking-wider">Directions</span>
                   <button
                     type="button"
-                    disabled={isGenerating}
+                    disabled={isGenerating || branchId === undefined}
                     onClick={handleFetchSuggestions}
                     aria-label="Refresh directions"
                     className="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
@@ -831,7 +831,7 @@ export function InlineGenerationInput({
                         <div className="flex w-full items-stretch min-h-8 pointer-coarse:min-h-11">
                           <button
                             type="button"
-                            disabled={isGenerating}
+                            disabled={isGenerating || branchId === undefined}
                             onPointerDown={recordPressStart}
                             onClick={activateSuggestion}
                             aria-expanded={isExpanded}
@@ -857,7 +857,7 @@ export function InlineGenerationInput({
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                disabled={isGenerating}
+                                disabled={isGenerating || branchId === undefined}
                                 onClick={() => {
                                   // The textarea mounts with the mode change, and iOS
                                   // opens the keyboard only for a focus() inside the
@@ -898,7 +898,7 @@ export function InlineGenerationInput({
                           <div className="min-h-0 overflow-hidden">
                             <button
                               type="button"
-                              disabled={isGenerating}
+                              disabled={isGenerating || branchId === undefined}
                               onPointerDown={recordPressStart}
                               onClick={activateSuggestion}
                               className="block w-full px-2.5 pb-2 text-left text-[0.6875rem] text-muted-foreground leading-normal whitespace-normal break-words disabled:cursor-default"
