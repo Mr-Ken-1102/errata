@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useActiveBranchId } from '@/lib/query-keys'
 import { consumeRun } from '@/lib/api/runs'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -23,6 +24,7 @@ export function RefinementPanel({
   onClose,
 }: RefinementPanelProps) {
   const queryClient = useQueryClient()
+  const branchId = useActiveBranchId(storyId)
   const [instructions, setInstructions] = useState('')
   const [streamedText, setStreamedText] = useState('')
   const [isRefining, setIsRefining] = useState(false)
@@ -43,11 +45,11 @@ export function RefinementPanel({
     if (!activeRef.current) return
     cancelRequestedRef.current = true
     const runId = runIdRef.current
-    if (runId) void api.runs.cancel(storyId, runId).catch(() => {})
-  }, [storyId])
+    if (runId) void api.runs.cancel(storyId, runId, branchId).catch(() => {})
+  }, [storyId, branchId])
 
   const handleRefine = useCallback(async () => {
-    if (activeRef.current) return
+    if (activeRef.current || !branchId) return
 
     activeRef.current = true
     cancelRequestedRef.current = false
@@ -68,6 +70,7 @@ export function RefinementPanel({
         storyId,
         fragmentId,
         instructions.trim() || undefined,
+        { branchId },
       )
 
       let accumulated = ''
@@ -75,7 +78,7 @@ export function RefinementPanel({
         if (event.type === 'run-start') {
           runIdRef.current = event.runId
           if (cancelRequestedRef.current) {
-            void api.runs.cancel(storyId, event.runId).catch(() => {})
+            void api.runs.cancel(storyId, event.runId, branchId).catch(() => {})
           }
           return
         }
@@ -88,7 +91,7 @@ export function RefinementPanel({
         if (mountedRef.current && outputRef.current) {
           outputRef.current.scrollTop = outputRef.current.scrollHeight
         }
-      })
+      }, { branchId })
 
       // A cancelled write-enabled run may already have landed a tool call.
       await refreshFragments()
@@ -115,13 +118,13 @@ export function RefinementPanel({
       cancelRequestedRef.current = false
       if (mountedRef.current) setIsRefining(false)
     }
-  }, [instructions, storyId, fragmentId, queryClient, onComplete])
+  }, [instructions, storyId, branchId, fragmentId, queryClient, onComplete])
 
   const handleCancel = useCallback(() => {
     if (!activeRef.current) return
     cancelRequestedRef.current = true
     const runId = runIdRef.current
-    if (runId) void api.runs.cancel(storyId, runId).catch(() => {})
+    if (runId) void api.runs.cancel(storyId, runId, branchId).catch(() => {})
   }, [storyId])
 
   return (
@@ -159,6 +162,7 @@ export function RefinementPanel({
                 size="sm"
                 className="h-7 text-xs gap-1.5"
                 onClick={handleRefine}
+                disabled={!branchId}
                 data-component-id="refinement-submit"
               >
                 <Sparkles className="size-3" />
