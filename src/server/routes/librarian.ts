@@ -41,7 +41,7 @@ import { runStreamResponse, resolveExistingRun } from '../runs/http'
 import { findLiveRun, abortedByTimeout, abortedByUser, type Run } from '../runs'
 import { createTurnTracker, type TurnTracker } from '../runs/turn-tracker'
 import { describeError } from '../error-message'
-import { getActiveBranchId, withBranch } from '../fragments/branches'
+import { getActiveBranchId, getBranchesIndex, isBranchDeleting, withBranch } from '../fragments/branches'
 import { withKeyLock } from '../async-lock'
 import type { LibrarianStatusResponse } from '@/contracts/librarian'
 
@@ -482,7 +482,23 @@ export function librarianRoutes(dataDir: string) {
         return { error: 'Story not found' }
       }
 
-      const fragment = await getFragment(dataDir, params.storyId, body.fragmentId)
+      const branches = await getBranchesIndex(dataDir, params.storyId)
+      const branchId = body.branchId ?? branches.activeBranchId
+      if (!branches.branches.some(branch => branch.id === branchId)) {
+        set.status = 404
+        return { error: `Timeline '${branchId}' not found` }
+      }
+      if (isBranchDeleting(params.storyId, branchId)) {
+        set.status = 409
+        return { error: `Timeline '${branchId}' is being deleted` }
+      }
+
+      const fragment = await withBranch(
+        dataDir,
+        params.storyId,
+        () => getFragment(dataDir, params.storyId, body.fragmentId),
+        branchId,
+      )
       if (!fragment) {
         set.status = 404
         return { error: 'Fragment not found' }
@@ -499,6 +515,7 @@ export function librarianRoutes(dataDir: string) {
           storyId: params.storyId,
           kind: 'librarian.refine',
           scopeId: body.fragmentId,
+          branchId,
           agentName: 'librarian.refine',
           input: {
             fragmentId: body.fragmentId,
@@ -526,6 +543,7 @@ export function librarianRoutes(dataDir: string) {
         // and returns the authoritative run id in its run-start event.
         runId: t.Optional(t.String()),
         fragmentId: t.String(),
+        branchId: t.Optional(t.String()),
         instructions: t.Optional(t.String()),
       }),
       detail: { summary: 'Refine a non-prose fragment (server-owned run; streaming NDJSON)' },
@@ -545,7 +563,23 @@ export function librarianRoutes(dataDir: string) {
         return { error: 'Story not found' }
       }
 
-      const fragment = await getFragment(dataDir, params.storyId, body.fragmentId)
+      const branches = await getBranchesIndex(dataDir, params.storyId)
+      const branchId = body.branchId ?? branches.activeBranchId
+      if (!branches.branches.some(branch => branch.id === branchId)) {
+        set.status = 404
+        return { error: `Timeline '${branchId}' not found` }
+      }
+      if (isBranchDeleting(params.storyId, branchId)) {
+        set.status = 409
+        return { error: `Timeline '${branchId}' is being deleted` }
+      }
+
+      const fragment = await withBranch(
+        dataDir,
+        params.storyId,
+        () => getFragment(dataDir, params.storyId, body.fragmentId),
+        branchId,
+      )
       if (!fragment) {
         set.status = 404
         return { error: 'Fragment not found' }
@@ -562,6 +596,7 @@ export function librarianRoutes(dataDir: string) {
           storyId: params.storyId,
           kind: 'librarian.prose-transform',
           scopeId: body.fragmentId,
+          branchId,
           agentName: 'librarian.prose-transform',
           input: {
             fragmentId: body.fragmentId,
@@ -571,6 +606,7 @@ export function librarianRoutes(dataDir: string) {
             sourceContent: body.sourceContent,
             contextBefore: body.contextBefore,
             contextAfter: body.contextAfter,
+            povCharacterId: body.povCharacterId,
           },
           onComplete: (result) => {
             requestLogger.info('Prose transform completed', {
@@ -594,6 +630,8 @@ export function librarianRoutes(dataDir: string) {
         // Backward-compatible input only; ignored by the server-owned run.
         runId: t.Optional(t.String()),
         fragmentId: t.String(),
+        branchId: t.Optional(t.String()),
+        povCharacterId: t.Optional(t.String()),
         selectedText: t.String({ minLength: 1 }),
         operation: t.Union([t.Literal('rewrite'), t.Literal('expand'), t.Literal('compress'), t.Literal('custom')]),
         instruction: t.Optional(t.String()),
