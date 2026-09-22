@@ -68,6 +68,27 @@ describe('branch-aware librarian POV client contract', () => {
     })
   })
 
+  it('sends POV only when a conversation is explicitly created with one', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        id: 'conv-1',
+        title: 'New chat',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await librarian.createConversation('story-1', undefined, 'ch-maya')
+    let init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toMatchObject({ povCharacterId: 'ch-maya' })
+
+    await librarian.createConversation('story-1')
+    init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).not.toHaveProperty('povCharacterId')
+  })
+
   it('allows an explicit narrator transform without reusing stored POV', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(runResponse())
     vi.stubGlobal('fetch', fetchSpy)
