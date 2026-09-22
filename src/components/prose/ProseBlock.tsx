@@ -32,7 +32,7 @@ interface ProseBlockProps {
   onDebugLog?: (logId: string) => void
   onBranchFrom?: (sectionIndex: number) => void
   onEdit?: (fragmentId: string, selectedText?: string) => void
-  onAskLibrarian?: (fragmentId: string, prefill?: string) => void
+  onAskLibrarian?: (fragmentId: string, prefill?: string, options?: { capturePov?: boolean }) => void
   onAnalyze?: (fragmentId: string) => void
   hasAnalysis?: boolean
   quickSwitch: boolean
@@ -743,7 +743,7 @@ export const ProseBlock = memo(function ProseBlock({
                   <>
                     <button
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.6875rem] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-all"
-                      onClick={() => { onAskLibrarian(fragment.id, `refine ${fragment.id}: `); setShowActions(false) }}
+                      onClick={() => { onAskLibrarian(fragment.id, `refine ${fragment.id}: `, { capturePov: true }); setShowActions(false) }}
                       data-component-id={`prose-${fragment.id}-refine`}
                     >
                       <MessageSquare className="size-3.5" />
