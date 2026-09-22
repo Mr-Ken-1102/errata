@@ -54,6 +54,7 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
+    expect(translate('vi', 'settings.proseColors.heading')).toBe('Màu văn bản')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -112,5 +113,18 @@ describe('language UI wiring', () => {
     expect(updatesSource).toContain('bridge.downloadUpdate()')
     expect(updatesSource).toContain('bridge.installUpdate()')
     expect(updatesSource).toContain("bridge.skipUpdate(state.version ?? '')")
+  })
+
+  it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
+    const colorsSource = readFileSync('src/components/settings/ProseColorsPanel.tsx', 'utf8')
+
+    expect(colorsSource).toContain('useLanguage()')
+    expect(colorsSource).toContain("t('settings.proseColors.heading')")
+    expect(colorsSource).toContain("key: 'dialogue'")
+    expect(colorsSource).toContain("key: 'narration'")
+    expect(colorsSource).toContain("key: 'emphasis'")
+    expect(colorsSource).toContain("'#6b8aad'")
+    expect(colorsSource).toContain("'#888888'")
+    expect(colorsSource).toContain('The rain hammered against the cobblestones as she rounded the corner.')
   })
 })

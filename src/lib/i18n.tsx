@@ -104,6 +104,20 @@ const EN_MESSAGES = {
   'settings.updates.changelog.checking': 'Checking release metadata...',
   'settings.updates.changelog.idle': 'Run a manual update check to load the latest release notes.',
   'settings.updates.backupNotice': 'Errata only checks for updates when you click the button. Your stories are backed up before every install.',
+  'settings.proseColors.heading': 'Prose colors',
+  'settings.proseColors.dialogue': 'Dialogue',
+  'settings.proseColors.dialogueDescription': 'Quoted speech wrapped in double quotes',
+  'settings.proseColors.dialogueDefault': 'Muted blue',
+  'settings.proseColors.narration': 'Narration',
+  'settings.proseColors.narrationDescription': 'Base prose text color',
+  'settings.proseColors.narrationDefault': 'Theme foreground',
+  'settings.proseColors.emphasis': 'Emphasis',
+  'settings.proseColors.emphasisDescription': 'Italic text outside of dialogue',
+  'settings.proseColors.emphasisDefault': 'Inherits narration',
+  'settings.proseColors.resetDefault': 'Reset to default',
+  'settings.proseColors.default': 'Default',
+  'settings.proseColors.resetAll': 'Reset all',
+  'settings.proseColors.preview': 'Preview',
 } as const
 
 export type TranslationKey = keyof typeof EN_MESSAGES
@@ -190,6 +204,20 @@ const VI_MESSAGES: Partial<Record<TranslationKey, string>> = {
   'settings.updates.changelog.checking': 'Đang kiểm tra thông tin bản phát hành...',
   'settings.updates.changelog.idle': 'Chạy kiểm tra cập nhật thủ công để tải ghi chú phát hành mới nhất.',
   'settings.updates.backupNotice': 'Errata chỉ kiểm tra cập nhật khi bạn bấm nút. Truyện của bạn được sao lưu trước mỗi lần cài đặt.',
+  'settings.proseColors.heading': 'Màu văn bản',
+  'settings.proseColors.dialogue': 'Hội thoại',
+  'settings.proseColors.dialogueDescription': 'Lời thoại được đặt trong dấu ngoặc kép',
+  'settings.proseColors.dialogueDefault': 'Xanh lam dịu',
+  'settings.proseColors.narration': 'Trần thuật',
+  'settings.proseColors.narrationDescription': 'Màu cơ bản của phần văn xuôi',
+  'settings.proseColors.narrationDefault': 'Màu chữ của chủ đề',
+  'settings.proseColors.emphasis': 'Nhấn mạnh',
+  'settings.proseColors.emphasisDescription': 'Chữ nghiêng nằm ngoài hội thoại',
+  'settings.proseColors.emphasisDefault': 'Kế thừa màu trần thuật',
+  'settings.proseColors.resetDefault': 'Đặt lại về mặc định',
+  'settings.proseColors.default': 'Mặc định',
+  'settings.proseColors.resetAll': 'Đặt lại tất cả',
+  'settings.proseColors.preview': 'Xem trước',
 }
 
 const SETTINGS_NAV_KEYS: Record<string, TranslationKey> = {
