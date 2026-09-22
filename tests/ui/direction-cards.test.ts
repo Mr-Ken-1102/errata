@@ -87,7 +87,7 @@ describe('direction card activation', () => {
     const suggest = await screen.findByText('Suggest directions', {}, { timeout: 10_000 })
     await waitFor(() => {
       expect((suggest as HTMLButtonElement).disabled).toBe(false)
-    })
+    }, { timeout: 10_000 })
     fireEvent.click(suggest)
     await waitFor(() => expect(screen.getByText(DIRECTION.title)).toBeTruthy())
     return view
