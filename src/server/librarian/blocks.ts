@@ -416,13 +416,26 @@ export function createLibrarianChatBlocks(ctx: AgentBlockContext): ContextBlock[
 
   blocks.push(...fragmentSummaryCatalogBlocks(ctx, { includeCustomFragments: true }))
 
+  // A POV-aware conversation is created only from the author's explicit prose
+  // refinement action. General librarian chats leave ctx.povVoice undefined.
+  pushPovVoice(blocks, ctx.povVoice, 500)
+
   return blocks
 }
 
 export async function buildChatPreviewContext(dataDir: string, storyId: string): Promise<AgentBlockContext> {
   const base = await buildBasePreviewContext(dataDir, storyId)
   const systemPromptFragments = await loadSystemPromptFragments(dataDir, storyId, getFragmentsByTag, getFragment)
-  return { ...base, systemPromptFragments }
+  return {
+    ...base,
+    systemPromptFragments,
+    // Enumerate/configure the optional block in the editor without making
+    // ordinary runtime chats POV-aware.
+    povVoice: {
+      characterName: 'POV Character',
+      content: '(voice notes will appear here)',
+    },
+  }
 }
 
 // ─── Librarian Refine ───
