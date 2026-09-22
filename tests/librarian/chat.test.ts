@@ -6,6 +6,7 @@ import {
   createFragment,
 } from '@/server/fragments/storage'
 import { initProseChain } from '@/server/fragments/prose-chain'
+import { appendChatMessage } from '@/server/librarian/storage'
 import type { StoryMeta, Fragment } from '@/server/fragments/schema'
 
 // Mock the AI SDK ToolLoopAgent
@@ -133,7 +134,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
@@ -209,7 +210,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Edit the prose' }],
+          message: 'Edit the prose',
         }),
       }),
     )
@@ -265,7 +266,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Why is the sky blue?' }],
+          message: 'Why is the sky blue?',
         }),
       }),
     )
@@ -315,7 +316,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'List characters' }],
+          message: 'List characters',
         }),
       }),
     )
@@ -347,7 +348,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
@@ -381,7 +382,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Reanalyze the prose' }],
+          message: 'Reanalyze the prose',
         }),
       }),
     )
@@ -407,17 +408,14 @@ describe('librarian chat endpoint', () => {
       steps: Promise.resolve([]),
     })
 
+    await appendChatMessage(dataDir, story.id, { role: 'user', content: 'Hello' })
+    await appendChatMessage(dataDir, story.id, { role: 'assistant', content: 'Hi there!' })
+
     const res = await app.fetch(
       new Request(`http://localhost/api/stories/${story.id}/librarian/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'user', content: 'Hello' },
-            { role: 'assistant', content: 'Hi there!' },
-            { role: 'user', content: 'How are you?' },
-          ],
-        }),
+        body: JSON.stringify({ message: 'How are you?' }),
       }),
     )
     await consumeStream(res)
@@ -451,7 +449,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
@@ -492,7 +490,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
+          message: 'Hello',
         }),
       }),
     )
@@ -524,8 +522,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello' }],
-          maxSteps: 3,
+          message: 'Hello',
         }),
       }),
     )
@@ -557,7 +554,7 @@ describe('librarian chat endpoint', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Hello librarian' }],
+          message: 'Hello librarian',
         }),
       }),
     )
