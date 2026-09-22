@@ -4,6 +4,7 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '@/components/sidebar/SettingsView'
 import { DetailPanel } from '@/components/sidebar/DetailPanel'
+import { LanguageProvider } from '@/lib/i18n'
 
 vi.mock('@/components/sidebar/SettingsPanel', () => ({
   SettingsPanel: () => createElement('div', { 'data-testid': 'settings-panel-stub' }, 'settings'),
@@ -34,6 +35,10 @@ function detailProps(section: 'settings' | null) {
   } as any
 }
 
+function withLanguageProvider(child: ReturnType<typeof createElement>) {
+  return createElement(LanguageProvider, null, child)
+}
+
 beforeEach(() => {
   let rafId = 0
   // DetailPanel only needs RAF identities in this lifecycle test. Using
@@ -41,6 +46,7 @@ beforeEach(() => {
   // contaminates later jsdom tests in the shared worker.
   vi.stubGlobal('requestAnimationFrame', () => ++rafId)
   vi.stubGlobal('cancelAnimationFrame', () => {})
+  window.localStorage.removeItem('errata-language')
 })
 
 afterEach(() => {
@@ -59,26 +65,26 @@ describe('Settings overlay close lifecycle', () => {
       onTransitionEnd: vi.fn(),
       onManageProviders: vi.fn(),
     }
-    const view = render(createElement(SettingsView, props))
+    const view = render(withLanguageProvider(createElement(SettingsView, props)))
 
     const backdrop = document.querySelector('button[aria-label="Close settings"]') as HTMLButtonElement
     const panel = document.querySelector('[data-component-id="settings-view-root"]') as HTMLDivElement
     expect(backdrop.className).toContain('pointer-events-auto')
     expect(panel.className).toContain('pointer-events-auto')
 
-    view.rerender(createElement(SettingsView, { ...props, visible: false }))
+    view.rerender(withLanguageProvider(createElement(SettingsView, { ...props, visible: false })))
 
     expect(backdrop.className).toContain('pointer-events-none')
     expect(panel.className).toContain('pointer-events-none')
   })
 
   it('unmounts the settings portal even when transitionend never fires', async () => {
-    const view = render(createElement(DetailPanel, detailProps('settings')))
+    const view = render(withLanguageProvider(createElement(DetailPanel, detailProps('settings'))))
     await waitFor(() => {
       expect(document.querySelector('[data-component-id="settings-view-root"]')).not.toBeNull()
     })
 
-    view.rerender(createElement(DetailPanel, detailProps(null)))
+    view.rerender(withLanguageProvider(createElement(DetailPanel, detailProps(null))))
 
     // Correctness must not depend on transitionend. Use the real 250 ms
     // fallback here; mixing fake timers with React.lazy and RAF obscures the
