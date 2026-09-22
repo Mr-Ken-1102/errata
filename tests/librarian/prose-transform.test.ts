@@ -163,6 +163,36 @@ describe('prose transform sticky context', () => {
     expect(userContent).not.toContain('A forgotten kingdom lies beyond the mountains.')
   })
 
+  it('resolves the selected character voice in the compiled transform context', async () => {
+    await createFragment(dataDir, storyId, makeFragment({
+      id: 'ch-maya',
+      type: 'character',
+      name: 'Maya',
+      description: 'POV character',
+      content: 'Maya watches before she speaks.',
+      meta: { voice: 'Tôi kể ngắn, sắc, ưu tiên chi tiết cảm giác.' },
+    }))
+
+    mockAgentStream.mockResolvedValue(mockStreamResponse('Cô lướt dọc hành lang.'))
+    const result = await transformProseSelection(dataDir, storyId, {
+      fragmentId: 'pr-0001',
+      selectedText: 'The guard moved quickly down the hall.',
+      operation: 'rewrite',
+      povCharacterId: 'ch-maya',
+    })
+    await drainEventStream(result)
+
+    const { messages } = mockAgentStream.mock.calls[0][0] as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userContent = messages.find(message => message.role === 'user')?.content ?? ''
+
+    expect(userContent).toContain("Maya's point of view")
+    expect(userContent).toContain('Tôi kể ngắn, sắc, ưu tiên chi tiết cảm giác.')
+    expect(userContent).not.toContain('{{characterName}}')
+    expect(userContent).not.toContain('{{voice}}')
+  })
+
   it('respects a disabled sticky-fragments block in agent block config', async () => {
     await saveAgentBlockConfig(dataDir, storyId, 'librarian.prose-transform', {
       customBlocks: [],
