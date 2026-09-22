@@ -46,6 +46,7 @@ const ChatInputSchema = z.object({
     content: z.string(),
   })),
   maxSteps: z.int().positive().optional(),
+  povCharacterId: z.string().optional(),
 })
 
 const OptimizeCharacterInputSchema = z.object({
@@ -175,6 +176,7 @@ export function registerLibrarianAgents(): void {
       'invokeAgent',
       'inspectRun',
       'readContinuity',
+      'setCharacterVoice',
     ],
     resolveTools: ({ dataDir, storyId }) => ({
       ...createFragmentTools(dataDir, storyId, { readOnly: false }),
