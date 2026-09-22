@@ -45,7 +45,14 @@ function completion(text = 'done'): AgentStreamCompletion {
 
 function gatedStream(gate: ReturnType<typeof deferred>, opts?: { tool?: boolean; onCancel?: () => void }): AgentStreamResult {
   let resolveCompletion!: (value: AgentStreamCompletion) => void
+  let cancelled = false
+  let completionSettled = false
   const completionPromise = new Promise<AgentStreamCompletion>(resolve => { resolveCompletion = resolve })
+  const settleCompletion = () => {
+    if (completionSettled) return
+    completionSettled = true
+    resolveCompletion(completion('partial'))
+  }
   const eventStream = new ReadableStream<string>({
     start(controller) {
       controller.enqueue(JSON.stringify({ type: 'text', text: 'partial' }) + '\n')
@@ -64,14 +71,16 @@ function gatedStream(gate: ReturnType<typeof deferred>, opts?: { tool?: boolean;
         }) + '\n')
       }
       void gate.promise.then(() => {
+        if (cancelled) return
         controller.enqueue(JSON.stringify({ type: 'finish', finishReason: 'stop', stepCount: 1 }) + '\n')
         controller.close()
-        resolveCompletion(completion('partial'))
+        settleCompletion()
       })
     },
     cancel() {
+      cancelled = true
       opts?.onCancel?.()
-      resolveCompletion(completion('partial'))
+      settleCompletion()
     },
   })
   return { eventStream, completion: completionPromise }
