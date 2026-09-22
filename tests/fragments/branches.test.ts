@@ -142,6 +142,23 @@ describe('branches', () => {
       expect(root).toContain(join('branches', 'main'))
     })
 
+    it('never serves a stale cached root after create, switch, or delete', async () => {
+      await createStory(dataDir, makeStory())
+
+      // Prime the unscoped active-branch cache.
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', 'main'))
+
+      const branch = await createBranch(dataDir, TEST_STORY_ID, 'Cached Alt', 'main')
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', branch.id))
+
+      await switchActiveBranch(dataDir, TEST_STORY_ID, 'main')
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', 'main'))
+
+      await switchActiveBranch(dataDir, TEST_STORY_ID, branch.id)
+      await deleteBranch(dataDir, TEST_STORY_ID, branch.id)
+      expect(await getContentRoot(dataDir, TEST_STORY_ID)).toContain(join('branches', 'main'))
+    })
+
     it('resolves to specific branch directory', async () => {
       await createStory(dataDir, makeStory())
 
