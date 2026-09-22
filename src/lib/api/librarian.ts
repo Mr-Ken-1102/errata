@@ -1,5 +1,6 @@
 import { apiFetch } from './client'
 import { fetchRunEventStream } from './runs'
+import { readPovCharacterId } from './generation'
 import type {
   LibrarianStatusResponse,
   LibrarianAnalysisSummary,
@@ -46,32 +47,55 @@ export const librarian = {
     storyId: string,
     fragmentId: string,
     instructions?: string,
-    _legacyRunId?: string,
+    legacyRunIdOrOptions?: string | { branchId?: string },
     _legacySignal?: AbortSignal,
-  ) => fetchRunEventStream(`/stories/${storyId}/librarian/refine`, {
+  ) => {
+    const branchId = typeof legacyRunIdOrOptions === 'object'
+      ? legacyRunIdOrOptions.branchId
+      : undefined
+    return fetchRunEventStream(`/stories/${storyId}/librarian/refine`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fragmentId, instructions }),
-    }),
+      body: JSON.stringify({
+        fragmentId,
+        instructions,
+        ...(branchId ? { branchId } : {}),
+      }),
+    })
+  },
   transformProseSelection: (
     storyId: string,
     fragmentId: string,
     operation: 'rewrite' | 'expand' | 'compress' | 'custom',
     selectedText: string,
-    options?: { sourceContent?: string; contextBefore?: string; contextAfter?: string; instruction?: string; runId?: string },
-  ) => fetchRunEventStream(`/stories/${storyId}/librarian/prose-transform`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fragmentId,
-      operation,
-      selectedText,
-      sourceContent: options?.sourceContent,
-      contextBefore: options?.contextBefore,
-      contextAfter: options?.contextAfter,
-      instruction: options?.instruction,
-    }),
-  }),
+    options?: {
+      sourceContent?: string
+      contextBefore?: string
+      contextAfter?: string
+      instruction?: string
+      runId?: string
+      branchId?: string
+      povCharacterId?: string
+    },
+  ) => {
+    const povCharacterId = options?.povCharacterId
+      ?? readPovCharacterId(storyId, options?.branchId)
+    return fetchRunEventStream(`/stories/${storyId}/librarian/prose-transform`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fragmentId,
+        operation,
+        selectedText,
+        sourceContent: options?.sourceContent,
+        contextBefore: options?.contextBefore,
+        contextAfter: options?.contextAfter,
+        instruction: options?.instruction,
+        ...(options?.branchId ? { branchId: options.branchId } : {}),
+        ...(povCharacterId ? { povCharacterId } : {}),
+      }),
+    })
+  },
   chat: (storyId: string, message: string, clientRequestId?: string) =>
     fetchRunEventStream(`/stories/${storyId}/librarian/chat`, {
       method: 'POST',
