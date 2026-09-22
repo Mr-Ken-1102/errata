@@ -1,7 +1,7 @@
 import { tool, ToolLoopAgent, stepCountIs, hasToolCall, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
 import { resolveAgentRuntime, samplingCallSettings, samplingDiagnostics } from './client'
-import { addCacheBreakpoints, compileBlocks, expandMessagesFragmentTags, type ContextBlock } from './context-builder'
+import { addCacheBreakpoints, compileBlocks, expandMessagesFragmentTags, pushPovVoice, type ContextBlock, type PovVoice } from './context-builder'
 import { proseWindowBlock } from './fragment-context-blocks'
 import { compileAgentContext } from '../agents/compile-agent-context'
 import { instructionRegistry } from '../instructions'
@@ -536,6 +536,7 @@ export function createWriterBriefBlocks(
   proseFragments: Fragment[],
   brief: string,
   modelId?: string,
+  povVoice?: PovVoice,
 ): ContextBlock[] {
   const blocks: ContextBlock[] = []
   const normalizedBrief = brief
@@ -575,6 +576,10 @@ export function createWriterBriefBlocks(
     order: 200,
     source: 'builtin',
   })
+
+  // Keep the author's POV constraint after the planner's brief so the writer
+  // cannot lose voice/perspective when full context is stripped.
+  pushPovVoice(blocks, povVoice, 250)
 
   return blocks
 }
