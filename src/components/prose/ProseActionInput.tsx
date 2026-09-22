@@ -33,7 +33,7 @@ export function ProseActionInput({
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || branchId === undefined) return
 
     setIsLoading(true)
     setError(null)
@@ -115,7 +115,7 @@ export function ProseActionInput({
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onCancel} disabled={isLoading} data-component-id="prose-action-cancel">
             Cancel
           </Button>
-          <Button size="sm" className="h-7 text-xs" onClick={handleSubmit} disabled={!input.trim() || isLoading} data-component-id="prose-action-submit">
+          <Button size="sm" className="h-7 text-xs" onClick={handleSubmit} disabled={!input.trim() || isLoading || branchId === undefined} data-component-id="prose-action-submit">
             {isLoading
               ? (mode === 'regenerate' ? 'Regenerating...' : 'Refining...')
               : (mode === 'regenerate' ? 'Regenerate' : 'Refine')
