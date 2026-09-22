@@ -43,6 +43,18 @@ describe('librarian conversation storage concurrency', () => {
     }
   })
 
+  it('round-trips optional POV metadata without changing legacy conversations', async () => {
+    const pov = await createConversation(dataDir, storyId, 'POV refine', 'ch-maya')
+    const general = await createConversation(dataDir, storyId, 'General chat')
+
+    const listed = await listConversations(dataDir, storyId)
+    expect(listed.find(conversation => conversation.id === pov.id)).toMatchObject({
+      id: pov.id,
+      povCharacterId: 'ch-maya',
+    })
+    expect(listed.find(conversation => conversation.id === general.id)).not.toHaveProperty('povCharacterId')
+  })
+
   it('a background history save does not erase conversations created meanwhile', async () => {
     const first = await createConversation(dataDir, storyId, 'New chat')
     await saveConversationHistory(dataDir, storyId, first.id, [
