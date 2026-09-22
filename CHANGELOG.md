@@ -63,9 +63,19 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
 ### Validation
 - The integrated source tree passed the full Vitest suite, app + desktop typecheck,
   architecture boundaries, production build, and Windows desktop smoke before release-prep.
-- The final v1.0 release-prep HEAD must additionally pass the same standard CI, Windows
-  desktop smoke, and the cross-platform desktop/standalone dry-run workflows before PR #4
-  may leave Draft or be merged.
+- Final release-prep HEAD `a66846cfb9dc403f36dff5775d521036636b5a11` passed
+  **vitest #172** (run `35696996552`) and **Windows desktop smoke #34**
+  (run `35696996566`).
+- On that same exact HEAD, **Desktop release #3** (run `35696996558`) passed
+  non-publishing installer dry-runs on Windows, Linux and macOS, and **Release Binary #3**
+  (run `35696996573`) passed standalone dry-runs for Windows x64, Linux x64 and macOS ARM64.
+- PR #4 merged as `d73b1f305a69ada9ec05121e8faccb4251ef8d1c`; its tree
+  `e8ada2f764d9e178562cf19fd582cec9c29343eb` exactly matches the validated PR HEAD.
+  Post-merge **vitest #173** (run `35697656773`) and **Test Results #173**
+  (run `35697833469`) both succeeded on that merge commit.
+- The `v1.0.0` tag and GitHub Release remain intentionally pending until this documentation-only
+  provenance closeout is merged and its CI is green. No publishing workflow has been run for
+  the release yet.
 
 ## [1.12.0] — 2026-09-14
 
