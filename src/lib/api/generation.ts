@@ -13,6 +13,40 @@ export interface GenerationRequestOpts extends ClarifyOpts {
   /** UI surface identity; does not enter the model prompt. */
   scopeId?: string
   branchId?: string
+  /** Explicit POV override. Undefined follows the branch-local picker. */
+  povCharacterId?: string
+}
+
+const POV_STORAGE_PREFIX = 'errata:pov-character'
+
+function povStorageKey(storyId: string, branchId: string): string {
+  return `${POV_STORAGE_PREFIX}:${storyId}:${branchId}`
+}
+
+/** Branch-local POV selection; undefined means Narrator or unresolved branch. */
+export function readPovCharacterId(storyId: string, branchId?: string): string | undefined {
+  if (typeof window === 'undefined' || !branchId) return undefined
+  try {
+    return localStorage.getItem(povStorageKey(storyId, branchId)) || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Persist one timeline's POV without leaking it into sibling timelines. */
+export function writePovCharacterId(
+  storyId: string,
+  branchId: string | undefined,
+  characterId: string | undefined,
+): void {
+  if (typeof window === 'undefined' || !branchId) return
+  try {
+    const key = povStorageKey(storyId, branchId)
+    if (characterId) localStorage.setItem(key, characterId)
+    else localStorage.removeItem(key)
+  } catch {
+    // Browser storage is recovery/convenience only.
+  }
 }
 
 export function clarifyBody(opts?: ClarifyOpts): Record<string, unknown> {
@@ -25,12 +59,17 @@ export function clarifyBody(opts?: ClarifyOpts): Record<string, unknown> {
   return { clarifications, clarifyRound: round }
 }
 
-function generationRequestBody(opts?: GenerationRequestOpts): Record<string, unknown> {
+function generationRequestBody(
+  storyId: string,
+  opts?: GenerationRequestOpts,
+): Record<string, unknown> {
+  const povCharacterId = opts?.povCharacterId ?? readPovCharacterId(storyId, opts?.branchId)
   return {
     ...clarifyBody(opts),
     ...(opts?.clientRequestId ? { clientRequestId: opts.clientRequestId } : {}),
     ...(opts?.scopeId ? { scopeId: opts.scopeId } : {}),
     ...(opts?.branchId ? { branchId: opts.branchId } : {}),
+    ...(povCharacterId ? { povCharacterId } : {}),
   }
 }
 
@@ -41,7 +80,7 @@ export const generation = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       ...(signal ? { signal } : {}),
-      body: JSON.stringify({ input, saveResult: false, ...generationRequestBody(opts) }),
+      body: JSON.stringify({ input, saveResult: false, ...generationRequestBody(storyId, opts) }),
     }),
   /** Generate and save as a new prose fragment. */
   generateAndSave: (storyId: string, input: string, signal?: AbortSignal, opts?: GenerationRequestOpts) =>
@@ -49,7 +88,7 @@ export const generation = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       ...(signal ? { signal } : {}),
-      body: JSON.stringify({ input, saveResult: true, ...generationRequestBody(opts) }),
+      body: JSON.stringify({ input, saveResult: true, ...generationRequestBody(storyId, opts) }),
     }),
   /** Regenerate an existing fragment with a new prompt. */
   regenerate: (storyId: string, fragmentId: string, input: string, signal?: AbortSignal, opts?: GenerationRequestOpts) =>
@@ -62,7 +101,7 @@ export const generation = {
         saveResult: true,
         mode: 'regenerate',
         fragmentId,
-        ...generationRequestBody(opts),
+        ...generationRequestBody(storyId, opts),
       }),
     }),
   /** Refine an existing fragment with instructions. */
@@ -76,7 +115,7 @@ export const generation = {
         saveResult: true,
         mode: 'refine',
         fragmentId,
-        ...generationRequestBody(opts),
+        ...generationRequestBody(storyId, opts),
       }),
     }),
   /** Get AI-generated story direction proposals */
