@@ -52,6 +52,7 @@ describe('translation fallback', () => {
   it('returns Vietnamese text when the key has a Vietnamese translation', () => {
     expect(translate('vi', 'settings.language.heading')).toBe('Ngôn ngữ')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
+    expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -88,5 +89,15 @@ describe('language UI wiring', () => {
     expect(settingsViewSource).toContain("t('settings.dialog.title')")
     expect(settingsViewSource).toContain("t('settings.dialog.closeSettings')")
     expect(settingsViewSource).toContain("t('settings.dialog.sections')")
+  })
+
+  it('localizes read-aloud presentation text without changing TTS engine values', () => {
+    const ttsSource = readFileSync('src/components/settings/TtsSettings.tsx', 'utf8')
+
+    expect(ttsSource).toContain('useLanguage()')
+    expect(ttsSource).toContain("t('settings.tts.enable')")
+    expect(ttsSource).toContain("t('settings.tts.testVoice')")
+    expect(ttsSource).toContain("value: 'browser'")
+    expect(ttsSource).toContain("value: 'supertonic'")
   })
 })
