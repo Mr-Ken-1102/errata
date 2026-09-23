@@ -62,6 +62,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'fragmentTypes.saveChanges')).toBe('Lưu thay đổi')
     expect(translate('vi', 'storyInfo.edit')).toBe('Chỉnh sửa')
     expect(translate('vi', 'storyInfo.download')).toBe('Tải xuống')
+    expect(translate('vi', 'storyInfo.words')).toBe('từ')
+    expect(translate('vi', 'storyInfo.authoredMemory')).toBe('Bộ nhớ do tác giả tạo')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -683,6 +685,23 @@ describe('language UI wiring', () => {
     expect(storyInfoSource).toContain('onClick={() => onDownloadStory?.()}')
     expect(storyInfoSource).toContain('onClick={() => onExportProse?.()}')
     expect(storyInfoSource).toContain('onClick={onLaunchWizard}')
+  })
+
+  it('localizes story-info stats and authored-memory chrome without changing stat calculations or stored summary prose', () => {
+    const storyInfoSource = readFileSync('src/components/sidebar/StoryInfoPanel.tsx', 'utf8')
+
+    expect(storyInfoSource).toContain("const active = fragments.filter(f => !f.archived)")
+    expect(storyInfoSource).toContain("const proseFragments = active.filter(f => f.type === 'prose')")
+    expect(storyInfoSource).toContain("const wordCount = proseFragments.reduce((sum, f) => sum + countWords(f.content), 0)")
+    expect(storyInfoSource).toContain("const passages = proseChainQuery.data?.entries.length ?? 0")
+    expect(storyInfoSource).toContain("const pinned = active.filter(f => f.sticky).length")
+    expect(storyInfoSource).toContain("const archived = fragments.filter(f => f.archived).length")
+    expect(storyInfoSource).toContain("const generations = genLogsQuery.data?.length ?? 0")
+    expect(storyInfoSource).toContain("fragment.type === 'summary' && !fragment.archived")
+    expect(storyInfoSource).toContain("fragment.content.trim()")
+    expect(storyInfoSource).toContain(".join('\\n\\n')")
+    expect(storyInfoSource).toContain('{summary}')
+    expect(storyInfoSource).toContain("t('storyInfo.authoredMemory')")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

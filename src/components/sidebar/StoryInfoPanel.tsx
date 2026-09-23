@@ -248,20 +248,20 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       {/* Stats grid */}
       <div className="px-5 py-4">
         <div className="grid grid-cols-3 gap-x-3 gap-y-3">
-          <StatCell value={formatNumber(stats.wordCount)} label="words" />
-          <StatCell value={String(stats.passages)} label="passages" />
-          <StatCell value={String(stats.generations)} label="generations" />
-          <StatCell value={String(stats.characters)} label="characters" />
-          <StatCell value={String(stats.guidelines)} label="guidelines" />
-          <StatCell value={String(stats.knowledge)} label="knowledge" />
+          <StatCell value={formatNumber(stats.wordCount)} label={t('storyInfo.words')} />
+          <StatCell value={String(stats.passages)} label={t('storyInfo.passages')} />
+          <StatCell value={String(stats.generations)} label={t('storyInfo.generations')} />
+          <StatCell value={String(stats.characters)} label={t('storyInfo.characters')} />
+          <StatCell value={String(stats.guidelines)} label={t('storyInfo.guidelines')} />
+          <StatCell value={String(stats.knowledge)} label={t('storyInfo.knowledge')} />
         </div>
 
         {/* Secondary stats row */}
         <div className="flex gap-4 mt-3 pt-3 border-t border-border/30">
-          <MiniStat label="pinned" value={stats.pinned} />
-          <MiniStat label="archived" value={stats.archived} />
-          <MiniStat label="variations" value={stats.totalVariations} />
-          <MiniStat label="total" value={stats.totalFragments} />
+          <MiniStat label={t('storyInfo.pinned')} value={stats.pinned} />
+          <MiniStat label={t('storyInfo.archived')} value={stats.archived} />
+          <MiniStat label={t('storyInfo.variations')} value={stats.totalVariations} />
+          <MiniStat label={t('storyInfo.total')} value={stats.totalFragments} />
         </div>
 
         {/* Token usage */}
@@ -290,11 +290,11 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       {/* Dates */}
       <div className="px-5 py-4 flex justify-between">
         <div>
-          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">Created</label>
+          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">{t('storyInfo.created')}</label>
           <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{formatDate(story.createdAt)}</p>
         </div>
         <div className="text-right">
-          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">Updated</label>
+          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">{t('storyInfo.updated')}</label>
           <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{timeAgo(story.updatedAt)}</p>
         </div>
       </div>
@@ -488,6 +488,7 @@ function TokenUsageSection({ session, project }: { session: UsageSnapshot; proje
 }
 
 function SummarySection({ summary }: { summary: string | undefined }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [overflows, setOverflows] = useState(false)
@@ -502,15 +503,15 @@ function SummarySection({ summary }: { summary: string | undefined }) {
   if (!summary) {
     return (
       <div className="px-5 py-4">
-        <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Authored memory</label>
-        <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">No authored memory</p>
+        <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">{t('storyInfo.authoredMemory')}</label>
+        <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">{t('storyInfo.noAuthoredMemory')}</p>
       </div>
     )
   }
 
   return (
     <div className="px-5 py-4">
-      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Authored memory</label>
+      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">{t('storyInfo.authoredMemory')}</label>
       <div className="relative">
         <div
           ref={contentRef}
@@ -528,7 +529,7 @@ function SummarySection({ summary }: { summary: string | undefined }) {
             className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground mt-1 transition-colors"
             data-component-id="story-info-summary-toggle"
           >
-            {expanded ? 'Show less' : 'Read more'}
+            {expanded ? t('storyInfo.showLess') : t('storyInfo.readMore')}
           </button>
         )}
       </div>
