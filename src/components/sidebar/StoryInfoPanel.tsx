@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Pencil, Download, Package, Wand2, FileText, ImagePlus, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { UsageSnapshot, UsageEntry } from '@/lib/api/token-usage'
+import { useLanguage } from '@/lib/i18n'
 
 interface StoryInfoPanelProps {
   storyId: string
@@ -48,6 +49,7 @@ function timeAgo(dateStr: string): string {
 }
 
 export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDownloadStory, onExportProse }: StoryInfoPanelProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [editing, setEditing] = useState(false)
@@ -144,7 +146,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       <div className="p-4 space-y-3" data-component-id="story-info-edit">
         {/* Cover Image */}
         <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Cover Image</label>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('storyInfo.coverImage')}</label>
           <input
             ref={coverInputRef}
             type="file"
@@ -158,13 +160,13 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
           />
           {coverImage ? (
             <div className="relative group/cover rounded-lg overflow-hidden" style={{ aspectRatio: '3/4', maxWidth: 160 }}>
-              <img src={coverImage} alt="Cover" className="w-full h-full object-cover" />
+              <img src={coverImage} alt={t('storyInfo.coverAlt')} className="w-full h-full object-cover" />
               <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover/cover:opacity-100 transition-opacity">
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
                   className="size-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-                  title="Change cover"
+                  title={t('storyInfo.changeCover')}
                 >
                   <ImagePlus className="size-3" />
                 </button>
@@ -172,7 +174,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
                   type="button"
                   onClick={() => setCoverImage(null)}
                   className="size-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-                  title="Remove cover"
+                  title={t('storyInfo.removeCover')}
                 >
                   <X className="size-3" />
                 </button>
@@ -185,16 +187,16 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
               className="flex items-center gap-2 rounded-lg border border-dashed border-border/60 hover:border-border transition-colors px-3 py-2.5 w-full text-left"
             >
               <ImagePlus className="size-4 text-muted-foreground/50 shrink-0" />
-              <span className="text-xs text-muted-foreground">Add cover image</span>
+              <span className="text-xs text-muted-foreground">{t('storyInfo.addCoverImage')}</span>
             </button>
           )}
         </div>
         <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Name</label>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('storyInfo.name')}</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-transparent" data-component-id="story-info-name" />
         </div>
         <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Description</label>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('storyInfo.description')}</label>
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -204,10 +206,10 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
         </div>
         <div className="flex gap-1.5">
           <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={updateMutation.isPending} data-component-id="story-info-save">
-            {updateMutation.isPending ? 'Saving...' : 'Save'}
+            {updateMutation.isPending ? t('storyInfo.saving') : t('storyInfo.save')}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={handleCancel} data-component-id="story-info-cancel">
-            Cancel
+            {t('storyInfo.cancel')}
           </Button>
         </div>
       </div>
@@ -236,7 +238,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
         {story.description ? (
           <p className="text-[0.8125rem] text-muted-foreground mt-1.5 leading-relaxed">{story.description}</p>
         ) : (
-          <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">No description</p>
+          <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">{t('storyInfo.noDescription')}</p>
         )}
       </div>
 
@@ -304,37 +306,37 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       <div className="px-5 py-4 grid grid-cols-2 gap-1.5">
         <ActionTile
           icon={Pencil}
-          label="Edit"
-          description="Name & description"
+          label={t('storyInfo.edit')}
+          description={t('storyInfo.editDescription')}
           onClick={() => setEditing(true)}
           dataComponentId="story-info-edit-action"
         />
         <ActionTile
           icon={Package}
-          label="Export"
-          description="Fragments as JSON"
+          label={t('storyInfo.export')}
+          description={t('storyInfo.exportDescription')}
           onClick={() => onExport?.()}
           dataComponentId="story-info-export"
         />
         <ActionTile
           icon={Download}
-          label="Download"
-          description="Full story as one file"
+          label={t('storyInfo.download')}
+          description={t('storyInfo.downloadDescription')}
           onClick={() => onDownloadStory?.()}
           dataComponentId="story-info-download"
         />
         <ActionTile
           icon={FileText}
-          label="Prose"
-          description="Story text as .txt"
+          label={t('storyInfo.prose')}
+          description={t('storyInfo.proseDescription')}
           onClick={() => onExportProse?.()}
           dataComponentId="story-info-prose"
         />
         {onLaunchWizard && (
           <ActionTile
             icon={Wand2}
-            label="Story setup"
-            description="Refine premise and fragments"
+            label={t('storyInfo.storySetup')}
+            description={t('storyInfo.storySetupDescription')}
             onClick={onLaunchWizard}
             dataComponentId="story-info-wizard"
           />

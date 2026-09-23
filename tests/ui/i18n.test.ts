@@ -60,6 +60,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'timeline.active')).toBe('đang hoạt động')
     expect(translate('vi', 'fragmentTypes.newType')).toBe('Loại mới')
     expect(translate('vi', 'fragmentTypes.saveChanges')).toBe('Lưu thay đổi')
+    expect(translate('vi', 'storyInfo.edit')).toBe('Chỉnh sửa')
+    expect(translate('vi', 'storyInfo.download')).toBe('Tải xuống')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -662,6 +664,25 @@ describe('language UI wiring', () => {
     expect(fragmentTypesSource).toContain("option.value")
     expect(fragmentTypesSource).toContain("option.label")
     expect(fragmentTypesSource).toContain("getFragmentTypeIconLabel(def.icon)")
+  })
+
+  it('localizes story-info edit and action chrome without changing story update data, cover file handling, or action callbacks', () => {
+    const storyInfoSource = readFileSync('src/components/sidebar/StoryInfoPanel.tsx', 'utf8')
+
+    expect(storyInfoSource).toContain('useLanguage()')
+    expect(storyInfoSource).toContain("api.stories.update(storyId, data)")
+    expect(storyInfoSource).toContain("updateMutation.mutate({ name: name.trim(), description: description.trim(), coverImage })")
+    expect(storyInfoSource).toContain("setName(story.name)")
+    expect(storyInfoSource).toContain("setDescription(story.description)")
+    expect(storyInfoSource).toContain("setCoverImage(story.coverImage ?? null)")
+    expect(storyInfoSource).toContain("reader.readAsDataURL(file)")
+    expect(storyInfoSource).toContain('accept="image/*"')
+    expect(storyInfoSource).toContain('{story.name}')
+    expect(storyInfoSource).toContain('{story.description}')
+    expect(storyInfoSource).toContain('onClick={() => onExport?.()}')
+    expect(storyInfoSource).toContain('onClick={() => onDownloadStory?.()}')
+    expect(storyInfoSource).toContain('onClick={() => onExportProse?.()}')
+    expect(storyInfoSource).toContain('onClick={onLaunchWizard}')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
