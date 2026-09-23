@@ -4,7 +4,7 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '@/components/sidebar/SettingsView'
 import { DetailPanel } from '@/components/sidebar/DetailPanel'
-import { LanguageProvider } from '@/lib/i18n'
+import { withLanguageProvider } from './test-providers'
 
 vi.mock('@/components/sidebar/SettingsPanel', () => ({
   SettingsPanel: () => createElement('div', { 'data-testid': 'settings-panel-stub' }, 'settings'),
@@ -33,10 +33,6 @@ function detailProps(section: 'settings' | null) {
     onManageProviders: vi.fn(),
     enabledPanelPlugins: [],
   } as any
-}
-
-function withLanguageProvider(child: ReturnType<typeof createElement>) {
-  return createElement(LanguageProvider, null, child)
 }
 
 beforeEach(() => {

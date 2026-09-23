@@ -10,7 +10,28 @@ vi.mock('@tanstack/react-router', () => ({
 import { HelpProvider } from '@/hooks/use-help'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { StorySidebar } from '@/components/sidebar/StorySidebar'
-import { LanguageProvider } from '@/lib/i18n'
+import { withLanguageProvider } from './test-providers'
+
+function renderStorySidebar(props: React.ComponentProps<typeof StorySidebar>) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return renderToString(
+    withLanguageProvider(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(
+          HelpProvider,
+          null,
+          React.createElement(
+            SidebarProvider,
+            null,
+            React.createElement(StorySidebar, props),
+          ),
+        ),
+      ),
+    ),
+  )
+}
 
 describe('StorySidebar', () => {
   beforeAll(() => {
@@ -18,67 +39,29 @@ describe('StorySidebar', () => {
   })
 
   it('keeps story setup directly available after the wizard closes', () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const html = renderToString(
-      React.createElement(
-        LanguageProvider,
-        null,
-        React.createElement(
-          QueryClientProvider,
-          { client: queryClient },
-          React.createElement(
-            HelpProvider,
-            null,
-            React.createElement(
-              SidebarProvider,
-              null,
-              React.createElement(StorySidebar, {
-              storyId: 'story-test',
-              story: undefined,
-              activeSection: null,
-              onSectionChange: () => undefined,
-              onLaunchWizard: () => undefined,
-              enabledPanelPlugins: [],
-              }),
-            ),
-          ),
-        ),
-      ),
-    )
+    const html = renderStorySidebar({
+      storyId: 'story-test',
+      story: undefined,
+      activeSection: null,
+      onSectionChange: () => undefined,
+      onLaunchWizard: () => undefined,
+      enabledPanelPlugins: [],
+    })
 
     expect(html).toContain('Story setup')
     expect(html).toContain('data-component-id="sidebar-story-setup"')
   })
 
   it('marks Story setup active without also marking Story active', () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const html = renderToString(
-      React.createElement(
-        LanguageProvider,
-        null,
-        React.createElement(
-          QueryClientProvider,
-          { client: queryClient },
-          React.createElement(
-            HelpProvider,
-            null,
-            React.createElement(
-              SidebarProvider,
-              null,
-              React.createElement(StorySidebar, {
-              storyId: 'story-test',
-              story: undefined,
-              activeSection: null,
-              storySetupActive: true,
-              onSectionChange: () => undefined,
-              onLaunchWizard: () => undefined,
-              enabledPanelPlugins: [],
-              }),
-            ),
-          ),
-        ),
-      ),
-    )
+    const html = renderStorySidebar({
+      storyId: 'story-test',
+      story: undefined,
+      activeSection: null,
+      storySetupActive: true,
+      onSectionChange: () => undefined,
+      onLaunchWizard: () => undefined,
+      enabledPanelPlugins: [],
+    })
 
     expect(html).toMatch(/data-active="true"[^>]*data-component-id="sidebar-story-setup"/)
     expect(html).toMatch(/data-active="false"[^>]*data-component-id="sidebar-story-link"/)
