@@ -67,6 +67,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.erratanet.description')).toContain('pack cộng đồng')
     expect(translate('vi', 'erratanet.account.logIn')).toBe('Đăng nhập')
     expect(translate('vi', 'erratanet.browser.title')).toBe('Duyệt và cài đặt pack')
+    expect(translate('vi', 'erratanet.agentConfig.heading')).toBe('Cấu hình agent')
+    expect(translate('vi', 'erratanet.agentConfig.presetRunsCode')).toContain('chạy mã')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -300,6 +302,35 @@ describe('language UI wiring', () => {
     expect(browserSource).toContain('pack.tags')
     expect(browserSource).toContain('pack.fragmentTypes')
     expect(browserSource).toContain("type InstallTarget = 'this-story' | 'new-story'")
+  })
+
+  it('localizes agent-config selector and presets without changing selection payloads, script consent, provider metadata, or persisted names', () => {
+    const selectorSource = readFileSync('src/components/erratanet/AgentConfigSelector.tsx', 'utf8')
+    const sectionSource = readFileSync('src/components/erratanet/AgentConfigSection.tsx', 'utf8')
+
+    expect(selectorSource).toContain('useLanguage()')
+    expect(selectorSource).toContain("t('erratanet.agentConfig.contextBlocks')")
+    expect(selectorSource).toContain('agentBlocks: state.agents')
+    expect(selectorSource).toContain('providerShapes: state.providers')
+    expect(selectorSource).toContain('modelRoles: state.modelRoles')
+    expect(selectorSource).toContain('preview.scripts.filter((s) => state.agents[s.agent]?.includes(s.blockId))')
+    expect(selectorSource).toContain('label: p.name')
+    expect(selectorSource).toContain('p.baseURL ? `${p.defaultModel} · ${p.baseURL}` : p.defaultModel')
+    expect(selectorSource).toContain('label: humanize(r.role)')
+    expect(selectorSource).toContain('hint: r.model ?? undefined')
+    expect(selectorSource).toContain('<span className="truncate text-[0.75rem]">{b.name}</span>')
+    expect(selectorSource).toContain('<span className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground">{b.role}</span>')
+
+    expect(sectionSource).toContain('useLanguage()')
+    expect(sectionSource).toContain("api.erratanet.presets.save({ name, fromStoryId: storyId })")
+    expect(sectionSource).toContain("api.erratanet.presets.apply(preset.id, {")
+    expect(sectionSource).toContain('...(consentToScripts ? { consentToScripts: true } : {})')
+    expect(sectionSource).toContain("err instanceof ApiError && err.data.requiresConsent === true")
+    expect(sectionSource).toContain('applyMut.mutate(true)')
+    expect(sectionSource).toContain('api.erratanet.presets.remove(preset.id)')
+    expect(sectionSource).toContain('{preset.name}')
+    expect(sectionSource).toContain('{preset.source.pack}')
+    expect(sectionSource).toContain("setSavingName(storyName ? `${storyName} setup` : '')")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
