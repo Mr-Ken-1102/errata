@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Pencil, Download, Package, Wand2, FileText, ImagePlus, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { UsageSnapshot, UsageEntry } from '@/lib/api/token-usage'
-import { useLanguage, type TranslationKey } from '@/lib/i18n'
+import { useLanguage, type AppLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface StoryInfoPanelProps {
   storyId: string
@@ -28,28 +28,29 @@ function formatNumber(n: number): string {
   return String(n)
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, language: AppLanguage): string {
   const d = new Date(dateStr)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US'
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string, t: (key: TranslationKey) => string): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
   const diff = now - then
   const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1) return t('storyInfo.justNow')
+  if (mins < 60) return `${mins}${t('storyInfo.minutesAgoSuffix')}`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return `${hours}${t('storyInfo.hoursAgoSuffix')}`
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
+  if (days < 30) return `${days}${t('storyInfo.daysAgoSuffix')}`
   const months = Math.floor(days / 30)
-  return `${months}mo ago`
+  return `${months}${t('storyInfo.monthsAgoSuffix')}`
 }
 
 export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDownloadStory, onExportProse }: StoryInfoPanelProps) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [editing, setEditing] = useState(false)
@@ -291,11 +292,11 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       <div className="px-5 py-4 flex justify-between">
         <div>
           <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">{t('storyInfo.created')}</label>
-          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{formatDate(story.createdAt)}</p>
+          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{formatDate(story.createdAt, language)}</p>
         </div>
         <div className="text-right">
           <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">{t('storyInfo.updated')}</label>
-          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{timeAgo(story.updatedAt)}</p>
+          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{timeAgo(story.updatedAt, t)}</p>
         </div>
       </div>
 

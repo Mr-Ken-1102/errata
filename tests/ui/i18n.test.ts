@@ -66,6 +66,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'storyInfo.authoredMemory')).toBe('Bộ nhớ do tác giả tạo')
     expect(translate('vi', 'storyInfo.tokenUsage')).toBe('Mức dùng token')
     expect(translate('vi', 'storyInfo.source.writer')).toBe('Người viết')
+    expect(translate('vi', 'storyInfo.justNow')).toBe('vừa xong')
+    expect(translate('en', 'storyInfo.minutesAgoSuffix')).toBe('m ago')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -728,6 +730,19 @@ describe('language UI wiring', () => {
     expect(storyInfoSource).toContain('mEntry.inputTokens')
     expect(storyInfoSource).toContain('mEntry.outputTokens')
     expect(storyInfoSource).toContain('shortModelName(model)')
+  })
+
+  it('localizes story-info dates and relative time while preserving the English compact format', () => {
+    const storyInfoSource = readFileSync('src/components/sidebar/StoryInfoPanel.tsx', 'utf8')
+
+    expect(storyInfoSource).toContain("language === 'vi' ? 'vi-VN' : 'en-US'")
+    expect(storyInfoSource).toContain("return t('storyInfo.justNow')")
+    expect(storyInfoSource).toContain("t('storyInfo.minutesAgoSuffix')")
+    expect(storyInfoSource).toContain("t('storyInfo.hoursAgoSuffix')")
+    expect(storyInfoSource).toContain("t('storyInfo.daysAgoSuffix')")
+    expect(storyInfoSource).toContain("t('storyInfo.monthsAgoSuffix')")
+    expect(storyInfoSource).toContain('formatDate(story.createdAt, language)')
+    expect(storyInfoSource).toContain('timeAgo(story.updatedAt, t)')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
