@@ -362,6 +362,7 @@ const DEFAULT_HUB = 'https://errata.tealios.com'
 
 function ErrataNetSection() {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
   const { data: config } = useQuery({
     queryKey: ['erratanet-config'],
     queryFn: () => api.erratanet.getConfig(),
@@ -392,26 +393,26 @@ function ErrataNetSection() {
 
   return (
     <>
-      <SectionHeading label="ErrataNet" />
+      <SectionHeading label={t('settings.erratanet.heading')} />
       <div className="space-y-3">
         <SettingsCard>
           <SettingRow
-            label="ErrataNet"
-            description="Browse, install, and publish community packs from a hub."
+            label={t('settings.erratanet.heading')}
+            description={t('settings.erratanet.description')}
           >
             <Toggle
               checked={enabled}
               disabled={setConfig.isPending}
               onChange={(next) => setConfig.mutate(next ? { enabled: true, introSeen: true } : { enabled: false })}
-              label="Toggle ErrataNet"
+              label={t('settings.erratanet.toggle')}
             />
           </SettingRow>
         </SettingsCard>
 
         <div className={`rounded-lg border border-border/30 p-3 ${enabled ? '' : 'pointer-events-none opacity-40'}`}>
-          <p className="text-[0.75rem] font-medium text-foreground/80">API endpoint</p>
+          <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.erratanet.apiEndpoint')}</p>
           <p className="mt-0.5 text-[0.625rem] leading-snug text-muted-foreground">
-            The hub Errata connects to for browsing and publishing packs.
+            {t('settings.erratanet.apiEndpointDescription')}
           </p>
           <input
             value={endpoint}

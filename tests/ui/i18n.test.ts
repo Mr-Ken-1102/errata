@@ -64,6 +64,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.authoring.addTransform')).toBe('Thêm thao tác biến đổi')
     expect(translate('vi', 'settings.remote.heading')).toBe('Truy cập từ xa')
     expect(translate('vi', 'settings.remote.httpWarning')).toContain('HTTP thuần')
+    expect(translate('vi', 'settings.erratanet.description')).toContain('pack cộng đồng')
+    expect(translate('vi', 'erratanet.account.logIn')).toBe('Đăng nhập')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -244,6 +246,33 @@ describe('language UI wiring', () => {
     expect(sharingSource).toContain("status.tunnel.error || t('settings.remote.tunnelError')")
     expect(sharingSource).toContain('url={status.lan.url}')
     expect(sharingSource).toContain('url={status.tunnel.url}')
+  })
+
+  it('localizes ErrataNet settings, intro, and account chrome without changing hub credentials, API operations, or pack data', () => {
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+    const introSource = readFileSync('src/components/erratanet/ErratanetIntroPrompt.tsx', 'utf8')
+    const panelSource = readFileSync('src/components/erratanet/ErratanetPanel.tsx', 'utf8')
+
+    expect(settingsSource).toContain("t('settings.erratanet.description')")
+    expect(settingsSource).toContain("setConfig.mutate({ hubUrl: next })")
+    expect(settingsSource).toContain("setConfig.mutate(next ? { enabled: true, introSeen: true } : { enabled: false })")
+    expect(settingsSource).toContain("const DEFAULT_HUB = 'https://errata.tealios.com'")
+
+    expect(introSource).toContain('useLanguage()')
+    expect(introSource).toContain("t('erratanet.intro.title')")
+    expect(introSource).toContain("mutation.mutate({ enabled: true, introSeen: true })")
+    expect(introSource).toContain("mutation.mutate({ introSeen: true })")
+
+    expect(panelSource).toContain('useLanguage()')
+    expect(panelSource).toContain("api.erratanet.login(data)")
+    expect(panelSource).toContain("api.erratanet.setConfig(data)")
+    expect(panelSource).toContain("api.erratanet.setConfig({ token: '' })")
+    expect(panelSource).toContain("loginMut.mutate({ hubUrl: url, identifier: identifier.trim(), password })")
+    expect(panelSource).toContain("connectMut.mutate({ hubUrl: url, token: token.trim() })")
+    expect(panelSource).toContain('pack={publishedAs.pack}')
+    expect(panelSource).toContain('pack={fp.pack}')
+    expect(panelSource).toContain('hubUrl={config?.hubUrl}')
+    expect(panelSource).toContain('storyName={story.name}')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
