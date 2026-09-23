@@ -658,7 +658,7 @@ describe('language UI wiring', () => {
     expect(fragmentTypesSource).toContain("value={def.description}")
     expect(fragmentTypesSource).toContain("value={def.icon}")
     expect(fragmentTypesSource).toContain("checked={def.showInSidebar}")
-    expect(fragmentTypesSource).toContain("placeholder="location"")
+    expect(fragmentTypesSource).toContain('placeholder="location"')
     expect(fragmentTypesSource).toContain("option.value")
     expect(fragmentTypesSource).toContain("option.label")
     expect(fragmentTypesSource).toContain("getFragmentTypeIconLabel(def.icon)")
