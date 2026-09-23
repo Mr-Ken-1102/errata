@@ -70,6 +70,7 @@ describe('translation fallback', () => {
     expect(translate('vi', 'erratanet.agentConfig.heading')).toBe('Cấu hình agent')
     expect(translate('vi', 'erratanet.agentConfig.presetRunsCode')).toContain('chạy mã')
     expect(translate('vi', 'erratanet.agentConfig.chooseWhatToApply')).toBe('Chọn phần cần áp dụng')
+    expect(translate('vi', 'erratanet.agentConfig.configurationRunsCode')).toContain('chạy mã')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -352,6 +353,11 @@ describe('language UI wiring', () => {
     expect(importSource).toContain('{manifest.description}')
     expect(importSource).toContain('{s.content}')
     expect(importSource).toContain('{s.blockName}')
+    expect(importSource).toContain('onChange={(e) => onConsent(e.target.checked)}')
+    expect(importSource).toContain("data-component-id=\"agent-config-consent\"")
+    expect(importSource).toContain("t('erratanet.agentConfig.configurationRunsCode')")
+    expect(importSource).toContain("a.modelRolesNeedingProvider.map(humanizeAgent).join(', ')")
+    expect(importSource).toContain("a.suggestedProviders.map((p) => `${p.name} (${p.defaultModel})`).join(', ')")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
