@@ -46,11 +46,6 @@ if not exist "package.json" (
   echo [Errata] Keep start.bat in the root of the Errata source folder.
   exit /b 1
 )
-if not exist "bun.lock" (
-  echo [Errata] ERROR: bun.lock was not found.
-  echo [Errata] The source checkout appears incomplete.
-  exit /b 1
-)
 exit /b 0
 
 :find_bun
