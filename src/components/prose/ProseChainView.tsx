@@ -165,6 +165,17 @@ export function ProseChainView({
   onAskLibrarian,
 }: ProseChainViewProps) {
   const { t } = useLanguage()
+  const outlineLabels = {
+    passages: t('proseOutline.passages'),
+    exitReorderMode: t('proseOutline.exitReorderMode'),
+    reorderSections: t('proseOutline.reorderSections'),
+    addChapter: t('proseOutline.addChapter'),
+    closePassages: t('proseOutline.closePassages'),
+    noChaptersHint: t('proseOutline.noChaptersHint'),
+    addFirstChapter: t('proseOutline.addFirstChapter'),
+    jumpToLatestPassage: t('proseOutline.jumpToLatestPassage'),
+    jumpToLatest: t('proseOutline.jumpToLatest'),
+  }
 
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
@@ -1164,6 +1175,7 @@ export function ProseChainView({
             activeIndex={activeIndex}
             open={outlineOpen ?? true}
             onJump={scrollToIndex}
+            labels={outlineLabels}
           />
         </div>
       )}
@@ -1194,6 +1206,7 @@ export function ProseChainView({
                 activeIndex={activeIndex}
                 open
                 mobile
+                labels={outlineLabels}
                 onClose={() => setMobileTocOpen(false)}
                 onJump={(i) => { scrollToIndex(i); setMobileTocOpen(false) }}
               />
