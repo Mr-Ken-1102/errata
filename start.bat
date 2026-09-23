@@ -37,72 +37,11 @@ if /I "%ERRATA_MODE%"=="help" goto :usage
 if /I "%ERRATA_MODE%"=="--help" goto :usage
 if /I "%ERRATA_MODE%"=="-h" goto :usage
 if /I "%ERRATA_MODE%"=="check" goto :check
-call :validate_repo
-if errorlevel 1 exit /b 1
+if /I "%ERRATA_MODE%"=="desktop" goto :prepare
+if /I "%ERRATA_MODE%"=="web" goto :prepare
 
-if not defined DATA_DIR set "DATA_DIR=%CD%\data"
-
-echo [Errata] Checking Windows source launcher...
-echo [Errata] Repository: "%CD%"
-
-set "BUN_AVAILABLE=1"
-call :find_bun
-if errorlevel 1 (
-  set "BUN_AVAILABLE=0"
-  echo [Errata] Bun: NOT INSTALLED
-  echo [Errata] Default desktop/web mode will install it automatically when PowerShell is available.
-) else (
-  echo [Errata] Bun: "%BUN_EXE%"
-  "%BUN_EXE%" --version
-  if errorlevel 1 (
-    echo [Errata] ERROR: Bun exists but could not execute.
-    exit /b 1
-  )
-)
-
-set "NODE_AVAILABLE=1"
-call :find_node
-if errorlevel 1 (
-  set "NODE_AVAILABLE=0"
-  echo [Errata] Node.js: NOT INSTALLED
-  echo [Errata] Default desktop/web mode will download a verified portable runtime when PowerShell is available.
-) else (
-  echo [Errata] Node.js: "%NODE_EXE%"
-  "%NODE_EXE%" --version
-  if errorlevel 1 (
-    echo [Errata] ERROR: Node.js exists but could not execute.
-    exit /b 1
-  )
-)
-
-for %%F in ("scripts\electron-dev.mjs" "desktop\main.ts" "desktop\preload.ts" "electron-builder.yml") do (
-  if not exist "%%~F" (
-    echo [Errata] ERROR: Missing required file: %%~F
-    exit /b 1
-  )
-)
-
-call :find_powershell
-if errorlevel 1 (
-  echo [Errata] PowerShell: NOT FOUND
-  if "%BUN_AVAILABLE%"=="0" (
-    echo [Errata] ERROR: Bun is missing and automatic first-run setup requires PowerShell.
-    exit /b 1
-  )
-  if "%NODE_AVAILABLE%"=="0" (
-    echo [Errata] ERROR: Node.js is missing and automatic first-run setup requires PowerShell.
-    exit /b 1
-  )
-  echo [Errata] Bun and Node.js are already available, so PowerShell is not required for this run.
-) else (
-  echo [Errata] PowerShell: available
-)
-
-echo [Errata] Source data directory: "%DATA_DIR%"
-echo [Errata] Dev URL: http://localhost:7739
-echo [Errata] Launcher check passed.
-exit /b 0
-:usage_error
+echo [Errata] ERROR: Unknown mode: %ERRATA_MODE%
+goto :usage_error
 
 :validate_repo
 if not exist "package.json" (
@@ -273,6 +212,7 @@ if errorlevel 1 (
 
 echo [Errata] Portable Node.js installed successfully.
 exit /b 0
+
 :prepare
 call :validate_repo
 if errorlevel 1 goto :fatal
@@ -387,6 +327,21 @@ if errorlevel 1 (
   )
 )
 
+set "NODE_AVAILABLE=1"
+call :find_node
+if errorlevel 1 (
+  set "NODE_AVAILABLE=0"
+  echo [Errata] Node.js: NOT INSTALLED
+  echo [Errata] Default desktop/web mode will download a verified portable runtime when PowerShell is available.
+) else (
+  echo [Errata] Node.js: "%NODE_EXE%"
+  "%NODE_EXE%" --version
+  if errorlevel 1 (
+    echo [Errata] ERROR: Node.js exists but could not execute.
+    exit /b 1
+  )
+)
+
 for %%F in ("scripts\electron-dev.mjs" "desktop\main.ts" "desktop\preload.ts" "electron-builder.yml") do (
   if not exist "%%~F" (
     echo [Errata] ERROR: Missing required file: %%~F
@@ -398,11 +353,14 @@ call :find_powershell
 if errorlevel 1 (
   echo [Errata] PowerShell: NOT FOUND
   if "%BUN_AVAILABLE%"=="0" (
-    echo [Errata] ERROR: Neither Bun nor PowerShell is available.
-    echo [Errata] Automatic first-run setup cannot continue on this Windows installation.
+    echo [Errata] ERROR: Bun is missing and automatic first-run setup requires PowerShell.
     exit /b 1
   )
-  echo [Errata] Bun is already installed, so PowerShell is not required for this run.
+  if "%NODE_AVAILABLE%"=="0" (
+    echo [Errata] ERROR: Node.js is missing and automatic first-run setup requires PowerShell.
+    exit /b 1
+  )
+  echo [Errata] Bun and Node.js are already available, so PowerShell is not required for this run.
 ) else (
   echo [Errata] PowerShell: available
 )
@@ -411,7 +369,6 @@ echo [Errata] Source data directory: "%DATA_DIR%"
 echo [Errata] Dev URL: http://localhost:7739
 echo [Errata] Launcher check passed.
 exit /b 0
-
 :usage
 echo Usage:
 echo   start.bat          Start Errata desktop mode; bootstraps Bun/Node/dependencies if needed
