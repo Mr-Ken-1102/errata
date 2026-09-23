@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '@/lib/api'
+import { useLanguage } from '@/lib/i18n'
 
 interface ModelSelectProps {
   providerId: string | null
@@ -10,7 +11,8 @@ interface ModelSelectProps {
   defaultLabel?: string
 }
 
-export function ModelSelect({ providerId, value, onChange, disabled, defaultLabel = 'Default' }: ModelSelectProps) {
+export function ModelSelect({ providerId, value, onChange, disabled, defaultLabel }: ModelSelectProps) {
+  const { t } = useLanguage()
   const [manualEntry, setManualEntry] = useState(false)
 
   const { data, isLoading } = useQuery({
@@ -32,7 +34,7 @@ export function ModelSelect({ providerId, value, onChange, disabled, defaultLabe
         disabled
         className="w-full max-w-[140px] h-[26px] px-2 text-[0.6875rem] text-muted-foreground bg-muted/30 border border-border/30 rounded-md"
       >
-        <option>No provider</option>
+        <option>{t('settings.modelSelect.noProvider')}</option>
       </select>
     )
   }
@@ -54,7 +56,7 @@ export function ModelSelect({ providerId, value, onChange, disabled, defaultLabe
             type="button"
             onClick={() => setManualEntry(false)}
             className="text-[0.5625rem] text-muted-foreground hover:text-foreground/50 transition-colors shrink-0"
-            title="Switch to dropdown"
+            title={t('settings.modelSelect.switchToDropdown')}
           >
             list
           </button>
@@ -71,9 +73,9 @@ export function ModelSelect({ providerId, value, onChange, disabled, defaultLabe
         className="w-full max-w-[140px] h-[26px] px-2 text-[0.6875rem] text-foreground/80 bg-muted/50 border border-border/50 rounded-md focus:border-primary/30 focus:outline-none truncate"
         disabled={disabled || isLoading}
       >
-        <option value="">{isLoading ? 'Loading\u2026' : defaultLabel}</option>
+        <option value="">{isLoading ? t('settings.modelSelect.loading') : (defaultLabel ?? t('settings.modelSelect.default'))}</option>
         {models.map((m) => (
-          <option key={m.id} value={m.id}>{m.id}{m.isFree ? ' (free)' : ''}</option>
+          <option key={m.id} value={m.id}>{m.id}{m.isFree ? ` (${t('settings.modelSelect.free')})` : ''}</option>
         ))}
       </select>
       {hasModels && (
@@ -81,7 +83,7 @@ export function ModelSelect({ providerId, value, onChange, disabled, defaultLabe
           type="button"
           onClick={() => setManualEntry(true)}
           className="text-[0.5625rem] text-muted-foreground hover:text-foreground/50 transition-colors shrink-0"
-          title="Type model ID manually"
+          title={t('settings.modelSelect.typeManually')}
         >
           edit
         </button>

@@ -79,6 +79,9 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.plugins.noneAvailable')).toBe('Không có plugin khả dụng')
     expect(translate('vi', 'providers.heading')).toBe('Nhà cung cấp')
     expect(translate('vi', 'providers.addProvider')).toBe('Thêm nhà cung cấp')
+    expect(translate('vi', 'settings.modelSelect.noProvider')).toBe('Chưa chọn nhà cung cấp')
+    expect(translate('vi', 'settings.customCss.save')).toBe('Lưu CSS')
+    expect(translate('vi', 'settings.numberInput.usingWholeNumber')).toBe('và dùng số nguyên')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -488,6 +491,42 @@ describe('language UI wiring', () => {
     expect(providerSource).toContain('{m.id}')
     expect(providerSource).toContain('header.key')
     expect(providerSource).toContain('header.value')
+  })
+
+  it('localizes shared settings controls without changing model IDs, custom CSS persistence, or numeric validation semantics', () => {
+    const modelSource = readFileSync('src/components/settings/ModelSelect.tsx', 'utf8')
+    const cssSource = readFileSync('src/components/settings/CustomCssPanel.tsx', 'utf8')
+    const samplingSource = readFileSync('src/components/settings/SamplingNumberInput.tsx', 'utf8')
+
+    expect(modelSource).toContain('useLanguage()')
+    expect(modelSource).toContain("queryKey: ['provider-models', providerId]")
+    expect(modelSource).toContain('api.config.listModels(providerId!)')
+    expect(modelSource).toContain("onChange={(e) => onChange(e.target.value || null)}")
+    expect(modelSource).toContain('value={m.id}')
+    expect(modelSource).toContain('{m.id}')
+    expect(modelSource).toContain('placeholder="model-id"')
+    expect(modelSource).toContain("t('settings.modelSelect.noProvider')")
+    expect(modelSource).toContain("defaultLabel ?? t('settings.modelSelect.default')")
+
+    expect(cssSource).toContain('useLanguage()')
+    expect(cssSource).toContain('useCustomCss()')
+    expect(cssSource).toContain('setCss(value)')
+    expect(cssSource).toContain("setValue('')")
+    expect(cssSource).toContain("const CUSTOM_CSS_STYLE_ID = 'errata-custom-css'")
+    expect(cssSource).toContain('styleEl.textContent = css')
+    expect(cssSource).toContain('styleEl.remove()')
+    expect(cssSource).toContain("t('settings.customCss.save')")
+
+    expect(samplingSource).toContain('useLanguage()')
+    expect(samplingSource).toContain("const nextValue = trimmed === '' ? null : Number(trimmed)")
+    expect(samplingSource).toContain('Number.isFinite(nextValue)')
+    expect(samplingSource).toContain('nextValue >= min')
+    expect(samplingSource).toContain('nextValue <= max')
+    expect(samplingSource).toContain('!integer || Number.isInteger(nextValue)')
+    expect(samplingSource).toContain('if (nextValue !== currentValue) onCommit(nextValue)')
+    expect(samplingSource).toContain("if (event.key === 'Enter') event.currentTarget.blur()")
+    expect(samplingSource).toContain("if (event.key === 'Escape')")
+    expect(samplingSource).toContain("t('settings.numberInput.enterValueFrom')")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
