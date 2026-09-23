@@ -793,7 +793,7 @@ describe('language UI wiring', () => {
     expect(writingSource).toContain('api.librarian.transformProseSelection(')
     expect(writingSource).toContain('consumeRun(storyId, stream')
     expect(writingSource).toContain('editor.chain().focus().insertContentAt')
-    expect(writingSource).toContain('enabledTransforms.filter(t => t.enabled)')
+    expect(writingSource).toContain('writingTransforms.filter(t => t.enabled)')
     expect(writingSource).toContain('currentFragment?.description')
     expect(writingSource).toContain('preview(fragment.content)')
   })
