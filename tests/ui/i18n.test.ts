@@ -54,6 +54,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'common.learnMore')).toBe('Tìm hiểu thêm')
     expect(translate('vi', 'sidebar.story')).toBe('Truyện')
     expect(translate('vi', 'sidebar.settings')).toBe('Cài đặt')
+    expect(translate('vi', 'archive.searchPlaceholder')).toBe('Tìm trong lưu trữ...')
+    expect(translate('vi', 'archive.restore')).toBe('Khôi phục')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -586,6 +588,27 @@ describe('language UI wiring', () => {
     expect(sidebarSource).toContain("archiveMutation.mutate(fragmentId)")
     expect(sidebarSource).toContain('tooltip="ErrataNet"')
     expect(sidebarSource).toContain("<span>ErrataNet</span>")
+  })
+
+  it('localizes archive chrome without changing fragment search, identity, restore/delete mutations, or query invalidation semantics', () => {
+    const archiveSource = readFileSync('src/components/sidebar/ArchivePanel.tsx', 'utf8')
+
+    expect(archiveSource).toContain('useLanguage()')
+    expect(archiveSource).toContain("t('archive.searchPlaceholder')")
+    expect(archiveSource).toContain("api.fragments.restore(storyId, fragmentId)")
+    expect(archiveSource).toContain("api.fragments.delete(storyId, fragmentId)")
+    expect(archiveSource).toContain("queryKey: ['fragments-archived', storyId]")
+    expect(archiveSource).toContain("queryKey: ['fragments', storyId]")
+    expect(archiveSource).toContain("queryKey: ['proseChain', storyId]")
+    expect(archiveSource).toContain("f.name.toLowerCase().includes(q)")
+    expect(archiveSource).toContain("f.id.toLowerCase().includes(q)")
+    expect(archiveSource).toContain("f.type.toLowerCase().includes(q)")
+    expect(archiveSource).toContain('{fragment.name}')
+    expect(archiveSource).toContain('{fragment.type}')
+    expect(archiveSource).toContain('{fragment.id}')
+    expect(archiveSource).toContain("e.key === 'Enter' || e.key === ' '")
+    expect(archiveSource).toContain('onSelect(fragment)')
+    expect(archiveSource).toContain("destructive: true")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
