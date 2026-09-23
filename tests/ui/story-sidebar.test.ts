@@ -10,6 +10,7 @@ vi.mock('@tanstack/react-router', () => ({
 import { HelpProvider } from '@/hooks/use-help'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { StorySidebar } from '@/components/sidebar/StorySidebar'
+import { LanguageProvider } from '@/lib/i18n'
 
 describe('StorySidebar', () => {
   beforeAll(() => {
@@ -20,22 +21,26 @@ describe('StorySidebar', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const html = renderToString(
       React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
+        LanguageProvider,
+        null,
         React.createElement(
-          HelpProvider,
-          null,
+          QueryClientProvider,
+          { client: queryClient },
           React.createElement(
-            SidebarProvider,
+            HelpProvider,
             null,
-            React.createElement(StorySidebar, {
+            React.createElement(
+              SidebarProvider,
+              null,
+              React.createElement(StorySidebar, {
               storyId: 'story-test',
               story: undefined,
               activeSection: null,
               onSectionChange: () => undefined,
               onLaunchWizard: () => undefined,
               enabledPanelPlugins: [],
-            }),
+              }),
+            ),
           ),
         ),
       ),
@@ -49,15 +54,18 @@ describe('StorySidebar', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const html = renderToString(
       React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
+        LanguageProvider,
+        null,
         React.createElement(
-          HelpProvider,
-          null,
+          QueryClientProvider,
+          { client: queryClient },
           React.createElement(
-            SidebarProvider,
+            HelpProvider,
             null,
-            React.createElement(StorySidebar, {
+            React.createElement(
+              SidebarProvider,
+              null,
+              React.createElement(StorySidebar, {
               storyId: 'story-test',
               story: undefined,
               activeSection: null,
@@ -65,7 +73,8 @@ describe('StorySidebar', () => {
               onSectionChange: () => undefined,
               onLaunchWizard: () => undefined,
               enabledPanelPlugins: [],
-            }),
+              }),
+            ),
           ),
         ),
       ),

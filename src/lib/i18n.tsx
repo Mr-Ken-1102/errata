@@ -627,7 +627,7 @@ const EN_MESSAGES = {
 
 export type TranslationKey = keyof typeof EN_MESSAGES
 
-const VI_MESSAGES: Partial<Record<TranslationKey, string>> = {
+const VI_MESSAGES = {
   'settings.language.heading': 'Ngôn ngữ',
   'common.learnMore': 'Tìm hiểu thêm',
   'sidebar.backToStories': 'Quay lại danh sách truyện',
@@ -1228,7 +1228,7 @@ const VI_MESSAGES: Partial<Record<TranslationKey, string>> = {
   'settings.proseColors.default': 'Mặc định',
   'settings.proseColors.resetAll': 'Đặt lại tất cả',
   'settings.proseColors.preview': 'Xem trước',
-}
+} satisfies Record<Exclude<TranslationKey, 'app.name'>, string>
 
 const SETTINGS_NAV_KEYS: Record<string, TranslationKey> = {
   Appearance: 'settings.toc.appearance',
@@ -1273,7 +1273,7 @@ export function persistLanguagePreference(
 }
 
 export function translate(language: AppLanguage, key: TranslationKey): string {
-  if (language === 'vi') return VI_MESSAGES[key] ?? EN_MESSAGES[key]
+  if (language === 'vi' && key !== 'app.name') return VI_MESSAGES[key]
   return EN_MESSAGES[key]
 }
 

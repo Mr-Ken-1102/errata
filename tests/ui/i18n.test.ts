@@ -91,6 +91,12 @@ describe('translation fallback', () => {
     expect(translate('vi', 'app.name')).toBe('Errata')
   })
 
+  it('keeps Vietnamese coverage compile-time complete except for the product name', () => {
+    const source = readFileSync('src/lib/i18n.tsx', 'utf8')
+    expect(source).toContain("satisfies Record<Exclude<TranslationKey, 'app.name'>, string>")
+    expect(source).toContain("language === 'vi' && key !== 'app.name'")
+  })
+
   it('localizes settings navigation while leaving unknown extension labels intact', () => {
     expect(translateSettingsNavigation('vi', 'Appearance')).toBe('Giao diện')
     expect(translateSettingsNavigation('vi', 'Writing')).toBe('Viết')
@@ -578,7 +584,7 @@ describe('language UI wiring', () => {
     expect(sidebarSource).toContain('<span>{plugin.title}</span>')
     expect(sidebarSource).toContain("application/x-errata-fragment-id")
     expect(sidebarSource).toContain("archiveMutation.mutate(fragmentId)")
-    expect(sidebarSource).toContain("tooltip="ErrataNet"")
+    expect(sidebarSource).toContain('tooltip="ErrataNet"')
     expect(sidebarSource).toContain("<span>ErrataNet</span>")
   })
 
