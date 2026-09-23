@@ -15,6 +15,7 @@ import {
   titleFromFragmentType,
 } from '@/components/fragments/fragment-type-icons'
 import { componentId } from '@/lib/dom-ids'
+import { useLanguage } from '@/lib/i18n'
 
 interface FragmentTypesPanelProps {
   storyId: string
@@ -47,6 +48,7 @@ function serializeDefinitions(defs: CustomFragmentType[]) {
 
 export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
   const customTypes = story.settings.customFragmentTypes ?? []
   const [drafts, setDrafts] = useState<CustomFragmentType[]>(customTypes)
   const [newType, setNewType] = useState('')
@@ -75,14 +77,14 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
   const existingTypes = useMemo(() => new Set(drafts.map((def) => def.type)), [drafts])
   const addDisabled = !normalizedNewType || BUILTIN_FRAGMENT_TYPES.has(normalizedNewType) || existingTypes.has(normalizedNewType)
   const addHint = !newType.trim()
-    ? 'Enter a type'
+    ? t('fragmentTypes.enterType')
     : !normalizedNewType
-      ? 'Use letters, numbers, hyphens, or underscores'
+      ? t('fragmentTypes.allowedCharacters')
       : BUILTIN_FRAGMENT_TYPES.has(normalizedNewType)
-        ? 'Built-in type'
+        ? t('fragmentTypes.builtInType')
         : existingTypes.has(normalizedNewType)
-          ? 'Already added'
-          : 'Ready'
+          ? t('fragmentTypes.alreadyAdded')
+          : t('fragmentTypes.ready')
   const hasInvalidDraft = drafts.some((def, index) => {
     const normalized = slugifyType(def.type)
     if (!normalized || BUILTIN_FRAGMENT_TYPES.has(normalized)) return true
@@ -137,7 +139,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
       <div className="border-b border-border/50 px-3 py-3">
         <div className="grid grid-cols-[1fr_auto] items-end gap-2">
           <label className="min-w-0 space-y-1">
-            <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">New type</span>
+            <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">{t('fragmentTypes.newType')}</span>
             <Input
               value={newType}
               onChange={(e) => setNewType(e.target.value)}
@@ -162,7 +164,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
             data-component-id="fragment-types-add"
           >
             <Plus className="size-3.5" />
-            Add type
+            {t('fragmentTypes.addType')}
           </Button>
         </div>
         <p className={`mt-1 text-[0.625rem] ${addDisabled ? 'text-muted-foreground' : 'text-emerald-600 dark:text-emerald-400/80'}`}>
@@ -174,8 +176,8 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
         <div className="space-y-3 p-3">
           {drafts.length === 0 && (
             <EmptyState
-              title="No custom types"
-              hint="Add a type like location, faction, timeline, or artifact."
+              title={t('fragmentTypes.noCustomTypes')}
+              hint={t('fragmentTypes.emptyHint')}
               className="py-10"
             />
           )}
@@ -210,7 +212,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                         </span>
                       </div>
                       <p className="truncate text-[0.6875rem] text-muted-foreground">
-                        {def.showInSidebar ? 'Shown in sidebar' : 'Hidden from sidebar'}
+                        {def.showInSidebar ? t('fragmentTypes.shownInSidebar') : t('fragmentTypes.hiddenFromSidebar')}
                         {def.description.trim() ? ` - ${def.description.trim()}` : ''}
                       </p>
                     </div>
@@ -221,7 +223,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                     variant="ghost"
                     className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => removeDraft(index)}
-                    title="Remove type definition"
+                    title={t('fragmentTypes.removeDefinition')}
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
@@ -231,7 +233,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                   <div className="space-y-2 p-3">
                     <div className="grid grid-cols-2 gap-2">
                       <label className="space-y-1">
-                        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">Type</span>
+                        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">{t('fragmentTypes.typeLabel')}</span>
                         <Input
                           value={def.type}
                           onChange={(e) => updateDraft(index, { type: slugifyType(e.target.value) })}
@@ -239,7 +241,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                         />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">Name</span>
+                        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">{t('fragmentTypes.nameLabel')}</span>
                         <Input
                           value={def.name}
                           onChange={(e) => updateDraft(index, { name: e.target.value })}
@@ -249,7 +251,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                     </div>
 
                     <label className="block space-y-1">
-                      <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">Description</span>
+                      <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">{t('fragmentTypes.descriptionLabel')}</span>
                       <Input
                         value={def.description}
                         onChange={(e) => updateDraft(index, { description: e.target.value })}
@@ -260,14 +262,14 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
 
                     <div className="grid grid-cols-[1fr_auto] items-end gap-2">
                       <label className="min-w-0 space-y-1">
-                        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">Icon</span>
+                        <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">{t('fragmentTypes.iconLabel')}</span>
                         <div className="flex min-w-0 items-center gap-2">
                           <FragmentTypeIcon icon={def.icon} className="size-4 shrink-0 text-muted-foreground" />
                           <select
                             value={def.icon}
                             onChange={(e) => updateDraft(index, { icon: e.target.value })}
                             className="h-8 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            aria-label="Icon"
+                            aria-label={t('fragmentTypes.iconLabel')}
                           >
                             {FRAGMENT_TYPE_ICON_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>{option.label}</option>
@@ -280,7 +282,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                           checked={def.showInSidebar}
                           onCheckedChange={(checked) => updateDraft(index, { showInSidebar: checked === true })}
                         />
-                        Show
+                        {t('fragmentTypes.show')}
                       </label>
                     </div>
 
@@ -298,12 +300,12 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
       <div className="border-t border-border/50 p-3">
         <div className="mb-2 flex min-h-4 items-center justify-between text-[0.625rem]">
           <span className={hasInvalidDraft ? 'text-destructive' : 'text-muted-foreground'}>
-            {hasInvalidDraft ? 'Fix duplicate or reserved types' : `${drafts.length} custom type${drafts.length === 1 ? '' : 's'}`}
+            {hasInvalidDraft ? t('fragmentTypes.fixInvalid') : `${drafts.length} ${drafts.length === 1 ? t('fragmentTypes.customTypeOne') : t('fragmentTypes.customTypeMany')}`}
           </span>
           {saveStatus === 'saved' && !hasChanges && (
             <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400/80">
               <Check className="size-3" />
-              Saved
+              {t('fragmentTypes.saved')}
             </span>
           )}
         </div>
@@ -315,7 +317,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
           data-component-id="fragment-types-save"
         >
           <Save className="size-3.5" />
-          {saveMutation.isPending ? 'Saving...' : hasChanges ? 'Save changes' : 'No changes'}
+          {saveMutation.isPending ? t('fragmentTypes.saving') : hasChanges ? t('fragmentTypes.saveChanges') : t('fragmentTypes.noChanges')}
         </Button>
       </div>
     </div>
