@@ -13,7 +13,7 @@ permissions:
 jobs:
   zero-preinstall-bootstrap:
     runs-on: windows-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -111,24 +111,63 @@ jobs:
             }
             Write-Host "Portable Node.js: $nodeVersion"
 
-            $healthy = $false
-            for ($attempt = 0; $attempt -lt 240; $attempt++) {
+            $started = $false
+            for ($attempt = 0; $attempt -lt 600; $attempt++) {
               if ($proc.HasExited) {
                 break
               }
-              try {
-                $response = Invoke-WebRequest 'http://127.0.0.1:7739/api/health' -UseBasicParsing -TimeoutSec 2
-                if ($response.StatusCode -eq 200) {
-                  $healthy = $true
+              if (Test-Path $stdout) {
+                $currentLog = Get-Content $stdout -Raw
+                if ($currentLog.Contains('[Errata] Starting Errata web mode...')) {
+                  $started = $true
                   break
                 }
-              } catch {
-                # Dependency setup or the dev server is still starting.
+                if ($attempt -gt 0 -and ($attempt % 30) -eq 0) {
+                  Write-Host "--- launcher progress at $attempt seconds ---"
+                  Get-Content $stdout -Tail 25
+                  if (Test-Path $stderr) {
+                    Get-Content $stderr -Tail 25
+                  }
+                }
               }
               Start-Sleep -Seconds 1
             }
+            if (-not $started) {
+              throw 'start.bat did not reach Errata web startup after zero-preinstall bootstrap.'
+            }
+
+            Write-Host '[Errata CI] Launcher reached web startup; checking /api/health.'
+            $healthy = $false
+            $handler = [System.Net.Http.HttpClientHandler]::new()
+            $client = [System.Net.Http.HttpClient]::new($handler)
+            $client.Timeout = [TimeSpan]::FromSeconds(2)
+            try {
+              foreach ($uri in @('http://localhost:7739/api/health', 'http://127.0.0.1:7739/api/health')) {
+                for ($attempt = 0; $attempt -lt 60; $attempt++) {
+                  if ($proc.HasExited) {
+                    break
+                  }
+                  try {
+                    $response = $client.GetAsync($uri).GetAwaiter().GetResult()
+                    if ([int]$response.StatusCode -eq 200) {
+                      $healthy = $true
+                      break
+                    }
+                  } catch {
+                    # Server is still starting or bound to the other loopback form.
+                  }
+                  Start-Sleep -Seconds 1
+                }
+                if ($healthy) {
+                  break
+                }
+              }
+            } finally {
+              $client.Dispose()
+              $handler.Dispose()
+            }
             if (-not $healthy) {
-              throw 'Errata did not become healthy after zero-preinstall bootstrap.'
+              throw 'Errata did not become healthy after launcher reached web startup.'
             }
 
             $log = Get-Content $stdout -Raw
