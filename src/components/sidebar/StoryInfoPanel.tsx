@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Pencil, Download, Package, Wand2, FileText, ImagePlus, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { UsageSnapshot, UsageEntry } from '@/lib/api/token-usage'
-import { useLanguage } from '@/lib/i18n'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface StoryInfoPanelProps {
   storyId: string
@@ -380,21 +380,22 @@ function ActionTile({ icon: Icon, label, description, onClick, dataComponentId }
   )
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  'generation.writer': 'Writer',
-  'generation.prewriter': 'Prewriter',
-  'librarian.analyze': 'Librarian',
-  'librarian.rollup': 'Memory roll-up',
-  'librarian.chat': 'Librarian chat',
-  'librarian.refine': 'Librarian refine',
-  'librarian.prose-transform': 'Prose transform',
-  'librarian.optimize-character': 'Character optimizer',
-  'directions.suggest': 'Directions',
-  'character-chat.chat': 'Character chat',
+const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
+  'generation.writer': 'storyInfo.source.writer',
+  'generation.prewriter': 'storyInfo.source.prewriter',
+  'librarian.analyze': 'storyInfo.source.librarian',
+  'librarian.rollup': 'storyInfo.source.memoryRollup',
+  'librarian.chat': 'storyInfo.source.librarianChat',
+  'librarian.refine': 'storyInfo.source.librarianRefine',
+  'librarian.prose-transform': 'storyInfo.source.proseTransform',
+  'librarian.optimize-character': 'storyInfo.source.characterOptimizer',
+  'directions.suggest': 'storyInfo.source.directions',
+  'character-chat.chat': 'storyInfo.source.characterChat',
 }
 
-function formatSourceName(source: string): string {
-  return SOURCE_LABELS[source] ?? source
+function formatSourceName(source: string, t: (key: TranslationKey) => string): string {
+  const key = SOURCE_LABEL_KEYS[source]
+  return key ? t(key) : source
 }
 
 function shortModelName(modelId: string): string {
@@ -404,17 +405,19 @@ function shortModelName(modelId: string): string {
 }
 
 function UsageRow({ label, entry, indent }: { label: string; entry: UsageEntry; indent?: boolean }) {
+  const { t } = useLanguage()
   return (
     <div className={`flex items-baseline justify-between ${indent ? 'pl-3' : ''}`}>
       <span className={`text-[0.625rem] text-muted-foreground ${indent ? '' : 'uppercase tracking-wider'} truncate mr-2`}>{label}</span>
       <span className="text-[0.6875rem] font-mono text-foreground/60 whitespace-nowrap shrink-0">
-        {formatNumber(entry.inputTokens)} in &middot; {formatNumber(entry.outputTokens)} out
+        {formatNumber(entry.inputTokens)} {t('storyInfo.inputShort')} &middot; {formatNumber(entry.outputTokens)} {t('storyInfo.outputShort')}
       </span>
     </div>
   )
 }
 
 function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSnapshot }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   if (snapshot.total.calls === 0) return null
 
@@ -435,24 +438,24 @@ function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSna
         }
         <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">{label}</span>
         <span className="text-[0.6875rem] font-mono text-foreground/60 ml-auto whitespace-nowrap">
-          {formatNumber(snapshot.total.inputTokens)} in &middot; {formatNumber(snapshot.total.outputTokens)} out
+          {formatNumber(snapshot.total.inputTokens)} {t('storyInfo.inputShort')} &middot; {formatNumber(snapshot.total.outputTokens)} {t('storyInfo.outputShort')}
         </span>
       </button>
       {expanded && (
         <div className="mt-1 space-y-0.5 ml-1">
           {sources.length > 0 && (
             <>
-              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">By agent</div>
+              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">{t('storyInfo.byAgent')}</div>
               {sources.map(([source, entry]) => (
                 <div key={source}>
-                  <UsageRow label={formatSourceName(source)} entry={entry} indent />
+                  <UsageRow label={formatSourceName(source, t)} entry={entry} indent />
                   {Object.keys(entry.byModel).length > 1 && Object.entries(entry.byModel)
                     .sort((a, b) => (b[1].inputTokens + b[1].outputTokens) - (a[1].inputTokens + a[1].outputTokens))
                     .map(([model, mEntry]) => (
                       <div key={model} className="pl-6 flex items-baseline justify-between opacity-60">
                         <span className="text-[0.5625rem] text-muted-foreground truncate mr-2">{shortModelName(model)}</span>
                         <span className="text-[0.625rem] font-mono text-foreground/50 whitespace-nowrap shrink-0">
-                          {formatNumber(mEntry.inputTokens)} in &middot; {formatNumber(mEntry.outputTokens)} out
+                          {formatNumber(mEntry.inputTokens)} {t('storyInfo.inputShort')} &middot; {formatNumber(mEntry.outputTokens)} {t('storyInfo.outputShort')}
                         </span>
                       </div>
                     ))
@@ -463,7 +466,7 @@ function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSna
           )}
           {models.length > 1 && (
             <>
-              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">By model</div>
+              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">{t('storyInfo.byModel')}</div>
               {models.map(([model, entry]) => (
                 <UsageRow key={model} label={shortModelName(model)} entry={entry} indent />
               ))}
@@ -476,12 +479,13 @@ function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSna
 }
 
 function TokenUsageSection({ session, project }: { session: UsageSnapshot; project: UsageSnapshot }) {
+  const { t } = useLanguage()
   return (
     <div className="mt-3 pt-3 border-t border-border/30">
-      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Token Usage</label>
+      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">{t('storyInfo.tokenUsage')}</label>
       <div className="mt-1.5 space-y-1">
-        <UsageBreakdown label="Session" snapshot={session} />
-        <UsageBreakdown label="Project" snapshot={project} />
+<UsageBreakdown label={t('storyInfo.session')} snapshot={session} />
+<UsageBreakdown label={t('storyInfo.project')} snapshot={project} />
       </div>
     </div>
   )
