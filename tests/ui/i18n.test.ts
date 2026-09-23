@@ -519,8 +519,6 @@ describe('language UI wiring', () => {
     expect(cssSource).toContain('styleEl.remove()')
     expect(cssSource).toContain("t('settings.customCss.save')")
 
-    expect(samplingSource).toContain('useLanguage()')
-    expect(samplingSource).toContain('const { t } = useLanguage()')
     expect(samplingSource).toContain("const nextValue = trimmed === '' ? null : Number(trimmed)")
     expect(samplingSource).toContain('Number.isFinite(nextValue)')
     expect(samplingSource).toContain('nextValue >= min')
@@ -529,7 +527,10 @@ describe('language UI wiring', () => {
     expect(samplingSource).toContain('if (nextValue !== currentValue) onCommit(nextValue)')
     expect(samplingSource).toContain("if (event.key === 'Enter') event.currentTarget.blur()")
     expect(samplingSource).toContain("if (event.key === 'Escape')")
-    expect(samplingSource).toContain("t('settings.numberInput.enterValueFrom')")
+    expect(samplingSource).toContain('invalidTitle?: string')
+    expect(samplingSource).toContain("invalidTitle ?? `Enter a value from ${min} to ${max}${integer ? ' using a whole number' : ''}.`")
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+    expect(settingsSource).toContain("invalidTitle={`${t('settings.numberInput.enterValueFrom')} 0 ${t('settings.numberInput.to')} 2.`}")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

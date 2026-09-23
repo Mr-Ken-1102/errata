@@ -249,6 +249,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                     disabled={updateMutation.isPending}
                     placeholder={t('settings.providers.temperatureShort')}
                     title={t('settings.providers.temperatureDescription')}
+                    invalidTitle={`${t('settings.numberInput.enterValueFrom')} 0 ${t('settings.numberInput.to')} 2.`}
                     className="w-full"
                   />
                 </div>
