@@ -58,7 +58,7 @@ export function ModelSelect({ providerId, value, onChange, disabled, defaultLabe
             className="text-[0.5625rem] text-muted-foreground hover:text-foreground/50 transition-colors shrink-0"
             title={t('settings.modelSelect.switchToDropdown')}
           >
-            list
+            {t('settings.modelSelect.list')}
           </button>
         )}
       </div>
@@ -85,7 +85,7 @@ export function ModelSelect({ providerId, value, onChange, disabled, defaultLabe
           className="text-[0.5625rem] text-muted-foreground hover:text-foreground/50 transition-colors shrink-0"
           title={t('settings.modelSelect.typeManually')}
         >
-          edit
+          {t('settings.modelSelect.edit')}
         </button>
       )}
     </div>

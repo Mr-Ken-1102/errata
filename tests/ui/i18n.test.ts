@@ -507,6 +507,8 @@ describe('language UI wiring', () => {
     expect(modelSource).toContain('placeholder="model-id"')
     expect(modelSource).toContain("t('settings.modelSelect.noProvider')")
     expect(modelSource).toContain("defaultLabel ?? t('settings.modelSelect.default')")
+    expect(modelSource).toContain("t('settings.modelSelect.list')")
+    expect(modelSource).toContain("t('settings.modelSelect.edit')")
 
     expect(cssSource).toContain('useLanguage()')
     expect(cssSource).toContain('useCustomCss()')
@@ -518,6 +520,7 @@ describe('language UI wiring', () => {
     expect(cssSource).toContain("t('settings.customCss.save')")
 
     expect(samplingSource).toContain('useLanguage()')
+    expect(samplingSource).toContain('const { t } = useLanguage()')
     expect(samplingSource).toContain("const nextValue = trimmed === '' ? null : Number(trimmed)")
     expect(samplingSource).toContain('Number.isFinite(nextValue)')
     expect(samplingSource).toContain('nextValue >= min')

@@ -31,6 +31,7 @@ export function SamplingNumberInput({
   title,
   className,
 }: SamplingNumberInputProps) {
+  const { t } = useLanguage()
   const [draft, setDraft] = useState(() => formatValue(value))
   const [invalid, setInvalid] = useState(false)
   const editingRef = useRef(false)
