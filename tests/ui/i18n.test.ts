@@ -60,6 +60,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.providers.manageProviders')).toBe('Quản lý nhà cung cấp')
     expect(translate('vi', 'settings.generation.heading')).toBe('Tạo nội dung')
     expect(translate('vi', 'settings.generation.outputFormat')).toBe('Định dạng đầu ra')
+    expect(translate('vi', 'settings.authoring.heading')).toBe('Soạn thảo')
+    expect(translate('vi', 'settings.authoring.addTransform')).toBe('Thêm thao tác biến đổi')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -180,6 +182,46 @@ describe('language UI wiring', () => {
     expect(settingsSource).toContain('updateMutation.mutate({ generationMode: v })')
     expect(settingsSource).toContain('updateMutation.mutate({ contextOrderMode: v })')
     expect(settingsSource).toContain('updateMutation.mutate({ disableLibrarianAutoAnalysis: next })')
+  })
+
+  it('localizes Authoring chrome without changing guided prompts, transform content, context ids, or persistence semantics', () => {
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+    const transformsSource = readFileSync('src/components/settings/CustomTransformsPanel.tsx', 'utf8')
+    const themeSource = readFileSync('src/lib/theme.tsx', 'utf8')
+
+    expect(settingsSource).toContain("t('settings.authoring.heading')")
+    expect(settingsSource).toContain("t('settings.authoring.selectionTransforms')")
+    expect(settingsSource).toContain("t('settings.authoring.guidedModePrompts')")
+    expect(settingsSource).toContain("value: 'tight' as TransformContext")
+    expect(settingsSource).toContain("value: 'wide' as TransformContext")
+    expect(settingsSource).toContain("value: 'passage' as TransformContext")
+    expect(settingsSource).toContain("save('guidedContinuePrompt', continuePrompt)")
+    expect(settingsSource).toContain("save('guidedSceneSettingPrompt', sceneSettingPrompt)")
+    expect(settingsSource).toContain("save('guidedSuggestPrompt', suggestPrompt)")
+    expect(settingsSource).toContain('placeholder={DEFAULT_CONTINUE}')
+    expect(settingsSource).toContain('placeholder={DEFAULT_SCENE_SETTING}')
+    expect(settingsSource).toContain('placeholder={DEFAULT_SUGGEST}')
+    expect(settingsSource).toContain("const DEFAULT_CONTINUE = 'Continue the story naturally. Write the next scene, advancing the plot and developing characters.'")
+    expect(settingsSource).toContain('const DEFAULT_SCENE_SETTING = "Continue the story without advancing the plot.')
+    expect(settingsSource).toContain('const DEFAULT_SUGGEST = `Based on everything in the story so far, suggest exactly {{count}} possible directions')
+
+    expect(transformsSource).toContain('useLanguage()')
+    expect(transformsSource).toContain("t('settings.authoring.transformLabel')")
+    expect(transformsSource).toContain("t('settings.authoring.transformInstruction')")
+    expect(transformsSource).toContain("label: 'New transform'")
+    expect(transformsSource).toContain("instruction: ''")
+    expect(transformsSource).toContain('value={t.label}')
+    expect(transformsSource).toContain('value={t.instruction}')
+    expect(transformsSource).toContain('updateLabel(t.id, e.target.value)')
+    expect(transformsSource).toContain('updateInstruction(t.id, e.target.value)')
+
+    expect(themeSource).toContain("export type TransformContext = 'tight' | 'wide' | 'passage'")
+    expect(themeSource).toContain('tight: 240')
+    expect(themeSource).toContain('wide: 1200')
+    expect(themeSource).toContain('passage: Number.MAX_SAFE_INTEGER')
+    expect(themeSource).toContain("const WRITING_TRANSFORMS_KEY = 'errata-writing-transforms'")
+    expect(themeSource).toContain("{ id: 'inner-thoughts', label: 'Add inner thoughts', instruction: 'Add inner thoughts and internal monologue")
+    expect(themeSource).toContain("{ id: 'remove-llmism', label: 'Remove LLM-isms', instruction: 'Identify and remove common language patterns")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

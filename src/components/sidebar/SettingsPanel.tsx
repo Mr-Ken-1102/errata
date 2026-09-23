@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type StoryMeta, type GlobalConfigSafe } from '@/lib/api'
-import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useWritingTransforms, useTransformContext, TRANSFORM_CONTEXT_LABELS, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
+import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useWritingTransforms, useTransformContext, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
 import { Settings2, ChevronRight, ExternalLink, Eye, EyeOff, Puzzle, RotateCcw, CircleHelp, Code } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { CustomCssPanel } from '@/components/settings/CustomCssPanel'
@@ -289,6 +289,7 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
   onUpdate: (data: { guidedContinuePrompt?: string; guidedSceneSettingPrompt?: string; guidedSuggestPrompt?: string }) => void
   isPending: boolean
 }) {
+  const { t } = useLanguage()
   const [continuePrompt, setContinuePrompt] = useState(story.settings.guidedContinuePrompt ?? '')
   const [sceneSettingPrompt, setSceneSettingPrompt] = useState(story.settings.guidedSceneSettingPrompt ?? '')
   const [suggestPrompt, setSuggestPrompt] = useState(story.settings.guidedSuggestPrompt ?? '')
@@ -310,8 +311,8 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
   return (
     <div className="space-y-4">
         <div>
-          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">Continue prompt</label>
-          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">Used when clicking the "Continue" button</p>
+          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">{t('settings.authoring.continuePrompt')}</label>
+          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">{t('settings.authoring.continuePromptDescription')}</p>
           <textarea
             value={continuePrompt}
             onChange={(e) => setContinuePrompt(e.target.value)}
@@ -323,8 +324,8 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
           />
         </div>
         <div>
-          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">Scene-setting prompt</label>
-          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">Used when clicking the "Scene-setting" button</p>
+          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">{t('settings.authoring.sceneSettingPrompt')}</label>
+          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">{t('settings.authoring.sceneSettingPromptDescription')}</p>
           <textarea
             value={sceneSettingPrompt}
             onChange={(e) => setSceneSettingPrompt(e.target.value)}
@@ -336,9 +337,9 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
           />
         </div>
         <div>
-          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">Suggest directions prompt</label>
+          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">{t('settings.authoring.suggestDirectionsPrompt')}</label>
           <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">
-            Prompt for generating direction suggestions. Use <code className="text-[0.625rem] bg-muted/50 px-1 rounded">{'{{count}}'}</code> for the number of suggestions.
+            {t('settings.authoring.suggestDirectionsPromptDescription')} <code className="text-[0.625rem] bg-muted/50 px-1 rounded">{'{{count}}'}</code> {t('settings.authoring.suggestDirectionsCountSuffix')}
           </p>
           <textarea
             value={suggestPrompt}
@@ -351,7 +352,7 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
           />
         </div>
         <p className="text-[0.625rem] text-muted-foreground italic">
-          Leave empty to use the default prompt. Changes are saved when you leave each field.
+          {t('settings.authoring.guidedPromptSaveNotice')}
         </p>
     </div>
   )
@@ -810,22 +811,26 @@ export function SettingsPanel({
 
       {/* Authoring (transforms + guided prompts) */}
       <SettingsSection id="set-authoring" label="Authoring" group="Writing">
-        <SectionHeading label="Authoring" />
+<SectionHeading label={t('settings.authoring.heading')} />
         <div className="space-y-6">
           <div className="space-y-2.5">
             <div>
               <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">
-                Selection transforms{enabledTransformCount > 0 ? ` · ${enabledTransformCount} active` : ''}
+                {t('settings.authoring.selectionTransforms')}{enabledTransformCount > 0 ? ` · ${enabledTransformCount} ${t('settings.authoring.active')}` : ''}
               </p>
               <p className="text-[0.6875rem] text-muted-foreground mt-0.5 leading-snug">
-                Quick rewrites in the floating toolbar when you select text. Drag to reorder, toggle to show or hide.
+                {t('settings.authoring.selectionTransformsDescription')}
               </p>
             </div>
             <SettingsCard>
-              <SettingRow label="Surrounding context" description="How much of the passage around your selection a transform can read.">
+              <SettingRow label={t('settings.authoring.surroundingContext')} description={t('settings.authoring.surroundingContextDescription')}>
                 <SegmentedControl
                   value={transformContext}
-                  options={(['tight', 'wide', 'passage'] as TransformContext[]).map((v) => ({ value: v, label: TRANSFORM_CONTEXT_LABELS[v] }))}
+                  options={[
+                    { value: 'tight' as TransformContext, label: t('settings.authoring.contextNearby') },
+                    { value: 'wide' as TransformContext, label: t('settings.authoring.contextWider') },
+                    { value: 'passage' as TransformContext, label: t('settings.authoring.contextWholePassage') },
+                  ]}
                   onChange={setTransformContext}
                 />
               </SettingRow>
@@ -835,9 +840,9 @@ export function SettingsPanel({
 
           <div className="space-y-2.5">
             <div>
-              <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">Guided mode prompts</p>
+              <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">{t('settings.authoring.guidedModePrompts')}</p>
               <p className="text-[0.6875rem] text-muted-foreground mt-0.5 leading-snug">
-                The prompts behind the guided writing buttons. Leave a field empty to use its default.
+                {t('settings.authoring.guidedModePromptsDescription')}
               </p>
             </div>
             <GuidedPromptsControls story={story} onUpdate={(data) => updateMutation.mutate(data)} isPending={updateMutation.isPending} />
