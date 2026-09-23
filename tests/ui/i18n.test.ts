@@ -299,7 +299,7 @@ describe('language UI wiring', () => {
     expect(browserSource).toContain('pack.license')
     expect(browserSource).toContain('pack.tags')
     expect(browserSource).toContain('pack.fragmentTypes')
-    expect(browserSource).toContain("const type InstallTarget = 'this-story' | 'new-story'")
+    expect(browserSource).toContain("type InstallTarget = 'this-story' | 'new-story'")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
