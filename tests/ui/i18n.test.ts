@@ -56,6 +56,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'sidebar.settings')).toBe('Cài đặt')
     expect(translate('vi', 'archive.searchPlaceholder')).toBe('Tìm trong lưu trữ...')
     expect(translate('vi', 'archive.restore')).toBe('Khôi phục')
+    expect(translate('vi', 'timeline.newTimeline')).toBe('Dòng thời gian mới')
+    expect(translate('vi', 'timeline.active')).toBe('đang hoạt động')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -609,6 +611,27 @@ describe('language UI wiring', () => {
     expect(archiveSource).toContain("e.key === 'Enter' || e.key === ' '")
     expect(archiveSource).toContain('onSelect(fragment)')
     expect(archiveSource).toContain("destructive: true")
+  })
+
+  it('localizes timeline chrome without changing branch ids, names, parent/fork metadata, cache reset, or branch mutations', () => {
+    const timelineSource = readFileSync('src/components/sidebar/TimelineManagerPanel.tsx', 'utf8')
+
+    expect(timelineSource).toContain('useLanguage()')
+    expect(timelineSource).toContain("api.branches.list(storyId)")
+    expect(timelineSource).toContain("api.branches.switchActive(storyId, branchId)")
+    expect(timelineSource).toContain("api.branches.create(storyId, {")
+    expect(timelineSource).toContain("parentBranchId: branchesIndex?.activeBranchId ?? branchesIndex?.rootBranchId ?? 'main'")
+    expect(timelineSource).toContain("api.branches.rename(storyId, branchId, name)")
+    expect(timelineSource).toContain("api.branches.delete(storyId, branchId)")
+    expect(timelineSource).toContain("onActiveBranchChanged(queryClient, storyId)")
+    expect(timelineSource).toContain("setRenameValue(branch.name)")
+    expect(timelineSource).toContain("name: renameValue.trim()")
+    expect(timelineSource).toContain("{branch.name}")
+    expect(timelineSource).toContain("branch.parentBranchId")
+    expect(timelineSource).toContain("branch.forkAfterIndex")
+    expect(timelineSource).toContain("switchMutation.mutate(branch.id)")
+    expect(timelineSource).toContain("deleteMutation.mutate(branch.id)")
+    expect(timelineSource).toContain("destructive: true")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

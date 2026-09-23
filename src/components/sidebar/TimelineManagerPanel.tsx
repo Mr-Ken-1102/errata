@@ -7,6 +7,7 @@ import { GitBranch, Plus, Pencil, Trash2, Check, X } from 'lucide-react'
 import { MetaLabel } from '@/components/ui/prose-text'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { onActiveBranchChanged } from '@/lib/branch-cache'
+import { useLanguage } from '@/lib/i18n'
 
 interface TimelineManagerPanelProps {
   storyId: string
@@ -15,6 +16,7 @@ interface TimelineManagerPanelProps {
 export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
   const queryClient = useQueryClient()
   const confirm = useConfirm()
+  const { t } = useLanguage()
   const [creatingTimeline, setCreatingTimeline] = useState(false)
   const [newTimelineName, setNewTimelineName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -86,7 +88,7 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
         <div className="flex items-center justify-between">
           <MetaLabel asChild>
             <p>
-              {branches.length} {branches.length === 1 ? 'timeline' : 'timelines'}
+              {branches.length} {branches.length === 1 ? t('timeline.countOne') : t('timeline.countMany')}
             </p>
           </MetaLabel>
           <Button
@@ -96,7 +98,7 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
             onClick={() => setCreatingTimeline(true)}
           >
             <Plus className="size-3" />
-            New Timeline
+            {t('timeline.newTimeline')}
           </Button>
         </div>
 
@@ -106,7 +108,7 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
               type="text"
               value={newTimelineName}
               onChange={(e) => setNewTimelineName(e.target.value)}
-              placeholder="Timeline name..."
+              placeholder={t('timeline.namePlaceholder')}
               className="flex-1 h-7 rounded-md border border-border/50 bg-background px-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
               autoFocus
               onKeyDown={(e) => {
@@ -187,8 +189,8 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
                       </p>
                       {parent && (
                         <p className="text-[0.625rem] text-muted-foreground truncate">
-                          from {parent.name}
-                          {branch.forkAfterIndex !== undefined && ` at section ${branch.forkAfterIndex + 1}`}
+                          {t('timeline.from')} {parent.name}
+                          {branch.forkAfterIndex !== undefined && ` ${t('timeline.atSection')} ${branch.forkAfterIndex + 1}`}
                         </p>
                       )}
                     </>
@@ -196,14 +198,14 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
                 </div>
 
                 {isActive && (
-                  <span className="text-[0.625rem] text-primary/60 font-medium shrink-0">active</span>
+                  <span className="text-[0.625rem] text-primary/60 font-medium shrink-0">{t('timeline.active')}</span>
                 )}
 
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-all"
                     onClick={() => startRename(branch)}
-                    title="Rename"
+                    title={t('timeline.rename')}
                   >
                     <Pencil className="size-3" />
                   </button>
@@ -211,11 +213,11 @@ export function TimelineManagerPanel({ storyId }: TimelineManagerPanelProps) {
                     <button
                       className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
                       onClick={async () => {
-                        if (await confirm({ title: `Delete timeline "${branch.name}"?`, description: 'This cannot be undone.', confirmText: 'Delete', destructive: true })) {
+                        if (await confirm({ title: `${t('timeline.deleteConfirmPrefix')} "${branch.name}"?`, description: t('timeline.deleteConfirmDescription'), confirmText: t('timeline.delete'), destructive: true })) {
                           deleteMutation.mutate(branch.id)
                         }
                       }}
-                      title="Delete timeline"
+                      title={t('timeline.deleteTimeline')}
                     >
                       <Trash2 className="size-3" />
                     </button>
