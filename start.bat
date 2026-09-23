@@ -119,7 +119,7 @@ echo [Errata] Bun installed successfully.
 exit /b 0
 
 :ensure_node_compat
-where node.exe >nul 2>&1
+where node >nul 2>&1
 if not errorlevel 1 exit /b 0
 
 if not defined TEMP set "TEMP=%USERPROFILE%\AppData\Local\Temp"
@@ -131,32 +131,28 @@ if not exist "%ERRATA_NODE_SHIM%" (
   exit /b 1
 )
 
-del /q "%ERRATA_NODE_SHIM%\node.exe" >nul 2>&1
-mklink /H "%ERRATA_NODE_SHIM%\node.exe" "%BUN_EXE%" >nul 2>&1
-if errorlevel 1 (
-  copy /Y "%BUN_EXE%" "%ERRATA_NODE_SHIM%\node.exe" >nul
-  if errorlevel 1 (
-    echo [Errata] ERROR: Could not prepare the Bun Node compatibility shim.
-    exit /b 1
-  )
+> "%ERRATA_NODE_SHIM%\node.cmd" echo @echo off
+>> "%ERRATA_NODE_SHIM%\node.cmd" echo "%%BUN_EXE%%" %%*
+if not exist "%ERRATA_NODE_SHIM%\node.cmd" (
+  echo [Errata] ERROR: Could not prepare the Bun Node compatibility shim.
+  exit /b 1
 )
 
 set "PATH=%ERRATA_NODE_SHIM%;%PATH%"
-where node.exe >nul 2>&1
+where node >nul 2>&1
 if errorlevel 1 (
   echo [Errata] ERROR: Bun Node compatibility shim is not reachable.
   exit /b 1
 )
 
-"%ERRATA_NODE_SHIM%\node.exe" --version >nul 2>&1
+call "%ERRATA_NODE_SHIM%\node.cmd" --version >nul 2>&1
 if errorlevel 1 (
   echo [Errata] ERROR: Bun Node compatibility shim could not execute.
   exit /b 1
 )
 
-echo [Errata] Node compatibility: Bun runtime shim
+echo [Errata] Node compatibility: Bun command shim
 exit /b 0
-
 :prepare
 call :validate_repo
 if errorlevel 1 goto :fatal
