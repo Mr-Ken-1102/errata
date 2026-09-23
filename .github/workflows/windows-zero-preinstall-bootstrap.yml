@@ -1,0 +1,126 @@
+name: Windows zero-preinstall bootstrap
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - start.bat
+      - .github/workflows/windows-zero-preinstall-bootstrap.yml
+
+permissions:
+  contents: read
+
+jobs:
+  zero-preinstall-bootstrap:
+    runs-on: windows-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Exercise clean start.bat bootstrap
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $sandbox = Join-Path $env:RUNNER_TEMP 'errata-zero-preinstall'
+          $profile = Join-Path $sandbox 'profile'
+          $stdout = Join-Path $sandbox 'start.stdout.log'
+          $stderr = Join-Path $sandbox 'start.stderr.log'
+          New-Item -ItemType Directory -Force -Path $profile | Out-Null
+
+          # Isolate the launcher from runner-installed Git, Node.js, and Bun.
+          $env:USERPROFILE = $profile
+          Remove-Item Env:BUN_INSTALL -ErrorAction SilentlyContinue
+          $env:PATH = @(
+            "$env:SystemRoot\System32"
+            "$env:SystemRoot"
+            "$env:SystemRoot\System32\Wbem"
+            "$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          ) -join ';'
+          $env:ERRATA_NO_PAUSE = '1'
+
+          $where = "$env:SystemRoot\System32\where.exe"
+          foreach ($command in @('bun.exe', 'node.exe', 'git.exe')) {
+            & $where $command *> $null
+            if ($LASTEXITCODE -eq 0) {
+              throw "Clean-bootstrap precondition failed: $command is still reachable on PATH."
+            }
+          }
+
+          $bun = Join-Path $profile '.bun\bin\bun.exe'
+          if (Test-Path $bun) {
+            throw "Clean-bootstrap precondition failed: isolated Bun already exists at $bun."
+          }
+
+          $cmd = "$env:SystemRoot\System32\cmd.exe"
+          $proc = $null
+          try {
+            $proc = Start-Process -FilePath $cmd -ArgumentList @('/d', '/c', 'call start.bat web') -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+
+            $bunInstalled = $false
+            for ($attempt = 0; $attempt -lt 180; $attempt++) {
+              if (Test-Path $bun) {
+                $bunInstalled = $true
+                break
+              }
+              if ($proc.HasExited) {
+                break
+              }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $bunInstalled) {
+              throw 'start.bat did not install Bun into the isolated user profile.'
+            }
+
+            & $bun --version
+            if ($LASTEXITCODE -ne 0) {
+              throw 'The Bun installed by start.bat could not execute.'
+            }
+
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 240; $attempt++) {
+              if ($proc.HasExited) {
+                break
+              }
+              try {
+                $response = Invoke-WebRequest 'http://127.0.0.1:7739/api/health' -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $healthy = $true
+                  break
+                }
+              } catch {
+                # Dependency setup or the dev server is still starting.
+              }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $healthy) {
+              throw 'Errata did not become healthy after zero-preinstall bootstrap.'
+            }
+
+            $log = Get-Content $stdout -Raw
+            foreach ($required in @(
+              '[Errata] Bun is not installed.',
+              '[Errata] Installing Bun...',
+              '[Errata] Bun installed successfully.',
+              '[Errata] Preparing dependencies...',
+              '[Errata] Starting Errata web mode...'
+            )) {
+              if (-not $log.Contains($required)) {
+                throw "Expected bootstrap evidence missing from launcher output: $required"
+              }
+            }
+
+            Write-Host '[Errata CI] Zero-preinstall bootstrap succeeded.'
+          } catch {
+            Write-Host '--- start.bat stdout ---'
+            if (Test-Path $stdout) { Get-Content $stdout }
+            Write-Host '--- start.bat stderr ---'
+            if (Test-Path $stderr) { Get-Content $stderr }
+            throw
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              & "$env:SystemRoot\System32\taskkill.exe" /PID $proc.Id /T /F *> $null
+            }
+          }
