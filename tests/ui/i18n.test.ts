@@ -52,6 +52,8 @@ describe('translation fallback', () => {
   it('returns Vietnamese text when the key has a Vietnamese translation', () => {
     expect(translate('vi', 'settings.language.heading')).toBe('Ngôn ngữ')
     expect(translate('vi', 'common.learnMore')).toBe('Tìm hiểu thêm')
+    expect(translate('vi', 'sidebar.story')).toBe('Truyện')
+    expect(translate('vi', 'sidebar.settings')).toBe('Cài đặt')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -550,6 +552,34 @@ describe('language UI wiring', () => {
     expect(settingsSource).toContain('helpTopic="settings#prompt-control"')
     expect(settingsSource).toContain('helpTopic="librarian#auto-suggestions"')
     expect(settingsSource).toContain('helpTopic="settings#plugins"')
+  })
+
+  it('localizes the story sidebar without changing section ids, custom fragment names, plugin titles, or archive drag semantics', () => {
+    const sidebarSource = readFileSync('src/components/sidebar/StorySidebar.tsx', 'utf8')
+
+    expect(sidebarSource).toContain('useLanguage()')
+    expect(sidebarSource).toContain("t('sidebar.story')")
+    expect(sidebarSource).toContain("t('sidebar.storySetup')")
+    expect(sidebarSource).toContain("t('sidebar.fragments')")
+    expect(sidebarSource).toContain("t('sidebar.settings')")
+    expect(sidebarSource).toContain("id: 'fragments' as const")
+    expect(sidebarSource).toContain("id: 'guidelines' as const")
+    expect(sidebarSource).toContain("id: 'characters' as const")
+    expect(sidebarSource).toContain("id: 'knowledge' as const")
+    expect(sidebarSource).toContain("activeSection === 'agent-activity'")
+    expect(sidebarSource).toContain("activeSection === 'fragment-types'")
+    expect(sidebarSource).toContain("activeSection === 'context-order'")
+    expect(sidebarSource).toContain("activeSection === 'branches'")
+    expect(sidebarSource).toContain("activeSection === 'archive'")
+    expect(sidebarSource).toContain("activeSection === 'settings'")
+    expect(sidebarSource).toContain('tooltip={section.name}')
+    expect(sidebarSource).toContain('<span>{section.name}</span>')
+    expect(sidebarSource).toContain('tooltip={plugin.title}')
+    expect(sidebarSource).toContain('<span>{plugin.title}</span>')
+    expect(sidebarSource).toContain("application/x-errata-fragment-id")
+    expect(sidebarSource).toContain("archiveMutation.mutate(fragmentId)")
+    expect(sidebarSource).toContain("tooltip="ErrataNet"")
+    expect(sidebarSource).toContain("<span>ErrataNet</span>")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
