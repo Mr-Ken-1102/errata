@@ -69,6 +69,7 @@ describe('translation fallback', () => {
     expect(translate('vi', 'erratanet.browser.title')).toBe('Duyệt và cài đặt pack')
     expect(translate('vi', 'erratanet.agentConfig.heading')).toBe('Cấu hình agent')
     expect(translate('vi', 'erratanet.agentConfig.presetRunsCode')).toContain('chạy mã')
+    expect(translate('vi', 'erratanet.agentConfig.chooseWhatToApply')).toBe('Chọn phần cần áp dụng')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -331,6 +332,26 @@ describe('language UI wiring', () => {
     expect(sectionSource).toContain('{preset.name}')
     expect(sectionSource).toContain('{preset.source.pack}')
     expect(sectionSource).toContain("setSavingName(storyName ? `${storyName} setup` : '')")
+  })
+
+  it('localizes agent-config import chrome without changing inspect/apply payloads, script consent gates, or hub manifest content', () => {
+    const importSource = readFileSync('src/components/erratanet/AgentConfigImportView.tsx', 'utf8')
+
+    expect(importSource).toContain('useLanguage()')
+    expect(importSource).toContain("t('erratanet.agentConfig.chooseWhatToApply')")
+    expect(importSource).toContain("api.erratanet.agentConfig.inspect(id, version)")
+    expect(importSource).toContain("queryKey: ['agent-config-inspect', id, version ?? 'latest']")
+    expect(importSource).toContain('selection: toSelectionPayload(selection)')
+    expect(importSource).toContain('consentToScripts: hasSelectedScripts && consent ? true : undefined')
+    expect(importSource).toContain('...(applyToStory && storyId ? { applyToStoryId: storyId } : {})')
+    expect(importSource).toContain('...(savePreset ? { savePreset: { name: presetName.trim() || data?.manifest.title || id } } : {})')
+    expect(importSource).toContain('const scripts = data ? selectedScripts(selection, data.preview) : []')
+    expect(importSource).toContain('const needsConsent = hasSelectedScripts && applyToStory')
+    expect(importSource).toContain('const consentOk = !needsConsent || consent')
+    expect(importSource).toContain('{manifest.title}')
+    expect(importSource).toContain('{manifest.description}')
+    expect(importSource).toContain('{s.content}')
+    expect(importSource).toContain('{s.blockName}')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
