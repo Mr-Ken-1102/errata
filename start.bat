@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 
 rem ============================================================================
 rem Errata Windows source launcher
@@ -166,10 +166,10 @@ echo [Errata] Source data directory: "%DATA_DIR%"
 echo [Errata] The first launch can take longer while the app is compiled.
 echo.
 "%BUN_EXE%" run electron:dev
-set "ERRATA_EXIT=!ERRORLEVEL!"
-if not "!ERRATA_EXIT!"=="0" (
+set "ERRATA_EXIT=%ERRORLEVEL%"
+if not "%ERRATA_EXIT%"=="0" (
   echo.
-  echo [Errata] ERROR: Errata desktop mode exited with code !ERRATA_EXIT!.
+  echo [Errata] ERROR: Errata desktop mode exited with code %ERRATA_EXIT%.
   goto :fatal_code
 )
 
@@ -184,10 +184,10 @@ echo [Errata] URL: http://localhost:7739
 echo [Errata] Source data directory: "%DATA_DIR%"
 echo.
 "%BUN_EXE%" run dev
-set "ERRATA_EXIT=!ERRORLEVEL!"
-if not "!ERRATA_EXIT!"=="0" (
+set "ERRATA_EXIT=%ERRORLEVEL%"
+if not "%ERRATA_EXIT%"=="0" (
   echo.
-  echo [Errata] ERROR: Errata web mode exited with code !ERRATA_EXIT!.
+  echo [Errata] ERROR: Errata web mode exited with code %ERRATA_EXIT%.
   goto :fatal_code
 )
 
@@ -259,7 +259,7 @@ if not defined ERRATA_NO_PAUSE (
   echo [Errata] Press any key to close this window.
   pause >nul
 )
-exit /b !ERRATA_EXIT!
+exit /b %ERRATA_EXIT%
 
 :fatal
 set "ERRATA_EXIT=1"
