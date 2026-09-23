@@ -9,7 +9,7 @@ rem No preinstalled Git, Node.js, or Bun is required.
 rem
 rem First run:
 rem   - Uses Windows PowerShell to install Bun for the current user when missing.
-rem   - Installs the exact dependencies locked by bun.lock.
+rem   - Prepares project dependencies using the repository-standard Bun command.
 rem   - Starts the Electron desktop development shell.
 rem
 rem Modes:
@@ -204,10 +204,12 @@ if not defined DATA_DIR set "DATA_DIR=%CD%\data"
 echo [Errata] Checking Windows source launcher...
 echo [Errata] Repository: "%CD%"
 
+set "BUN_AVAILABLE=1"
 call :find_bun
 if errorlevel 1 (
+  set "BUN_AVAILABLE=0"
   echo [Errata] Bun: NOT INSTALLED
-  echo [Errata] Default desktop/web mode will install it automatically.
+  echo [Errata] Default desktop/web mode will install it automatically when PowerShell is available.
 ) else (
   echo [Errata] Bun: "%BUN_EXE%"
   "%BUN_EXE%" --version
@@ -227,7 +229,12 @@ for %%F in ("scripts\electron-dev.mjs" "desktop\main.ts" "desktop\preload.ts" "e
 call :find_powershell
 if errorlevel 1 (
   echo [Errata] PowerShell: NOT FOUND
-  echo [Errata] Automatic Bun installation will not be available.
+  if "%BUN_AVAILABLE%"=="0" (
+    echo [Errata] ERROR: Neither Bun nor PowerShell is available.
+    echo [Errata] Automatic first-run setup cannot continue on this Windows installation.
+    exit /b 1
+  )
+  echo [Errata] Bun is already installed, so PowerShell is not required for this run.
 ) else (
   echo [Errata] PowerShell: available
 )
