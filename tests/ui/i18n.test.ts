@@ -62,6 +62,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.generation.outputFormat')).toBe('Định dạng đầu ra')
     expect(translate('vi', 'settings.authoring.heading')).toBe('Soạn thảo')
     expect(translate('vi', 'settings.authoring.addTransform')).toBe('Thêm thao tác biến đổi')
+    expect(translate('vi', 'settings.remote.heading')).toBe('Truy cập từ xa')
+    expect(translate('vi', 'settings.remote.httpWarning')).toContain('HTTP thuần')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -222,6 +224,26 @@ describe('language UI wiring', () => {
     expect(themeSource).toContain("const WRITING_TRANSFORMS_KEY = 'errata-writing-transforms'")
     expect(themeSource).toContain("{ id: 'inner-thoughts', label: 'Add inner thoughts', instruction: 'Add inner thoughts and internal monologue")
     expect(themeSource).toContain("{ id: 'remove-llmism', label: 'Remove LLM-isms', instruction: 'Identify and remove common language patterns")
+  })
+
+  it('localizes Remote presentation without changing sharing API calls, credential fields, network ids, or server errors', () => {
+    const sharingSource = readFileSync('src/components/settings/SharingPanel.tsx', 'utf8')
+
+    expect(sharingSource).toContain('useLanguage()')
+    expect(sharingSource).toContain("t('settings.remote.heading')")
+    expect(sharingSource).toContain("t('settings.remote.httpWarning')")
+    expect(sharingSource).toContain('api.sharing.getStatus()')
+    expect(sharingSource).toContain('api.sharing.setAuth(data)')
+    expect(sharingSource).toContain('api.sharing.setLan(en)')
+    expect(sharingSource).toContain('api.sharing.setTunnel(en)')
+    expect(sharingSource).toContain("useState('errata')")
+    expect(sharingSource).toContain("username: username.trim() || 'errata'")
+    expect(sharingSource).toContain('password })')
+    expect(sharingSource).toContain("s.tunnel.status === 'downloading' || s.tunnel.status === 'starting'")
+    expect(sharingSource).toContain("status?.tunnel.status === 'running'")
+    expect(sharingSource).toContain("status.tunnel.error || t('settings.remote.tunnelError')")
+    expect(sharingSource).toContain('url={status.lan.url}')
+    expect(sharingSource).toContain('url={status.tunnel.url}')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
