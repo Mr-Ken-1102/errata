@@ -517,7 +517,7 @@ export function ProseWritingPanel({
       }, { branchId })
 
       if (result.status === 'error') {
-        setSelectionTransformReasoning(result.error ?? 'Transform failed')
+        setSelectionTransformReasoning(result.error ?? tr('proseWriting.transformFailed'))
         return
       }
       if (result.status === 'cancelled') return
@@ -720,7 +720,7 @@ export function ProseWritingPanel({
                   disabled={isTransformingSelection || !hasSelection}
                 >
                   {isTransformingSelection && selectionTransformMode === 'rewrite' ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                  Rewrite
+                  {tr('proseWriting.rewrite')}
                 </Button>
                 <Button
                   size="sm"
@@ -730,7 +730,7 @@ export function ProseWritingPanel({
                   disabled={isTransformingSelection || !hasSelection}
                 >
                   {isTransformingSelection && selectionTransformMode === 'expand' ? <Loader2 className="size-3 animate-spin" /> : <Wand2 className="size-3" />}
-                  Expand
+                  {tr('proseWriting.expand')}
                 </Button>
                 <Button
                   size="sm"
@@ -740,7 +740,7 @@ export function ProseWritingPanel({
                   disabled={isTransformingSelection || !hasSelection}
                 >
                   {isTransformingSelection && selectionTransformMode === 'compress' ? <Loader2 className="size-3 animate-spin" /> : <Minimize2 className="size-3" />}
-                  Compress
+                  {tr('proseWriting.compress')}
                 </Button>
                 {showTransformUndo && !isTransformingSelection && (
                   <div className="flex items-center ml-auto pl-1 border-l border-border/30">
@@ -754,7 +754,7 @@ export function ProseWritingPanel({
                       }}
                     >
                       <Undo2 className="size-2.5" />
-                      Undo
+                      {tr('proseWriting.undo')}
                     </Button>
                   </div>
                 )}
@@ -782,10 +782,10 @@ export function ProseWritingPanel({
               {/* Reasoning stream */}
               {(isTransformingSelection || selectionTransformReasoning.trim()) && (
                 <div className="border-t border-border/50 px-2.5 py-2">
-                  <p className="mb-1 text-[0.625rem] uppercase tracking-wide text-muted-foreground">Reasoning</p>
+                  <p className="mb-1 text-[0.625rem] uppercase tracking-wide text-muted-foreground">{tr('proseWriting.reasoning')}</p>
                   <div className="max-h-36 overflow-y-auto overscroll-contain pr-1">
                     <p className="text-[0.6875rem] leading-relaxed text-muted-foreground whitespace-pre-wrap">
-                      {selectionTransformReasoning.trim() || 'Thinking\u2026'}
+                      {selectionTransformReasoning.trim() || tr('proseWriting.thinking')}
                     </p>
                   </div>
                 </div>
