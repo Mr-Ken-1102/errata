@@ -26,12 +26,16 @@ jobs:
 
           $sandbox = Join-Path $env:RUNNER_TEMP 'errata-zero-preinstall'
           $profile = Join-Path $sandbox 'profile'
+          $localAppData = Join-Path $profile 'AppData\Local'
+          $appData = Join-Path $profile 'AppData\Roaming'
           $stdout = Join-Path $sandbox 'start.stdout.log'
           $stderr = Join-Path $sandbox 'start.stderr.log'
-          New-Item -ItemType Directory -Force -Path $profile | Out-Null
+          New-Item -ItemType Directory -Force -Path $profile, $localAppData, $appData | Out-Null
 
           # Isolate the launcher from runner-installed Git, Node.js, and Bun.
           $env:USERPROFILE = $profile
+          $env:LOCALAPPDATA = $localAppData
+          $env:APPDATA = $appData
           Remove-Item Env:BUN_INSTALL -ErrorAction SilentlyContinue
           $env:PATH = @(
             "$env:SystemRoot\System32"
@@ -50,8 +54,12 @@ jobs:
           }
 
           $bun = Join-Path $profile '.bun\bin\bun.exe'
+          $node = Join-Path $localAppData 'Errata\runtime\node-v22.23.2-win-x64\node.exe'
           if (Test-Path $bun) {
             throw "Clean-bootstrap precondition failed: isolated Bun already exists at $bun."
+          }
+          if (Test-Path $node) {
+            throw "Clean-bootstrap precondition failed: isolated portable Node.js already exists at $node."
           }
 
           $cmd = "$env:SystemRoot\System32\cmd.exe"
@@ -79,6 +87,26 @@ jobs:
               throw 'The Bun installed by start.bat could not execute.'
             }
 
+            $nodeInstalled = $false
+            for ($attempt = 0; $attempt -lt 180; $attempt++) {
+              if (Test-Path $node) {
+                $nodeInstalled = $true
+                break
+              }
+              if ($proc.HasExited) {
+                break
+              }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $nodeInstalled) {
+              throw 'start.bat did not install the isolated portable Node.js runtime.'
+            }
+
+            & $node --version
+            if ($LASTEXITCODE -ne 0) {
+              throw 'The portable Node.js runtime installed by start.bat could not execute.'
+            }
+
             $healthy = $false
             for ($attempt = 0; $attempt -lt 240; $attempt++) {
               if ($proc.HasExited) {
@@ -104,6 +132,7 @@ jobs:
               '[Errata] Bun is not installed.',
               '[Errata] Installing Bun...',
               '[Errata] Bun installed successfully.',
+              '[Errata] Portable Node.js installed successfully.',
               '[Errata] Preparing dependencies...',
               '[Errata] Starting Errata web mode...'
             )) {
