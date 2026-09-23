@@ -647,7 +647,7 @@ export function SettingsPanel({
 
       {/* Generation */}
       <SettingsSection id="set-generation" label="Generation" group="Writing">
-        <SectionHeading label={t('settings.generation.heading')} helpTopic="generation#overview" />
+        <SectionHeading label={t('settings.generation.heading')} helpTopic="generation#overview" helpLabel={t('common.learnMore')} />
         <div className="space-y-3">
           <SettingsGroup title={t('settings.generation.workflow')} description={t('settings.generation.workflowDescription')}>
             <SettingRow label={t('settings.generation.mode')} description={t('settings.generation.modeDescription')}>
@@ -685,7 +685,7 @@ export function SettingsPanel({
                 </SettingRow>
               </>
             )}
-            <SettingRow label={t('settings.generation.outputFormat')} helpTopic="generation#output-format">
+            <SettingRow label={t('settings.generation.outputFormat')} helpTopic="generation#output-format" helpLabel={t('common.learnMore')}>
               <SegmentedControl
                 value={story.settings.outputFormat}
                 options={[
@@ -696,7 +696,7 @@ export function SettingsPanel({
                 disabled={updateMutation.isPending}
               />
             </SettingRow>
-            <SettingRow label={t('settings.generation.maxSteps')} description={t('settings.generation.maxStepsDescription')} helpTopic="generation#max-steps">
+            <SettingRow label={t('settings.generation.maxSteps')} description={t('settings.generation.maxStepsDescription')} helpTopic="generation#max-steps" helpLabel={t('common.learnMore')}>
               <NumberField
                 value={story.settings.maxSteps ?? 10}
                 min={1}
@@ -724,7 +724,7 @@ export function SettingsPanel({
           </SettingsGroup>
 
           <SettingsGroup title={t('settings.generation.context')} description={t('settings.generation.contextDescription')}>
-            <SettingRow label={t('settings.generation.fragmentOrdering')} description={t('settings.generation.fragmentOrderingDescription')} helpTopic="settings#prompt-control">
+            <SettingRow label={t('settings.generation.fragmentOrdering')} description={t('settings.generation.fragmentOrderingDescription')} helpTopic="settings#prompt-control" helpLabel={t('common.learnMore')}>
               <SegmentedControl
                 value={story.settings.contextOrderMode ?? 'simple'}
                 options={[
@@ -783,7 +783,7 @@ export function SettingsPanel({
                 label={t('settings.generation.toggleDisableAutoAnalysis')}
               />
             </SettingRow>
-            <SettingRow label={t('settings.generation.autoApplySuggestions')} description={t('settings.generation.autoApplySuggestionsDescription')} helpTopic="librarian#auto-suggestions">
+            <SettingRow label={t('settings.generation.autoApplySuggestions')} description={t('settings.generation.autoApplySuggestionsDescription')} helpTopic="librarian#auto-suggestions" helpLabel={t('common.learnMore')}>
               <Toggle
                 checked={story.settings.autoApplyLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ autoApplyLibrarianSuggestions: next })}
@@ -871,7 +871,7 @@ export function SettingsPanel({
 
       {/* Plugins */}
       <SettingsSection id="set-plugins" label="Plugins" group="System">
-        <SectionHeading label={t('settings.plugins.heading')} helpTopic="settings#plugins" className="mb-3" />
+        <SectionHeading label={t('settings.plugins.heading')} helpTopic="settings#plugins" helpLabel={t('common.learnMore')} className="mb-3" />
         {plugins && plugins.length > 0 ? (
           <div className="space-y-2">
             {plugins.map((plugin) => {

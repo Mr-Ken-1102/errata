@@ -51,6 +51,7 @@ describe('interface language preference', () => {
 describe('translation fallback', () => {
   it('returns Vietnamese text when the key has a Vietnamese translation', () => {
     expect(translate('vi', 'settings.language.heading')).toBe('Ngôn ngữ')
+    expect(translate('vi', 'common.learnMore')).toBe('Tìm hiểu thêm')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -531,6 +532,24 @@ describe('language UI wiring', () => {
     expect(samplingSource).toContain("invalidTitle ?? `Enter a value from ${min} to ${max}${integer ? ' using a whole number' : ''}.`")
     const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
     expect(settingsSource).toContain("invalidTitle={`${t('settings.numberInput.enterValueFrom')} 0 ${t('settings.numberInput.to')} 2.`}")
+  })
+
+  it('localizes shared help tooltips without coupling settings primitives to language context', () => {
+    const primitiveSource = readFileSync('src/components/settings/primitives.tsx', 'utf8')
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+
+    expect(primitiveSource).toContain("helpLabel = 'Learn more'")
+    expect(primitiveSource).toContain('helpLabel?: string')
+    expect(primitiveSource).toContain('title={helpLabel}')
+    expect(primitiveSource).not.toContain("useLanguage()")
+    expect(settingsSource).toContain("helpLabel={t('common.learnMore')}")
+    expect(settingsSource.match(/helpLabel=\{t\('common\.learnMore'\)\}/g)?.length).toBe(6)
+    expect(settingsSource).toContain('helpTopic="generation#overview"')
+    expect(settingsSource).toContain('helpTopic="generation#output-format"')
+    expect(settingsSource).toContain('helpTopic="generation#max-steps"')
+    expect(settingsSource).toContain('helpTopic="settings#prompt-control"')
+    expect(settingsSource).toContain('helpTopic="librarian#auto-suggestions"')
+    expect(settingsSource).toContain('helpTopic="settings#plugins"')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

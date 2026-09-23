@@ -24,6 +24,7 @@ interface LanguageStorageWriter {
 const EN_MESSAGES = {
   'app.name': 'Errata',
   'settings.language.heading': 'Language',
+  'common.learnMore': 'Learn more',
   'settings.language.label': 'Interface language',
   'settings.language.description': 'Changes Errata interface text only. Story content and generation language are unchanged.',
   'settings.language.english': 'English',
@@ -608,6 +609,7 @@ export type TranslationKey = keyof typeof EN_MESSAGES
 
 const VI_MESSAGES: Partial<Record<TranslationKey, string>> = {
   'settings.language.heading': 'Ngôn ngữ',
+  'common.learnMore': 'Tìm hiểu thêm',
   'settings.language.label': 'Ngôn ngữ giao diện',
   'settings.language.description': 'Chỉ thay đổi chữ trên giao diện Errata. Nội dung truyện và ngôn ngữ tạo văn bản không thay đổi.',
   'settings.language.english': 'English',
