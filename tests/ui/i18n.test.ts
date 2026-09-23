@@ -74,6 +74,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'proseWriting.passages')).toBe('Các đoạn')
     expect(translate('vi', 'proseWriting.rewrite')).toBe('Viết lại')
     expect(translate('vi', 'proseWriting.reasoning')).toBe('Lập luận')
+    expect(translate('vi', 'proseWriting.shortcutSave')).toBe('lưu')
+    expect(translate('vi', 'proseWriting.readLabel')).toBe('đọc')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -821,6 +823,24 @@ describe('language UI wiring', () => {
     expect(writingSource).toContain("setShowTransformUndo(false)")
     expect(writingSource).toContain("tr('proseWriting.rewrite')")
     expect(writingSource).toContain("tr('proseWriting.thinking')")
+  })
+
+  it('localizes prose-writing footer chrome without changing reading-time math or editor statistics', () => {
+    const writingSource = readFileSync('src/components/prose/ProseWritingPanel.tsx', 'utf8')
+
+    expect(writingSource).toContain('const minutes = Math.ceil(words / 238)')
+    expect(writingSource).toContain("if (minutes < 1) return '<1m'")
+    expect(writingSource).toContain('return `${minutes}m`')
+    expect(writingSource).toContain('editorStats.words.toLocaleString()')
+    expect(writingSource).toContain('editorStats.chars.toLocaleString()')
+    expect(writingSource).toContain('editorStats.tokens.toLocaleString()')
+    expect(writingSource).toContain('editorStats.paragraphs')
+    expect(writingSource).toContain("tr('proseWriting.shortcutSave')")
+    expect(writingSource).toContain("tr('proseWriting.shortcutClose')")
+    expect(writingSource).toContain("tr('proseWriting.shortcutPassages')")
+    expect(writingSource).toContain("tr('proseWriting.readLabel')")
+    expect(writingSource).toContain('Ctrl+S {tr(')
+    expect(writingSource).toContain('Alt+&uarr;&darr;')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

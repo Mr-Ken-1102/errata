@@ -838,7 +838,7 @@ export function ProseWritingPanel({
         {/* Footer */}
         <div className="shrink-0 border-t border-border/30 px-4 py-2 sm:px-6 flex items-center justify-between gap-4">
           <span className="text-[0.625rem] text-muted-foreground hidden sm:inline">
-            Ctrl+S save &middot; Esc close &middot; Alt+&uarr;&darr; passages
+            Ctrl+S {tr('proseWriting.shortcutSave')} &middot; Esc {tr('proseWriting.shortcutClose')} &middot; Alt+&uarr;&darr; {tr('proseWriting.shortcutPassages')}
           </span>
           <span className="text-[0.625rem] text-muted-foreground sm:hidden">
             Ctrl+S &middot; Esc
@@ -848,7 +848,7 @@ export function ProseWritingPanel({
             &middot; {editorStats.chars.toLocaleString()}c
             &middot; ~{editorStats.tokens.toLocaleString()}t
             &middot; {editorStats.paragraphs}&para;
-            &middot; {readingTime(editorStats.words)} read
+            &middot; {readingTime(editorStats.words)} {tr('proseWriting.readLabel')}
           </span>
         </div>
       </div>
