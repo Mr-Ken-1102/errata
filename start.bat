@@ -105,7 +105,7 @@ if errorlevel 1 (
 
 echo [Errata] Installing Bun...
 "%POWERSHELL_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Stop'; irm https://bun.sh/install.ps1 ^| iex"
+  "$ErrorActionPreference='Stop'; Invoke-RestMethod 'https://bun.sh/install.ps1' | Invoke-Expression"
 if errorlevel 1 (
   echo [Errata] ERROR: Bun installation failed.
   echo [Errata] Check your internet connection or security software and try again.
@@ -170,7 +170,7 @@ echo [Errata] Starting Errata desktop mode...
 echo [Errata] Source data directory: "%DATA_DIR%"
 echo [Errata] The first launch can take longer while the app is compiled.
 echo.
-call "%BUN_EXE%" run electron:dev
+"%BUN_EXE%" run electron:dev
 set "ERRATA_EXIT=!ERRORLEVEL!"
 if not "!ERRATA_EXIT!"=="0" (
   echo.
@@ -188,7 +188,7 @@ echo [Errata] Starting Errata web mode...
 echo [Errata] URL: http://localhost:7739
 echo [Errata] Source data directory: "%DATA_DIR%"
 echo.
-call "%BUN_EXE%" run dev
+"%BUN_EXE%" run dev
 set "ERRATA_EXIT=!ERRORLEVEL!"
 if not "!ERRATA_EXIT!"=="0" (
   echo.
