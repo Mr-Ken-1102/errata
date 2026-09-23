@@ -66,6 +66,7 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.remote.httpWarning')).toContain('HTTP thuần')
     expect(translate('vi', 'settings.erratanet.description')).toContain('pack cộng đồng')
     expect(translate('vi', 'erratanet.account.logIn')).toBe('Đăng nhập')
+    expect(translate('vi', 'erratanet.browser.title')).toBe('Duyệt và cài đặt pack')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -273,6 +274,32 @@ describe('language UI wiring', () => {
     expect(panelSource).toContain('pack={fp.pack}')
     expect(panelSource).toContain('hubUrl={config?.hubUrl}')
     expect(panelSource).toContain('storyName={story.name}')
+  })
+
+  it('localizes ErrataNet browsing chrome without changing pack references, install payloads, hub metadata, or agent-config routing', () => {
+    const browserSource = readFileSync('src/components/erratanet/ErratanetBrowserPanel.tsx', 'utf8')
+
+    expect(browserSource).toContain('useLanguage()')
+    expect(browserSource).toContain("t('erratanet.browser.title')")
+    expect(browserSource).toContain("api.erratanet.search(q)")
+    expect(browserSource).toContain("api.erratanet.getPack(id, version)")
+    expect(browserSource).toContain("pack.contentKind === 'agent-config'")
+    expect(browserSource).toContain("setConfigRef({ id: pack.id, version: version ?? pack.version })")
+    expect(browserSource).toContain("api.erratanet.install({")
+    expect(browserSource).toContain('id: selected.id')
+    expect(browserSource).toContain('version: selected.version')
+    expect(browserSource).toContain("targetStoryId: asNewStory ? undefined : storyId")
+    expect(browserSource).toContain("asNewStory")
+    expect(browserSource).toContain('result.title')
+    expect(browserSource).toContain('result.description')
+    expect(browserSource).toContain('result.tags')
+    expect(browserSource).toContain('result.fragmentTypes')
+    expect(browserSource).toContain('pack.title')
+    expect(browserSource).toContain('pack.description')
+    expect(browserSource).toContain('pack.license')
+    expect(browserSource).toContain('pack.tags')
+    expect(browserSource).toContain('pack.fragmentTypes')
+    expect(browserSource).toContain("const type InstallTarget = 'this-story' | 'new-story'")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
