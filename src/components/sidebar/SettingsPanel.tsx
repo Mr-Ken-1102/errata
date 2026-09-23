@@ -811,7 +811,7 @@ export function SettingsPanel({
 
       {/* Authoring (transforms + guided prompts) */}
       <SettingsSection id="set-authoring" label="Authoring" group="Writing">
-<SectionHeading label={t('settings.authoring.heading')} />
+        <SectionHeading label={t('settings.authoring.heading')} />
         <div className="space-y-6">
           <div className="space-y-2.5">
             <div>

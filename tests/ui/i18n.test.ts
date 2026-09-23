@@ -206,8 +206,8 @@ describe('language UI wiring', () => {
     expect(settingsSource).toContain('const DEFAULT_SUGGEST = `Based on everything in the story so far, suggest exactly {{count}} possible directions')
 
     expect(transformsSource).toContain('useLanguage()')
-    expect(transformsSource).toContain("t('settings.authoring.transformLabel')")
-    expect(transformsSource).toContain("t('settings.authoring.transformInstruction')")
+    expect(transformsSource).toContain("tr('settings.authoring.transformLabel')")
+    expect(transformsSource).toContain("tr('settings.authoring.transformInstruction')")
     expect(transformsSource).toContain("label: 'New transform'")
     expect(transformsSource).toContain("instruction: ''")
     expect(transformsSource).toContain('value={t.label}')
