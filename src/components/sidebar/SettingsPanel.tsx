@@ -644,15 +644,15 @@ export function SettingsPanel({
 
       {/* Generation */}
       <SettingsSection id="set-generation" label="Generation" group="Writing">
-        <SectionHeading label="Generation" helpTopic="generation#overview" />
+        <SectionHeading label={t('settings.generation.heading')} helpTopic="generation#overview" />
         <div className="space-y-3">
-          <SettingsGroup title="Workflow" description="How prose generation runs and what the model is allowed to do.">
-            <SettingRow label="Generation mode" description="How prose generation is handled">
+          <SettingsGroup title={t('settings.generation.workflow')} description={t('settings.generation.workflowDescription')}>
+            <SettingRow label={t('settings.generation.mode')} description={t('settings.generation.modeDescription')}>
               <SegmentedControl
                 value={(story.settings.generationMode ?? 'standard') as 'standard' | 'prewriter'}
                 options={[
-                  { value: 'standard' as const, label: 'Standard' },
-                  { value: 'prewriter' as const, label: 'Prewriter' },
+                  { value: 'standard' as const, label: t('settings.generation.standard') },
+                  { value: 'prewriter' as const, label: t('settings.generation.prewriter') },
                 ]}
                 onChange={(v) => updateMutation.mutate({ generationMode: v })}
                 disabled={updateMutation.isPending}
@@ -660,40 +660,40 @@ export function SettingsPanel({
             </SettingRow>
             {(story.settings.generationMode ?? 'standard') === 'prewriter' && (
               <>
-                <SettingRow label="Prewriter reasoning" description="How much the prewriter deliberates. Short favors speed; Extensive favors depth.">
+                <SettingRow label={t('settings.generation.prewriterReasoning')} description={t('settings.generation.prewriterReasoningDescription')}>
                   <SegmentedControl
                     value={(story.settings.prewriterReasoning ?? 'normal') as 'short' | 'normal' | 'extensive'}
                     options={[
-                      { value: 'short' as const, label: 'Short' },
-                      { value: 'normal' as const, label: 'Normal' },
-                      { value: 'extensive' as const, label: 'Extensive' },
+                      { value: 'short' as const, label: t('settings.generation.reasoningShort') },
+                      { value: 'normal' as const, label: t('settings.generation.reasoningNormal') },
+                      { value: 'extensive' as const, label: t('settings.generation.reasoningExtensive') },
                     ]}
                     onChange={(v) => updateMutation.mutate({ prewriterReasoning: v })}
                     disabled={updateMutation.isPending}
                   />
                 </SettingRow>
-                <SettingRow label="Clarify before writing" description="Let the prewriter ask you questions when your direction is ambiguous, before it writes.">
+                <SettingRow label={t('settings.generation.clarifyBeforeWriting')} description={t('settings.generation.clarifyBeforeWritingDescription')}>
                   <Toggle
                     checked={story.settings.clarifyBeforeGenerate ?? false}
                     onChange={(next) => updateMutation.mutate({ clarifyBeforeGenerate: next })}
                     disabled={updateMutation.isPending}
-                    label="Toggle clarify before writing"
+                    label={t('settings.generation.toggleClarifyBeforeWriting')}
                   />
                 </SettingRow>
               </>
             )}
-            <SettingRow label="Output format" helpTopic="generation#output-format">
+            <SettingRow label={t('settings.generation.outputFormat')} helpTopic="generation#output-format">
               <SegmentedControl
                 value={story.settings.outputFormat}
                 options={[
-                  { value: 'plaintext', label: 'Plain' },
-                  { value: 'markdown', label: 'Markdown' },
+                  { value: 'plaintext', label: t('settings.generation.plain') },
+                  { value: 'markdown', label: t('settings.generation.markdown') },
                 ]}
                 onChange={(v) => updateMutation.mutate({ outputFormat: v })}
                 disabled={updateMutation.isPending}
               />
             </SettingRow>
-            <SettingRow label="Max steps" description="Tool-use rounds per generation" helpTopic="generation#max-steps">
+            <SettingRow label={t('settings.generation.maxSteps')} description={t('settings.generation.maxStepsDescription')} helpTopic="generation#max-steps">
               <NumberField
                 value={story.settings.maxSteps ?? 10}
                 min={1}
@@ -702,31 +702,31 @@ export function SettingsPanel({
                 disabled={updateMutation.isPending}
               />
             </SettingRow>
-            <SettingRow label="Disable thinking" description="Suppress extended thinking / reasoning mode on models that support it">
+            <SettingRow label={t('settings.generation.disableThinking')} description={t('settings.generation.disableThinkingDescription')}>
               <Toggle
                 checked={story.settings.disableThinking ?? false}
                 onChange={(next) => updateMutation.mutate({ disableThinking: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable thinking"
+                label={t('settings.generation.toggleDisableThinking')}
               />
             </SettingRow>
-            <SettingRow label="Expand thinking by default" description="Show the model's thinking expanded while it generates, instead of collapsed">
+            <SettingRow label={t('settings.generation.expandThinking')} description={t('settings.generation.expandThinkingDescription')}>
               <Toggle
                 checked={story.settings.expandThoughtsByDefault ?? true}
                 onChange={(next) => updateMutation.mutate({ expandThoughtsByDefault: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle expand thinking by default"
+                label={t('settings.generation.toggleExpandThinking')}
               />
             </SettingRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Context" description="How the prompt is assembled before generation starts.">
-            <SettingRow label="Fragment ordering" description="Grouped bundles fragments by type. Custom unlocks the Fragment Order panel for drag-and-drop sequencing." helpTopic="settings#prompt-control">
+          <SettingsGroup title={t('settings.generation.context')} description={t('settings.generation.contextDescription')}>
+            <SettingRow label={t('settings.generation.fragmentOrdering')} description={t('settings.generation.fragmentOrderingDescription')} helpTopic="settings#prompt-control">
               <SegmentedControl
                 value={story.settings.contextOrderMode ?? 'simple'}
                 options={[
-                  { value: 'simple', label: 'Grouped' },
-                  { value: 'advanced', label: 'Custom' },
+                  { value: 'simple', label: t('settings.generation.grouped') },
+                  { value: 'advanced', label: t('settings.generation.custom') },
                 ]}
                 onChange={(v) => updateMutation.mutate({ contextOrderMode: v })}
                 disabled={updateMutation.isPending}
@@ -734,24 +734,24 @@ export function SettingsPanel({
             </SettingRow>
             <div className="px-3 py-2.5">
               <div className="flex items-center gap-1">
-                <p className="text-[0.75rem] font-medium text-foreground/80">Context limit</p>
+                <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.generation.contextLimit')}</p>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); openHelp('generation#context-limit') }}
                   className="text-muted-foreground hover:text-primary/60 transition-colors"
-                  title="Learn more"
+                  title={t('settings.generation.learnMore')}
                 >
                   <CircleHelp className="size-3" />
                 </button>
               </div>
-              <p className="text-[0.625rem] text-muted-foreground mt-0.5 leading-snug">How much recent prose to include</p>
+              <p className="text-[0.625rem] text-muted-foreground mt-0.5 leading-snug">{t('settings.generation.contextLimitDescription')}</p>
               <div className="flex items-center justify-between gap-2 mt-2.5">
                 <SegmentedControl
                   value={(story.settings.contextCompact?.type ?? 'proseLimit') as 'proseLimit' | 'maxTokens' | 'maxCharacters'}
                   options={[
-                    { value: 'proseLimit' as const, label: 'Fragments' },
-                    { value: 'maxTokens' as const, label: 'Tokens' },
-                    { value: 'maxCharacters' as const, label: 'Characters' },
+                    { value: 'proseLimit' as const, label: t('settings.generation.fragments') },
+                    { value: 'maxTokens' as const, label: t('settings.generation.tokens') },
+                    { value: 'maxCharacters' as const, label: t('settings.generation.characters') },
                   ]}
                   onChange={(v) => {
                     const defaults = { proseLimit: 10, maxTokens: 40000, maxCharacters: 160000 } as const
@@ -771,37 +771,37 @@ export function SettingsPanel({
             </div>
           </SettingsGroup>
 
-          <SettingsGroup title="Librarian" description="What happens after prose is generated and the librarian follows up.">
-            <SettingRow label="Disable auto analysis" description="Do not run the librarian automatically after prose generation">
+          <SettingsGroup title={t('settings.generation.librarian')} description={t('settings.generation.librarianDescription')}>
+            <SettingRow label={t('settings.generation.disableAutoAnalysis')} description={t('settings.generation.disableAutoAnalysisDescription')}>
               <Toggle
                 checked={story.settings.disableLibrarianAutoAnalysis ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianAutoAnalysis: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable auto analysis"
+                label={t('settings.generation.toggleDisableAutoAnalysis')}
               />
             </SettingRow>
-            <SettingRow label="Auto-apply suggestions" description="Apply evidence-backed fragment corrections and new reusable records automatically" helpTopic="librarian#auto-suggestions">
+            <SettingRow label={t('settings.generation.autoApplySuggestions')} description={t('settings.generation.autoApplySuggestionsDescription')} helpTopic="librarian#auto-suggestions">
               <Toggle
                 checked={story.settings.autoApplyLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ autoApplyLibrarianSuggestions: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle auto-apply suggestions"
+                label={t('settings.generation.toggleAutoApplySuggestions')}
               />
             </SettingRow>
-            <SettingRow label="Disable automatic directions" description="Skip directions during automatic Librarian analysis; manual suggestions remain available">
+            <SettingRow label={t('settings.generation.disableAutomaticDirections')} description={t('settings.generation.disableAutomaticDirectionsDescription')}>
               <Toggle
                 checked={story.settings.disableLibrarianDirections ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianDirections: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle automatic directions"
+                label={t('settings.generation.toggleAutomaticDirections')}
               />
             </SettingRow>
-            <SettingRow label="Disable suggestions" description="Skip fragment corrections and new-record suggestions during analysis">
+            <SettingRow label={t('settings.generation.disableSuggestions')} description={t('settings.generation.disableSuggestionsDescription')}>
               <Toggle
                 checked={story.settings.disableLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianSuggestions: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable suggestions"
+                label={t('settings.generation.toggleDisableSuggestions')}
               />
             </SettingRow>
           </SettingsGroup>

@@ -58,6 +58,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.appearance.theme')).toBe('Chủ đề')
     expect(translate('vi', 'settings.typography.heading')).toBe('Kiểu chữ')
     expect(translate('vi', 'settings.providers.manageProviders')).toBe('Quản lý nhà cung cấp')
+    expect(translate('vi', 'settings.generation.heading')).toBe('Tạo nội dung')
+    expect(translate('vi', 'settings.generation.outputFormat')).toBe('Định dạng đầu ra')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -148,6 +150,36 @@ describe('language UI wiring', () => {
     expect(settingsSource).toContain('overrides[role.key]?.modelId')
     expect(settingsSource).toContain('resolveProvider(role.key, settings, globalConfig)')
     expect(settingsSource).toContain('temperature }')
+  })
+
+  it('localizes Generation presentation without changing generation values, prompts, or update semantics', () => {
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+
+    expect(settingsSource).toContain("t('settings.generation.heading')")
+    expect(settingsSource).toContain("t('settings.generation.mode')")
+    expect(settingsSource).toContain("t('settings.generation.contextLimit')")
+    expect(settingsSource).toContain("t('settings.generation.disableAutoAnalysis')")
+
+    expect(settingsSource).toContain("value={(story.settings.generationMode ?? 'standard') as 'standard' | 'prewriter'}")
+    expect(settingsSource).toContain("value: 'standard' as const")
+    expect(settingsSource).toContain("value: 'prewriter' as const")
+    expect(settingsSource).toContain("value: 'short' as const")
+    expect(settingsSource).toContain("value: 'normal' as const")
+    expect(settingsSource).toContain("value: 'extensive' as const")
+    expect(settingsSource).toContain("value: 'plaintext'")
+    expect(settingsSource).toContain("value: 'markdown'")
+    expect(settingsSource).toContain("value: 'simple'")
+    expect(settingsSource).toContain("value: 'advanced'")
+    expect(settingsSource).toContain("value: 'proseLimit' as const")
+    expect(settingsSource).toContain("value: 'maxTokens' as const")
+    expect(settingsSource).toContain("value: 'maxCharacters' as const")
+
+    expect(settingsSource).toContain("const DEFAULT_CONTINUE = 'Continue the story naturally. Write the next scene, advancing the plot and developing characters.'")
+    expect(settingsSource).toContain('const DEFAULT_SCENE_SETTING = "Continue the story without advancing the plot.')
+    expect(settingsSource).toContain('const DEFAULT_SUGGEST = `Based on everything in the story so far, suggest exactly {{count}} possible directions')
+    expect(settingsSource).toContain('updateMutation.mutate({ generationMode: v })')
+    expect(settingsSource).toContain('updateMutation.mutate({ contextOrderMode: v })')
+    expect(settingsSource).toContain('updateMutation.mutate({ disableLibrarianAutoAnalysis: next })')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
