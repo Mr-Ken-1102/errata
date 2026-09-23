@@ -55,6 +55,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
     expect(translate('vi', 'settings.proseColors.heading')).toBe('Màu văn bản')
+    expect(translate('vi', 'settings.appearance.theme')).toBe('Chủ đề')
+    expect(translate('vi', 'settings.typography.heading')).toBe('Kiểu chữ')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -113,6 +115,24 @@ describe('language UI wiring', () => {
     expect(updatesSource).toContain('bridge.downloadUpdate()')
     expect(updatesSource).toContain('bridge.installUpdate()')
     expect(updatesSource).toContain("bridge.skipUpdate(state.version ?? '')")
+  })
+
+  it('localizes Appearance and Typography presentation without changing preference values or font roles', () => {
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+
+    expect(settingsSource).toContain('useLanguage()')
+    expect(settingsSource).toContain("t('settings.appearance.theme')")
+    expect(settingsSource).toContain("t('settings.typography.heading')")
+    expect(settingsSource).toContain("value: 'light'")
+    expect(settingsSource).toContain("value: 'dark'")
+    expect(settingsSource).toContain("value: 'high-contrast'")
+    expect(settingsSource).toContain("value: 'narrow'")
+    expect(settingsSource).toContain("value: 'full'")
+    expect(settingsSource).toContain('role="display"')
+    expect(settingsSource).toContain('role="prose"')
+    expect(settingsSource).toContain('role="sans"')
+    expect(settingsSource).toContain('role="mono"')
+    expect(settingsSource).toContain("opt.tag === 'high-visibility'")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {

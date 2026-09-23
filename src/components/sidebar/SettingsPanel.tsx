@@ -17,6 +17,7 @@ import { ProviderSelect } from '@/components/settings/ProviderSelect'
 import { getDesktopBridge, onDesktopBridgeReady } from '@/lib/desktop'
 import { resolveProvider, getInheritLabel } from '@/lib/model-role-helpers'
 import { useInteractionSounds } from '@/lib/interaction-sounds'
+import { useLanguage } from '@/lib/i18n'
 import {
   BUILTIN_FRAGMENT_TYPES,
   compareFragmentTypeVisuals,
@@ -65,6 +66,7 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
   onSelect: (name: string) => void
 }) {
   useEffect(() => { loadFullFontCatalogue() }, [])
+  const { t } = useLanguage()
   const options = FONT_CATALOGUE[role]
   return (
     <div className="px-3 py-2.5">
@@ -86,7 +88,7 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
               {opt.name}
               {opt.tag && (
                 <span className="text-[0.5rem] font-sans font-medium uppercase tracking-wider text-primary/60 bg-primary/8 px-1.5 py-px rounded-full leading-tight">
-                  {opt.tag}
+                  {opt.tag === 'high-visibility' ? t('settings.typography.highVisibility') : opt.tag}
                 </span>
               )}
             </button>
@@ -435,6 +437,7 @@ export function SettingsPanel({
   pluginSidebarVisibility,
 }: SettingsPanelProps) {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
 
   const { data: plugins } = useQuery({
     queryKey: ['plugins'],
@@ -492,27 +495,27 @@ export function SettingsPanel({
     <div className="p-4 space-y-4" data-component-id="settings-panel-root">
       {/* Appearance */}
       <SettingsSection id="set-appearance" label="Appearance" group="Interface">
-        <SectionHeading label="Appearance" />
+        <SectionHeading label={t('settings.appearance.heading')} />
         <SettingsCard>
-          <SettingRow label="Theme">
+          <SettingRow label={t('settings.appearance.theme')}>
             <SegmentedControl
               value={theme}
               options={[
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-                { value: 'high-contrast', label: 'High' },
+                { value: 'light', label: t('settings.appearance.light') },
+                { value: 'dark', label: t('settings.appearance.dark') },
+                { value: 'high-contrast', label: t('settings.appearance.highContrast') },
               ]}
               onChange={setTheme}
             />
           </SettingRow>
-          <SettingRow label="Interaction sounds" description="Play subtle feedback for controls">
+          <SettingRow label={t('settings.appearance.interactionSounds')} description={t('settings.appearance.interactionSoundsDescription')}>
             <Toggle
               checked={interactionSounds}
               onChange={setInteractionSounds}
-              label="Toggle interaction sounds"
+              label={t('settings.appearance.toggleInteractionSounds')}
             />
           </SettingRow>
-          <SettingRow label="UI size" description="Scale the entire interface">
+          <SettingRow label={t('settings.appearance.uiSize')} description={t('settings.appearance.uiSizeDescription')}>
             <SegmentedControl<UiFontSize>
               value={uiFontSize}
               options={[
@@ -525,28 +528,28 @@ export function SettingsPanel({
               onChange={setUiFontSize}
             />
           </SettingRow>
-          <SettingRow label="Quick switch" description="Show chevrons to swap between variations">
-            <Toggle checked={quickSwitch} onChange={setQuickSwitch} label="Toggle quick switch" />
+          <SettingRow label={t('settings.appearance.quickSwitch')} description={t('settings.appearance.quickSwitchDescription')}>
+            <Toggle checked={quickSwitch} onChange={setQuickSwitch} label={t('settings.appearance.toggleQuickSwitch')} />
           </SettingRow>
-          <SettingRow label="Mentions" description="Highlight analyzed fragment references in prose">
+          <SettingRow label={t('settings.appearance.mentions')} description={t('settings.appearance.mentionsDescription')}>
             <MentionTypePicker story={story} enabledTypes={mentionTypes} onChange={setMentionTypes} />
           </SettingRow>
-          <SettingRow label="Timeline bar" description="Show timeline switcher above prose">
-            <Toggle checked={timelineBar} onChange={setTimelineBar} label="Toggle timeline bar" />
+          <SettingRow label={t('settings.appearance.timelineBar')} description={t('settings.appearance.timelineBarDescription')}>
+            <Toggle checked={timelineBar} onChange={setTimelineBar} label={t('settings.appearance.toggleTimelineBar')} />
           </SettingRow>
-          <SettingRow label="Prose width" description="Reading column width">
+          <SettingRow label={t('settings.appearance.proseWidth')} description={t('settings.appearance.proseWidthDescription')}>
             <SegmentedControl<ProseWidth>
               value={proseWidth}
               options={[
-                { value: 'narrow', label: 'Narrow' },
-                { value: 'medium', label: 'Medium' },
-                { value: 'wide', label: 'Wide' },
-                { value: 'full', label: 'Full' },
+                { value: 'narrow', label: t('settings.appearance.widthNarrow') },
+                { value: 'medium', label: t('settings.appearance.widthMedium') },
+                { value: 'wide', label: t('settings.appearance.widthWide') },
+                { value: 'full', label: t('settings.appearance.widthFull') },
               ]}
               onChange={setProseWidth}
             />
           </SettingRow>
-          <SettingRow label="Font size" description="Prose text size">
+          <SettingRow label={t('settings.appearance.fontSize')} description={t('settings.appearance.fontSizeDescription')}>
             <SegmentedControl<ProseFontSize>
               value={proseFontSize}
               options={[
@@ -559,8 +562,8 @@ export function SettingsPanel({
               onChange={setProseFontSize}
             />
           </SettingRow>
-          <SettingRow label="Custom CSS" description="Apply your own styles globally">
-            <Toggle checked={customCssEnabled} onChange={setCustomCssEnabled} label="Toggle custom CSS" />
+          <SettingRow label={t('settings.appearance.customCss')} description={t('settings.appearance.customCssDescription')}>
+            <Toggle checked={customCssEnabled} onChange={setCustomCssEnabled} label={t('settings.appearance.toggleCustomCss')} />
           </SettingRow>
           {customCssEnabled && (
             <button
@@ -570,7 +573,7 @@ export function SettingsPanel({
             >
               <span className="flex items-center gap-1.5">
                 <Code className="size-3" />
-                Edit custom CSS
+                {t('settings.appearance.editCustomCss')}
               </span>
               <ChevronRight className="size-3" />
             </button>
@@ -582,43 +585,43 @@ export function SettingsPanel({
       {/* Typography */}
       <SettingsSection id="set-typography" label="Typography" group="Interface">
         <SectionHeading
-          label="Typography"
+          label={t('settings.typography.heading')}
           action={hasCustomFonts && (
             <button
               onClick={resetFonts}
               className="flex items-center gap-1 text-[0.625rem] text-muted-foreground hover:text-foreground/60 transition-colors"
             >
               <RotateCcw className="size-2.5" />
-              Reset
+              {t('settings.typography.reset')}
             </button>
           )}
         />
         <SettingsCard>
           <FontPicker
             role="display"
-            label="Display"
-            description="Titles, headings, story names"
+            label={t('settings.typography.display')}
+            description={t('settings.typography.displayDescription')}
             activeFont={getActiveFont('display', fontPrefs)}
             onSelect={(name) => setFont('display', name)}
           />
           <FontPicker
             role="prose"
-            label="Prose"
-            description="Reading experience, story content"
+            label={t('settings.typography.prose')}
+            description={t('settings.typography.proseDescription')}
             activeFont={getActiveFont('prose', fontPrefs)}
             onSelect={(name) => setFont('prose', name)}
           />
           <FontPicker
             role="sans"
-            label="Interface"
-            description="UI text, buttons, labels"
+            label={t('settings.typography.interface')}
+            description={t('settings.typography.interfaceDescription')}
             activeFont={getActiveFont('sans', fontPrefs)}
             onSelect={(name) => setFont('sans', name)}
           />
           <FontPicker
             role="mono"
-            label="Code"
-            description="Fragment IDs, monospace text"
+            label={t('settings.typography.code')}
+            description={t('settings.typography.codeDescription')}
             activeFont={getActiveFont('mono', fontPrefs)}
             onSelect={(name) => setFont('mono', name)}
           />
