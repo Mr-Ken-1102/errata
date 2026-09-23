@@ -159,6 +159,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
   onManageProviders: () => void
 }) {
   const { openHelp } = useHelp()
+  const { t } = useLanguage()
   const settings = story.settings
   const overrides = settings.modelOverrides ?? {}
 
@@ -177,7 +178,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
           type="button"
           onClick={() => openHelp('settings#providers')}
           className="text-muted-foreground hover:text-primary/60 transition-colors"
-          title="About model configuration"
+          title={t('settings.providers.aboutModelConfiguration')}
         >
           <CircleHelp className="size-3" />
         </button>
@@ -230,7 +231,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                       })
                     }}
                     disabled={updateMutation.isPending}
-                    defaultLabel={isGeneration ? 'Default' : 'Inherit'}
+                    defaultLabel={isGeneration ? t('settings.providers.default') : t('settings.providers.inherit')}
                   />
                 </div>
                 <div className="shrink-0 w-16">
@@ -246,8 +247,8 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                       })
                     }}
                     disabled={updateMutation.isPending}
-                    placeholder="Temp"
-                    title="Temperature (0–2). Leave empty to use provider default."
+                    placeholder={t('settings.providers.temperatureShort')}
+                    title={t('settings.providers.temperatureDescription')}
                     className="w-full"
                   />
                 </div>
@@ -263,7 +264,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
         >
           <span className="flex items-center gap-1.5">
             <Settings2 className="size-3" />
-            Manage providers
+            {t('settings.providers.manageProviders')}
           </span>
           <ChevronRight className="size-3" />
         </button>

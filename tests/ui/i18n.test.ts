@@ -57,6 +57,7 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.proseColors.heading')).toBe('Màu văn bản')
     expect(translate('vi', 'settings.appearance.theme')).toBe('Chủ đề')
     expect(translate('vi', 'settings.typography.heading')).toBe('Kiểu chữ')
+    expect(translate('vi', 'settings.providers.manageProviders')).toBe('Quản lý nhà cung cấp')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -133,6 +134,20 @@ describe('language UI wiring', () => {
     expect(settingsSource).toContain('role="sans"')
     expect(settingsSource).toContain('role="mono"')
     expect(settingsSource).toContain("opt.tag === 'high-visibility'")
+  })
+
+  it('localizes provider controls without changing model-role or provider/model identifiers', () => {
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+
+    expect(settingsSource).toContain("t('settings.providers.manageProviders')")
+    expect(settingsSource).toContain("t('settings.providers.default')")
+    expect(settingsSource).toContain("t('settings.providers.inherit')")
+    expect(settingsSource).toContain('{role.label}')
+    expect(settingsSource).toContain('{role.description}')
+    expect(settingsSource).toContain('overrides[role.key]?.providerId')
+    expect(settingsSource).toContain('overrides[role.key]?.modelId')
+    expect(settingsSource).toContain('resolveProvider(role.key, settings, globalConfig)')
+    expect(settingsSource).toContain('temperature }')
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
