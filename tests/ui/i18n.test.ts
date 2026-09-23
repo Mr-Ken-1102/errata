@@ -58,6 +58,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'archive.restore')).toBe('Khôi phục')
     expect(translate('vi', 'timeline.newTimeline')).toBe('Dòng thời gian mới')
     expect(translate('vi', 'timeline.active')).toBe('đang hoạt động')
+    expect(translate('vi', 'timeline.createFromCurrent')).toBe('Tạo dòng thời gian từ hiện tại')
+    expect(translate('vi', 'timeline.hideBar')).toBe('Ẩn thanh dòng thời gian')
     expect(translate('vi', 'fragmentTypes.newType')).toBe('Loại mới')
     expect(translate('vi', 'fragmentTypes.saveChanges')).toBe('Lưu thay đổi')
     expect(translate('vi', 'storyInfo.edit')).toBe('Chỉnh sửa')
@@ -895,6 +897,29 @@ describe('language UI wiring', () => {
     expect(chainSource).toContain("reorderSections: t('proseOutline.reorderSections')")
     expect(chainSource).toContain("addChapter: t('proseOutline.addChapter')")
     expect(chainSource.match(/labels=\{outlineLabels\}/g)?.length).toBe(2)
+  })
+
+  it('localizes timeline tabs without changing branch identity, mutations, root protection, cache reset, or keyboard semantics', () => {
+    const tabsSource = readFileSync('src/components/prose/TimelineTabs.tsx', 'utf8')
+
+    expect(tabsSource).toContain('useLanguage()')
+    expect(tabsSource).toContain("api.branches.switchActive(storyId, branchId)")
+    expect(tabsSource).toContain("api.branches.create(storyId, { name, parentBranchId: activeBranchId })")
+    expect(tabsSource).toContain("api.branches.rename(storyId, branchId, name)")
+    expect(tabsSource).toContain("api.branches.delete(storyId, branchId)")
+    expect(tabsSource).toContain("onActiveBranchChanged(queryClient, storyId)")
+    expect(tabsSource).toContain("setRenameValue(branch.name)")
+    expect(tabsSource).toContain("name: renameValue.trim()")
+    expect(tabsSource).toContain('{branch.name}')
+    expect(tabsSource).toContain("const isRoot = branch.id === rootBranchId")
+    expect(tabsSource).toContain('{!isRoot && (')
+    expect(tabsSource).toContain("switchMutation.mutate(branch.id)")
+    expect(tabsSource).toContain("deleteMutation.mutate(branch.id)")
+    expect(tabsSource).toContain("e.key === 'Enter'")
+    expect(tabsSource).toContain("e.key === 'Escape'")
+    expect(tabsSource).toContain('onClick={onHide}')
+    expect(tabsSource).toContain("t('timeline.createFromCurrent')")
+    expect(tabsSource).toContain("t('timeline.hideBar')")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
