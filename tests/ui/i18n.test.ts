@@ -68,6 +68,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'storyInfo.source.writer')).toBe('Người viết')
     expect(translate('vi', 'storyInfo.justNow')).toBe('vừa xong')
     expect(translate('en', 'storyInfo.minutesAgoSuffix')).toBe('m ago')
+    expect(translate('vi', 'detail.storyInfo')).toBe('Thông tin truyện')
+    expect(translate('vi', 'detail.loadingPanel')).toBe('Đang tải bảng…')
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
@@ -745,6 +747,28 @@ describe('language UI wiring', () => {
     expect(storyInfoSource).toContain('timeAgo(story.updatedAt, t)')
   })
 
+  it('localizes detail-panel shell without changing section ids, dynamic fragment/plugin labels, routing, iframe security, or fragment creation defaults', () => {
+    const detailSource = readFileSync('src/components/sidebar/DetailPanel.tsx', 'utf8')
+
+    expect(detailSource).toContain("const SECTION_TO_TYPE: Record<string, string> = {")
+    expect(detailSource).toContain("characters: 'character'")
+    expect(detailSource).toContain("guidelines: 'guideline'")
+    expect(detailSource).toContain("knowledge: 'knowledge'")
+    expect(detailSource).toContain("activeSection?.startsWith('plugin-')")
+    expect(detailSource).toContain("activeSection?.startsWith('fragment-type-')")
+    expect(detailSource).toContain('customFragmentDefinition?.name')
+    expect(detailSource).toContain("pluginName ?? t('detail.plugin')")
+    expect(detailSource).toContain("window.prompt(t('detail.fragmentTypePrompt'), 'knowledge')")
+    expect(detailSource).toContain('onCreateFragment(fragmentType)')
+    expect(detailSource).toContain('getPluginPanel(pluginName)')
+    expect(detailSource).toContain('enabledPanelPlugins.find((plugin) => plugin.name === pluginName)')
+    expect(detailSource).toContain('src={`${pluginPanel.url}?storyId=${encodeURIComponent(storyId)}`}')
+    expect(detailSource).toContain('sandbox="allow-scripts allow-same-origin allow-forms"')
+    expect(detailSource).toContain('customFragmentType')
+    expect(detailSource).toContain('type={customFragmentType}')
+    expect(detailSource).toContain("allowedTypes={['image', 'icon']}")
+    expect(detailSource).toContain("onCreateNew={() => onCreateFragment('image')}")
+  })
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
     const colorsSource = readFileSync('src/components/settings/ProseColorsPanel.tsx', 'utf8')
 
