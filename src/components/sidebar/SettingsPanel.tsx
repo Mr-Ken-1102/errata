@@ -870,7 +870,7 @@ export function SettingsPanel({
 
       {/* Plugins */}
       <SettingsSection id="set-plugins" label="Plugins" group="System">
-        <SectionHeading label="Plugins" helpTopic="settings#plugins" className="mb-3" />
+        <SectionHeading label={t('settings.plugins.heading')} helpTopic="settings#plugins" className="mb-3" />
         {plugins && plugins.length > 0 ? (
           <div className="space-y-2">
             {plugins.map((plugin) => {
@@ -893,7 +893,7 @@ export function SettingsPanel({
                           ? 'bg-foreground'
                           : 'bg-muted-foreground/20'
                         }`}
-                      aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+                      aria-label={`${isEnabled ? t('settings.plugins.disable') : t('settings.plugins.enable')} ${plugin.name}`}
                     >
                       <span
                         className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-background transition-[left] duration-150 ${isEnabled ? 'left-[16px]' : 'left-[2px]'
@@ -919,7 +919,7 @@ export function SettingsPanel({
                           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground/70 hover:bg-accent/40 transition-colors"
                         >
                           <ExternalLink className="size-3" />
-                          Open panel
+                          {t('settings.plugins.openPanel')}
                         </button>
                       )}
                       {onTogglePluginSidebar && (
@@ -928,7 +928,7 @@ export function SettingsPanel({
                           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground/70 hover:bg-accent/40 transition-colors"
                         >
                           {isSidebarVisible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-                          {isSidebarVisible ? 'Visible in sidebar' : 'Hidden from sidebar'}
+                          {isSidebarVisible ? t('settings.plugins.visibleInSidebar') : t('settings.plugins.hiddenFromSidebar')}
                         </button>
                       )}
                     </div>
@@ -940,7 +940,7 @@ export function SettingsPanel({
         ) : (
           <div className="flex flex-col items-center py-6 text-center">
             <Puzzle className="size-5 text-muted-foreground mb-2" />
-            <p className="text-[0.6875rem] text-muted-foreground">No plugins available</p>
+            <p className="text-[0.6875rem] text-muted-foreground">{t('settings.plugins.noneAvailable')}</p>
           </div>
         )}
       </SettingsSection>

@@ -75,6 +75,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'erratanet.publish.visibility')).toBe('Khả năng hiển thị')
     expect(translate('vi', 'erratanet.shareConfig.title')).toBe('Chia sẻ cấu hình agent')
     expect(translate('vi', 'erratanet.shareConfig.runsCodeDescription')).toContain('xem mã nguồn script')
+    expect(translate('vi', 'settings.plugins.heading')).toBe('Plugin')
+    expect(translate('vi', 'settings.plugins.noneAvailable')).toBe('Không có plugin khả dụng')
   })
 
   it('falls back to the English source string when Vietnamese is intentionally absent', () => {
@@ -433,6 +435,22 @@ describe('language UI wiring', () => {
     expect(shareSource).toContain('manifest.readme')
     expect(shareSource).toContain('manifest.title')
     expect(shareSource).toContain("storyName ? `${storyName} setup` : ''")
+  })
+
+  it('localizes plugin settings chrome without changing plugin identity, metadata, enablement, panel routing, or sidebar visibility semantics', () => {
+    const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
+
+    expect(settingsSource).toContain("t('settings.plugins.heading')")
+    expect(settingsSource).toContain("t('settings.plugins.openPanel')")
+    expect(settingsSource).toContain('{plugin.name}')
+    expect(settingsSource).toContain('{plugin.description}')
+    expect(settingsSource).toContain('v{plugin.version}')
+    expect(settingsSource).toContain('story.settings.enabledPlugins.includes(plugin.name)')
+    expect(settingsSource).toContain('togglePlugin(plugin.name)')
+    expect(settingsSource).toContain('onOpenPluginPanel(plugin.name)')
+    expect(settingsSource).toContain('onTogglePluginSidebar(plugin.name, !isSidebarVisible)')
+    expect(settingsSource).toContain("(pluginSidebarVisibility?.[plugin.name]) ?? (plugin.panel?.showInSidebar !== false)")
+    expect(settingsSource).toContain("aria-label={`${isEnabled ? t('settings.plugins.disable') : t('settings.plugins.enable')} ${plugin.name}`}")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
