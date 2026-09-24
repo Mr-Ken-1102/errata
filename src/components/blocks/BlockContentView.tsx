@@ -51,7 +51,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
 
   const segments = useMemo(() => parseBlockSegments(messages), [messages])
   const hasTools = (tools?.length ?? 0) > 0
-  const enabledToolCount = useMemo(() => tools?.filter((t) => t.enabled).length ?? 0, [tools])
+  const enabledToolCount = useMemo(() => tools?.filter((t) => tool.enabled).length ?? 0, [tools])
 
   // Build nav groups from explicit blocks list, or fall back to segments
   const navGroups = useMemo(() => {
@@ -173,18 +173,18 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
                   {t('blockContent.toolSchemaHint')}
                 </span>
                 <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-                  {enabledToolCount}/{tools!.length} {t('blockContent.enabled')}
+                  {enabledToolCount}/{tools!.length} {t('blockContentool.enabled')}
                 </span>
               </div>
 
               <div className="p-3 space-y-2">
-                {tools!.map((t) => (
-                  <div key={t.name} className={cn('flex flex-col gap-0.5', !t.enabled && 'opacity-45')}>
+                {tools!.map((tool) => (
+                  <div key={tool.name} className={cn('flex flex-col gap-0.5', !tool.enabled && 'opacity-45')}>
                     <div className="flex items-center gap-2">
-                      <code className={cn('text-[0.6875rem] font-mono text-foreground/90', !t.enabled && 'line-through')}>
-                        {t.name}
+                      <code className={cn('text-[0.6875rem] font-mono text-foreground/90', !tool.enabled && 'line-through')}>
+                        {tool.name}
                       </code>
-                      {!t.enabled && (
+                      {!tool.enabled && (
                         <Badge
                           variant="outline"
                           className="text-[0.5rem] h-3.5 px-1 font-normal border-transparent text-muted-foreground bg-muted/30 shrink-0 uppercase tracking-wide"
@@ -193,8 +193,8 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
                         </Badge>
                       )}
                     </div>
-                    {t.description && (
-                      <p className="text-[0.625rem] text-muted-foreground leading-relaxed">{t.description}</p>
+                    {tool.description && (
+                      <p className="text-[0.625rem] text-muted-foreground leading-relaxed">{tool.description}</p>
                     )}
                   </div>
                 ))}
