@@ -42,7 +42,7 @@ jobs:
         if: (!cancelled())
         uses: actions/upload-artifact@v4
         with:
-          name: vitest-results-${{ github.run_attempt }}
+          name: vitest-results
           path: |
             junit.xml
           retention-days: 30
@@ -51,5 +51,5 @@ jobs:
         if: (!cancelled())
         uses: actions/upload-artifact@v4
         with:
-          name: Event File-${{ github.run_attempt }}
+          name: Event File
           path: ${{ github.event_path }}

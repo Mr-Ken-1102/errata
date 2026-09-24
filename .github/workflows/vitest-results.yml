@@ -29,19 +29,73 @@ jobs:
       actions: read
 
     steps:
-      - name: Download test results for this attempt
-        uses: dawidd6/action-download-artifact@e7466d1a7587ed14867642c2ca74b5bcc1e19a2d
+      - name: Select artifacts from this workflow attempt
+        id: select_artifacts
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
-          run_id: ${{ github.event.workflow_run.id }}
-          name: vitest-results-${{ github.event.workflow_run.run_attempt }}
-          path: artifacts/vitest
+          script: |
+            const run = context.payload.workflow_run
+            const runStartedAt = new Date(run.run_started_at).getTime()
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id,
+                per_page: 100,
+              },
+            )
 
-      - name: Download event file for this attempt
-        uses: dawidd6/action-download-artifact@e7466d1a7587ed14867642c2ca74b5bcc1e19a2d
+            const selectCurrentAttempt = (name) => {
+              const candidates = artifacts
+                .filter((artifact) =>
+                  artifact.name === name &&
+                  !artifact.expired &&
+                  new Date(artifact.created_at).getTime() >= runStartedAt
+                )
+                .sort((a, b) =>
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime() ||
+                  b.id - a.id
+                )
+
+              if (candidates.length !== 1) {
+                core.setFailed(
+                  `Expected exactly one current-attempt "${name}" artifact for run ${run.id} attempt ${run.run_attempt}, found ${candidates.length}`,
+                )
+                return null
+              }
+
+              return candidates[0]
+            }
+
+            const testArtifact = selectCurrentAttempt('vitest-results')
+            const eventArtifact = selectCurrentAttempt('Event File')
+            if (!testArtifact || !eventArtifact) return
+
+            core.info(`Using vitest-results artifact ${testArtifact.id} created ${testArtifact.created_at}`)
+            core.info(`Using Event File artifact ${eventArtifact.id} created ${eventArtifact.created_at}`)
+            core.setOutput('test_artifact_id', testArtifact.id)
+            core.setOutput('event_artifact_id', eventArtifact.id)
+
+      - name: Download test results from this attempt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          run_id: ${{ github.event.workflow_run.id }}
-          name: Event File-${{ github.event.workflow_run.run_attempt }}
+          artifact-ids: ${{ steps.select_artifacts.outputs.test_artifact_id }}
+          path: artifacts/vitest
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download event file from this attempt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ steps.select_artifacts.outputs.event_artifact_id }}
           path: artifacts/event
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
