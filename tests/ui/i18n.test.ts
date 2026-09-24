@@ -91,6 +91,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'settings.dialog.title')).toBe('Cài đặt')
     expect(translate('vi', 'settings.tts.enable')).toBe('Bật đọc thành tiếng')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
+    expect(translate('vi', 'desktopUpdateBanner.dismiss')).toBe('Đóng')
+    expect(translate('vi', 'desktopUpdateBanner.title.available')).toContain('{version}')
     expect(translate('vi', 'settings.proseColors.heading')).toBe('Màu văn bản')
     expect(translate('vi', 'settings.appearance.theme')).toBe('Chủ đề')
     expect(translate('vi', 'settings.typography.heading')).toBe('Kiểu chữ')
@@ -183,6 +185,26 @@ describe('language UI wiring', () => {
     expect(updatesSource).toContain('bridge.downloadUpdate()')
     expect(updatesSource).toContain('bridge.installUpdate()')
     expect(updatesSource).toContain("bridge.skipUpdate(state.version ?? '')")
+  })
+
+  it('localizes the desktop update banner without changing bridge readiness, update states, version identity, or install/skip actions', () => {
+    const bannerSource = readFileSync('src/components/desktop/DesktopUpdateBanner.tsx', 'utf8')
+
+    expect(bannerSource).toContain('useLanguage()')
+    expect(bannerSource).toContain('getDesktopBridge()')
+    expect(bannerSource).toContain('onDesktopBridgeReady((currentBridge) => {')
+    expect(bannerSource).toContain('currentBridge.getUpdateState().then(setState).catch(() => {})')
+    expect(bannerSource).toContain('currentBridge.onUpdateState(setState)')
+    expect(bannerSource).toContain("state.status === 'available' || state.status === 'downloading' || state.status === 'downloaded'")
+    expect(bannerSource).toContain("const key = `${state.status}:${state.version ?? ''}`")
+    expect(bannerSource).toContain('setDismissedKey(key)')
+    expect(bannerSource).toContain('bridge.installUpdate()')
+    expect(bannerSource).toContain('bridge.downloadUpdate()')
+    expect(bannerSource).toContain("bridge.skipUpdate(state.version ?? '')")
+    expect(bannerSource).toContain('state.percent ?? 0')
+    expect(bannerSource).toContain("t('settings.updates.restartAndInstall')")
+    expect(bannerSource).toContain("t('settings.updates.downloadAndInstall')")
+    expect(bannerSource).toContain("t('settings.updates.skip')")
   })
 
   it('localizes Appearance and Typography presentation without changing preference values or font roles', () => {
