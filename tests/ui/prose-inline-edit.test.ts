@@ -7,8 +7,13 @@ import { ProseInlineEditor } from '@/components/prose/ProseInlineEditor'
 import { ProseBlock, toolbarPlacement } from '@/components/prose/ProseBlock'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import type { Fragment } from '@/lib/api'
+import { withLanguageProvider } from './test-providers'
 
 const updateMock = vi.fn()
+
+function renderLocalized(element: ReturnType<typeof createElement>) {
+  return render(withLanguageProvider(element))
+}
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/lib/api')>()
@@ -51,7 +56,7 @@ describe('ProseInlineEditor', () => {
   it('starts from the fragment content and saves on Ctrl+Enter', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
-    const { container } = render(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
+    const { container } = renderLocalized(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     expect(textarea.value).toBe('Once.')
 
@@ -64,7 +69,7 @@ describe('ProseInlineEditor', () => {
   it('does not save on Ctrl/Cmd+Enter while IME composition is active', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
-    const { container } = render(createElement(ProseInlineEditor, { content: 'Một câu.', onSave, onCancel }))
+    const { container } = renderLocalized(createElement(ProseInlineEditor, { content: 'Một câu.', onSave, onCancel }))
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
 
     fireEvent.change(textarea, { target: { value: 'Một câu tiếng Việt.' } })
@@ -81,7 +86,7 @@ describe('ProseInlineEditor', () => {
   it('cancels on Escape and treats an unchanged save as cancel', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
-    const { container } = render(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
+    const { container } = renderLocalized(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
 
     fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
@@ -97,7 +102,7 @@ describe('ProseInlineEditor click-away', () => {
   it('saves a dirty draft when the reader clicks outside the passage', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
-    const { container } = render(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
+    const { container } = renderLocalized(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'Twice.' } })
 
@@ -113,7 +118,7 @@ describe('ProseInlineEditor click-away', () => {
   it('just closes when the draft is unchanged', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
-    render(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
+    renderLocalized(createElement(ProseInlineEditor, { content: 'Once.', onSave, onCancel }))
     fireEvent.mouseDown(document.body)
     expect(onSave).not.toHaveBeenCalled()
     expect(onCancel).toHaveBeenCalledTimes(1)
@@ -122,7 +127,7 @@ describe('ProseInlineEditor click-away', () => {
   it('ignores outside clicks while a save is in flight', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
-    render(createElement(ProseInlineEditor, { content: 'Once.', saving: true, onSave, onCancel }))
+    renderLocalized(createElement(ProseInlineEditor, { content: 'Once.', saving: true, onSave, onCancel }))
     fireEvent.mouseDown(document.body)
     expect(onSave).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
@@ -132,7 +137,7 @@ describe('ProseInlineEditor click-away', () => {
 describe('ProseBlock double-click editing', () => {
   function renderBlock(fragment = makeFragment()) {
     const client = new QueryClient()
-    return render(
+    return renderLocalized(
       createElement(
         QueryClientProvider,
         { client },
@@ -206,7 +211,7 @@ describe('ProseBlock action toolbar placement', () => {
 
   it('positions the rendered toolbar from the click', () => {
     const client = new QueryClient()
-    const { container } = render(
+    const { container } = renderLocalized(
       createElement(
         QueryClientProvider,
         { client },
