@@ -981,7 +981,7 @@ function ProviderSetupStep({
         className="flex items-center justify-center mt-8 animate-onboarding-fade-up"
         style={{ animationDelay: '250ms' }}
       >
-<Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
+        <Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
       </div>
     </div>
   )

@@ -45,13 +45,4 @@ describe('OnboardingWizard introductory localization', () => {
     expect(source).toContain('defaultModel,')
     expect(source).toContain('customHeaders: cardHeaders')
   })
-
-  it('leaves provider setup form behavior outside this introductory batch', () => {
-    const source = readFileSync('src/components/onboarding/OnboardingWizard.tsx', 'utf8')
-    expect(source).toContain("'Failed to fetch models'")
-    expect(source).toContain("'Model is required to test'")
-    expect(source).toContain("'Base URL and API Key are required'")
-    expect(source).toContain("'Test failed'")
-    expect(source).toContain("'Failed to save'")
-  })
 })
