@@ -3,7 +3,7 @@
 All notable changes to Errata are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
-## [1.0.0] — Unreleased
+## [1.0.0] — 2026-09-22
 
 **Release identity:** **Errata v1.0** is the first curated release line of
 `Mr-Ken-1102/errata`. It is based on upstream `tealios/errata` v1.12.0 (2026-09-14,
@@ -73,9 +73,13 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
   `e8ada2f764d9e178562cf19fd582cec9c29343eb` exactly matches the validated PR HEAD.
   Post-merge **vitest #173** (run `35697656773`) and **Test Results #173**
   (run `35697833469`) both succeeded on that merge commit.
-- The `v1.0.0` tag and GitHub Release remain intentionally pending until this documentation-only
-  provenance closeout is merged and its CI is green. No publishing workflow has been run for
-  the release yet.
+- PR #5 closed the provenance record and merged as
+  `426eca8551544b12ad8641509a8fab36e327060b`. It changed only `CHANGELOG.md` and
+  `RELEASE_PROVENANCE.md`; post-merge **vitest #175** (run `35704076086`) and
+  **Test Results #176** (run `35704262595`) both succeeded on that exact merge commit.
+- At the final pre-tag verification checkpoint, the `v1.0.0` tag and GitHub Release were
+  still absent by design. Tag creation is an explicit next action; publishing a GitHub Release
+  remains a separate action and is the only event that enables release-asset upload jobs.
 
 ## [1.12.0] — 2026-09-14
 
