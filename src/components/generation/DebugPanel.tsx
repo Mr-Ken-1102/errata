@@ -12,6 +12,7 @@ import { X, ChevronDown, ChevronRight, Copy, Check, Brain, FileText } from 'luci
 import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/clipboard'
+import { useLanguage } from '@/lib/i18n'
 
 interface DebugPanelProps {
   storyId: string
@@ -36,9 +37,16 @@ function SamplingLabel({ settings, title }: { settings?: SamplingSettings; title
 }
 
 export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelProps) {
+  const { t } = useLanguage()
   const [selectedLogId, setSelectedLogId] = useState<string | null>(logId ?? null)
   const [activeTab, setActiveTab] = useState<'prompt' | 'prewriter-prompt' | 'tools' | 'output'>('prompt')
   const directLookup = !!(logId || fragmentId)
+  const tabLabels = {
+    prompt: t('debugPanel.tabPrompt'),
+    'prewriter-prompt': t('debugPanel.tabPrewriterPrompt'),
+    tools: t('debugPanel.tabTools'),
+    output: t('debugPanel.tabOutput'),
+  } as const
   const branchId = useActiveBranchId(storyId)
 
   const { data: logs } = useQuery({
@@ -64,8 +72,8 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border/50" data-component-id="debug-panel-header">
         <div className="flex items-center gap-2">
-          <h2 className="font-display text-lg">Debug</h2>
-          <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Generation Logs</span>
+          <h2 className="font-display text-lg">{t('debugPanel.title')}</h2>
+          <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">{t('debugPanel.generationLogs')}</span>
         </div>
         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={onClose} data-component-id="debug-close">
           <X className="size-4" />
@@ -77,12 +85,12 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
         {!directLookup && (
           <div className="w-56 border-r border-border/50 flex flex-col" data-component-id="debug-log-list">
             <div className="px-3 py-2.5 border-b border-border/50">
-              <span className="text-[0.625rem] font-medium text-muted-foreground uppercase tracking-wider">Recent</span>
+              <span className="text-[0.625rem] font-medium text-muted-foreground uppercase tracking-wider">{t('debugPanel.recent')}</span>
             </div>
             <ScrollArea className="flex-1">
               <div className="p-1.5 space-y-0.5">
                 {(!logs || logs.length === 0) && (
-                  <EmptyState title="No logs yet" className="py-8" />
+                  <EmptyState title={t('debugPanel.noLogs')} className="py-8" />
                 )}
                 {logs?.map((log) => (
                   <LogListItem
@@ -119,7 +127,7 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
                         : 'text-muted-foreground hover:text-muted-foreground'
                     }`}
                   >
-                    {tab === 'prewriter-prompt' ? 'prewriter prompt' : tab}
+                    {tabLabels[tab]}
                     {tab === 'tools' && selectedLog.toolCalls.length > 0 && (
                       <Badge variant="secondary" className="ml-1 text-[0.5625rem] px-1 h-3.5">
                         {selectedLog.toolCalls.length}
@@ -136,9 +144,9 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
                     </Badge>
                   )}
                   <span>{selectedLog.model}</span>
-                  <SamplingLabel settings={selectedLog.sampling} title="Writer sampling settings" />
+                  <SamplingLabel settings={selectedLog.sampling} title={t('debugPanel.writerSampling')} />
                   <span>{selectedLog.durationMs}ms</span>
-                  <span>{selectedLog.stepCount ?? 1} steps</span>
+                  <span>{selectedLog.stepCount ?? 1} {t('debugPanel.steps')}</span>
                   {selectedLog.totalUsage && (
                     <span title={`In: ${selectedLog.totalUsage.inputTokens.toLocaleString()} / Out: ${selectedLog.totalUsage.outputTokens.toLocaleString()}`}>
                       {(selectedLog.totalUsage.inputTokens + selectedLog.totalUsage.outputTokens).toLocaleString()} tok
@@ -149,17 +157,17 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
                     <span className="font-mono">{selectedLog.fragmentId}</span>
                   )}
                   {selectedLog.stepsExceeded && (
-                    <Badge variant="destructive" className="text-[0.5625rem] h-3.5">EXCEEDED</Badge>
+                    <Badge variant="destructive" className="text-[0.5625rem] h-3.5">{t('debugPanel.exceeded')}</Badge>
                   )}
                   {selectedLog.commitStatus === 'rejected' && (
-                    <Badge variant="destructive" className="text-[0.5625rem] h-3.5">REJECTED</Badge>
+                    <Badge variant="destructive" className="text-[0.5625rem] h-3.5">{t('debugPanel.rejected')}</Badge>
                   )}
                 </div>
               </div>
 
               {selectedLog.stepsExceeded && (
                 <div className="px-6 py-2 text-xs text-destructive bg-destructive/5 border-b border-border/50">
-                  Generation hit the 10-step limit. Output may be incomplete.
+                  {t('debugPanel.stepLimitWarning')}
                 </div>
               )}
               {selectedLog.commitStatus === 'rejected' && selectedLog.rejectionReason && (
@@ -186,7 +194,7 @@ export function DebugPanel({ storyId, logId, fragmentId, onClose }: DebugPanelPr
             </div>
           ) : (
             <div className="flex items-center justify-center flex-1">
-              <EmptyHint size="sm" className="font-display">Select a generation log to inspect</EmptyHint>
+              <EmptyHint size="sm" className="font-display">{t('debugPanel.selectLog')}</EmptyHint>
             </div>
           )}
         </div>
@@ -204,6 +212,7 @@ function LogListItem({
   selected: boolean
   onClick: () => void
 }) {
+  const { t } = useLanguage()
   return (
     <button
       onClick={onClick}
@@ -216,10 +225,10 @@ function LogListItem({
       <div className="flex items-center gap-1.5 mt-1 text-muted-foreground">
         <span>{new Date(log.createdAt).toLocaleString()}</span>
         {log.toolCallCount > 0 && (
-          <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1">{log.toolCallCount} tools</Badge>
+          <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1">{log.toolCallCount} {t('debugPanel.toolsCount')}</Badge>
         )}
         {log.stepsExceeded && (
-          <Badge variant="destructive" className="text-[0.5625rem] h-3.5 px-1">exceeded</Badge>
+          <Badge variant="destructive" className="text-[0.5625rem] h-3.5 px-1">{t('debugPanel.exceededLower')}</Badge>
         )}
       </div>
     </button>
@@ -285,6 +294,7 @@ function formatArgValue(value: unknown): string {
 }
 
 function CopyButton({ text, className }: { text: string; className?: string }) {
+  const { t } = useLanguage()
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(
@@ -304,15 +314,16 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
         'inline-flex items-center gap-1 text-[0.5625rem] text-muted-foreground hover:text-muted-foreground transition-colors',
         className,
       )}
-      title="Copy to clipboard"
+      title={t('debugPanel.copyToClipboard')}
     >
       {copied ? <Check className="size-2.5" /> : <Copy className="size-2.5" />}
-      {copied ? 'copied' : 'copy'}
+      {copied ? t('debugPanel.copied') : t('debugPanel.copy')}
     </button>
   )
 }
 
 function ToolsTab({ log }: { log: GenerationLog }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
   const toggle = (idx: number) => {
@@ -334,7 +345,7 @@ function ToolsTab({ log }: { log: GenerationLog }) {
   if (log.toolCalls.length === 0) {
     return (
       <EmptyHint className="text-center py-16">
-        No tool calls were made during this generation.
+        {t('debugPanel.noToolCalls')}
       </EmptyHint>
     )
   }
@@ -344,16 +355,16 @@ function ToolsTab({ log }: { log: GenerationLog }) {
       {/* Summary bar */}
       <div className="flex items-center gap-2 mb-1">
         <span className="text-[0.625rem] text-muted-foreground">
-          {log.toolCalls.length} call{log.toolCalls.length === 1 ? '' : 's'}
+          {log.toolCalls.length} {log.toolCalls.length === 1 ? t('debugPanel.callOne') : t('debugPanel.callMany')}
         </span>
         <span className="text-[0.625rem] text-muted-foreground">
-          {log.toolCalls.filter((tc) => getToolKind(tc.toolName) === 'write').length} writes
+          {log.toolCalls.filter((tc) => getToolKind(tc.toolName) === 'write').length} {t('debugPanel.writes')}
         </span>
         <button
           onClick={toggleAll}
           className="ml-auto text-[0.625rem] text-muted-foreground hover:text-muted-foreground transition-colors"
         >
-          {allExpanded ? 'Collapse all' : 'Expand all'}
+          {allExpanded ? t('debugPanel.collapseAll') : t('debugPanel.expandAll')}
         </button>
       </div>
 
@@ -452,12 +463,12 @@ function ToolsTab({ log }: { log: GenerationLog }) {
                 <div className="p-3">
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                      Arguments
+                      {t('debugPanel.arguments')}
                     </span>
                     <CopyButton text={argsStr} className="ml-auto" />
                   </div>
                   {argEntries.length === 0 ? (
-                    <span className="text-[0.6875rem] text-muted-foreground italic">none</span>
+                    <span className="text-[0.6875rem] text-muted-foreground italic">{t('debugPanel.none')}</span>
                   ) : (
                     <div className="space-y-px">
                       {argEntries.map(([key, val]) => {
@@ -486,10 +497,10 @@ function ToolsTab({ log }: { log: GenerationLog }) {
                 <div className="p-3">
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                      Result
+                      {t('debugPanel.result')}
                     </span>
                     <span className="text-[0.5625rem] text-muted-foreground tabular-nums">
-                      {resultStr.length.toLocaleString()} chars
+                      {resultStr.length.toLocaleString()} {t('debugPanel.chars')}
                     </span>
                     <CopyButton text={resultStr} className="ml-auto" />
                   </div>
@@ -507,6 +518,7 @@ function ToolsTab({ log }: { log: GenerationLog }) {
 }
 
 function OutputTab({ log }: { log: GenerationLog }) {
+  const { t } = useLanguage()
   const [prewriterExpanded, setPrewriterExpanded] = useState(false)
   const [prewriterReasoningExpanded, setPrewriterReasoningExpanded] = useState(false)
   const [reasoningExpanded, setReasoningExpanded] = useState(false)
@@ -522,7 +534,7 @@ function OutputTab({ log }: { log: GenerationLog }) {
             {prewriterReasoningExpanded ? <ChevronDown className="size-3 text-primary/50" /> : <ChevronRight className="size-3 text-primary/50" />}
             <Brain className="size-3 text-primary/50" />
             <span className="text-[0.625rem] font-medium text-primary/70">
-              Prewriter Reasoning
+              {t('debugPanel.prewriterReasoning')}
             </span>
             <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
               {log.prewriterReasoning.length.toLocaleString()} chars
@@ -547,7 +559,7 @@ function OutputTab({ log }: { log: GenerationLog }) {
             {prewriterExpanded ? <ChevronDown className="size-3 text-primary/50" /> : <ChevronRight className="size-3 text-primary/50" />}
             <FileText className="size-3 text-primary/50" />
             <span className="text-[0.625rem] font-medium text-primary/70">
-              Writing Brief
+              {t('debugPanel.writingBrief')}
             </span>
             {log.prewriterModel && (
               <span className="text-[0.5625rem] text-muted-foreground font-mono">
@@ -563,7 +575,7 @@ function OutputTab({ log }: { log: GenerationLog }) {
                   {(log.prewriterUsage.inputTokens + log.prewriterUsage.outputTokens).toLocaleString()} tok
                 </span>
               )}
-              <span>{log.prewriterBrief.length.toLocaleString()} chars</span>
+              <span>{log.prewriterBrief.length.toLocaleString()} {t('debugPanel.chars')}</span>
             </span>
           </button>
           {prewriterExpanded && (
@@ -588,7 +600,7 @@ function OutputTab({ log }: { log: GenerationLog }) {
             {reasoningExpanded ? <ChevronDown className="size-3 text-muted-foreground" /> : <ChevronRight className="size-3 text-muted-foreground" />}
             <Brain className="size-3 text-muted-foreground" />
             <span className="text-[0.625rem] font-medium text-muted-foreground">
-              Reasoning
+              {t('debugPanel.reasoning')}
             </span>
             <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
               {log.reasoning.length.toLocaleString()} chars
