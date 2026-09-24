@@ -13,6 +13,7 @@ import type { ChatEvent, RunStatus, SuggestionDirection, ClarifyQuestion, Clarif
 import { QuestionCard } from '@/components/generation/QuestionCard'
 import { PovSelect } from '@/components/generation/PovSelect'
 import { mergeDirectionSuggestions } from './direction-suggestions'
+import { useLanguage } from '@/lib/i18n'
 
 // A round high enough that the server withholds the ask tool and must write —
 // used by "Skip & write" to proceed without answering.
@@ -59,6 +60,7 @@ export function InlineGenerationInput({
   onGenerationComplete,
   onGenerationError,
 }: InlineGenerationInputProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
@@ -69,6 +71,11 @@ export function InlineGenerationInput({
   const [pendingQuestions, setPendingQuestions] = useState<ClarifyQuestion[] | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const composeTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const tRef = useRef(t)
+
+  useEffect(() => {
+    tRef.current = t
+  }, [t])
   // In-flight generation context, preserved across clarify and page reload.
   const genCtxRef = useRef<{
     input: string
@@ -409,7 +416,7 @@ export function InlineGenerationInput({
     }
 
     if (status === 'error') {
-      setError(message ?? 'Generation failed')
+      setError(message ?? tRef.current('inlineGeneration.failed'))
       persistGenerationContext(null)
       onGenerationError()
       return
@@ -495,7 +502,7 @@ export function InlineGenerationInput({
     } catch (runError) {
       startedLocallyRef.current = false
       persistGenerationContext(null)
-      setError(runError instanceof Error ? runError.message : 'Generation failed')
+      setError(runError instanceof Error ? runError.message : tRef.current('inlineGeneration.failed'))
       onGenerationError()
     }
   }, [
@@ -549,7 +556,7 @@ export function InlineGenerationInput({
       await invalidateStoryContent(queryClient, storyId)
       setComposeInput('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add section')
+      setError(err instanceof Error ? err.message : tRef.current('inlineGeneration.addSectionFailed'))
     } finally {
       setIsComposing(false)
     }
@@ -570,7 +577,7 @@ export function InlineGenerationInput({
       setManualAnchor(latestFragmentId)
       setManualSuggestions(result.suggestions)
     } catch (err) {
-      setSuggestionError(err instanceof Error ? err.message : 'Failed to load suggestions')
+      setSuggestionError(err instanceof Error ? err.message : tRef.current('inlineGeneration.suggestionsFailed'))
     } finally {
       setIsFetchingSuggestions(false)
     }
@@ -639,7 +646,7 @@ export function InlineGenerationInput({
                 : 'text-muted-foreground hover:text-foreground/60 hover:bg-muted/30',
             )}
           >
-            Freeform
+            {t('inlineGeneration.freeform')}
           </button>
           <button
             type="button"
@@ -651,7 +658,7 @@ export function InlineGenerationInput({
                 : 'text-muted-foreground hover:text-foreground/60 hover:bg-muted/30',
             )}
           >
-            Guided
+            {t('inlineGeneration.guided')}
           </button>
           <button
             type="button"
@@ -663,7 +670,7 @@ export function InlineGenerationInput({
                 : 'text-muted-foreground hover:text-foreground/60 hover:bg-muted/30',
             )}
           >
-            Compose
+            {t('inlineGeneration.compose')}
           </button>
         </div>
 
@@ -676,7 +683,7 @@ export function InlineGenerationInput({
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="What happens next..."
+            placeholder={t('inlineGeneration.placeholder')}
             rows={1}
             className="w-full resize-none bg-transparent border-none outline-none px-4 pt-1.5 pb-2 font-prose text-[0.9375rem] leading-relaxed text-foreground placeholder:text-muted-foreground placeholder:italic disabled:opacity-40"
             style={{ minHeight: '44px', maxHeight: '200px', overflowY: 'auto', scrollbarWidth: 'none' }}
@@ -709,8 +716,8 @@ export function InlineGenerationInput({
                   <ArrowRight className="size-3.5 text-primary/70" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[0.75rem] font-medium text-foreground/85 font-sans leading-tight truncate">Continue</div>
-                  <div className="hidden sm:block text-[0.625rem] text-muted-foreground leading-tight mt-0.5 truncate">Advance plot</div>
+                  <div className="text-[0.75rem] font-medium text-foreground/85 font-sans leading-tight truncate">{t('inlineGeneration.continue')}</div>
+                  <div className="hidden sm:block text-[0.625rem] text-muted-foreground leading-tight mt-0.5 truncate">{t('inlineGeneration.advancePlot')}</div>
                 </div>
               </button>
               <button
@@ -727,8 +734,8 @@ export function InlineGenerationInput({
                   <Pause className="size-3.5 text-primary/70" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[0.75rem] font-medium text-foreground/85 font-sans leading-tight truncate">Scene-setting</div>
-                  <div className="hidden sm:block text-[0.625rem] text-muted-foreground leading-tight mt-0.5 truncate">Atmosphere</div>
+                  <div className="text-[0.75rem] font-medium text-foreground/85 font-sans leading-tight truncate">{t('inlineGeneration.sceneSetting')}</div>
+                  <div className="hidden sm:block text-[0.625rem] text-muted-foreground leading-tight mt-0.5 truncate">{t('inlineGeneration.atmosphere')}</div>
                 </div>
               </button>
             </div>
@@ -747,7 +754,7 @@ export function InlineGenerationInput({
                 )}
               >
                 <Compass className="size-3.5" />
-                Suggest directions
+                {t('inlineGeneration.suggestDirections')}
               </button>
             )}
 
@@ -755,7 +762,7 @@ export function InlineGenerationInput({
             {isFetchingSuggestions && (
               <div className="flex items-center justify-center gap-2 py-4">
                 <Loader2 className="size-4 text-primary/50 animate-spin" />
-                <span className="text-[0.75rem] text-muted-foreground font-sans italic">Imagining possibilities...</span>
+                <span className="text-[0.75rem] text-muted-foreground font-sans italic">{t('inlineGeneration.imagining')}</span>
               </div>
             )}
 
@@ -763,12 +770,12 @@ export function InlineGenerationInput({
             {suggestions.length > 0 && !isFetchingSuggestions && (
               <div className="relative">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[0.625rem] text-muted-foreground font-sans uppercase tracking-wider">Directions</span>
+                  <span className="text-[0.625rem] text-muted-foreground font-sans uppercase tracking-wider">{t('inlineGeneration.directions')}</span>
                   <button
                     type="button"
                     disabled={isGenerating || branchId === undefined}
                     onClick={handleFetchSuggestions}
-                    aria-label="Refresh directions"
+                    aria-label={t('inlineGeneration.refreshDirections')}
                     className="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
                   >
                     <RefreshCw className="size-3" />
@@ -879,14 +886,14 @@ export function InlineGenerationInput({
                                   // Editing continues at the end, not in front of the text.
                                   el?.setSelectionRange(el.value.length, el.value.length)
                                 }}
-                                aria-label={`Edit ${s.title} before sending`}
+                                aria-label={t('inlineGeneration.editBeforeSendingAria').replace('{title}', s.title)}
                                 // 32px suits a cursor; 44px is the WCAG 2.5.5 floor.
                                 className="shrink-0 flex items-center justify-center w-8 pointer-coarse:w-11 border-l border-border/20 text-muted-foreground/40 hover:text-foreground/60 hover:bg-muted/30 transition-colors rounded-r-md"
                               >
                                 <PenSquare className="size-3.5" />
                               </button>
                             </TooltipTrigger>
-                            <TooltipContent side="left">Edit before sending</TooltipContent>
+                            <TooltipContent side="left">{t('inlineGeneration.editBeforeSending')}</TooltipContent>
                           </Tooltip>
                         </div>
                         {/* Bottom expanded description */}
@@ -925,7 +932,7 @@ export function InlineGenerationInput({
             onChange={(e) => setComposeInput(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Write your prose directly..."
+            placeholder={t('inlineGeneration.composePlaceholder')}
             rows={3}
             className="w-full resize-none bg-transparent border-none outline-none px-4 pt-1.5 pb-2 font-prose text-[0.9375rem] leading-relaxed text-foreground placeholder:text-muted-foreground placeholder:italic disabled:opacity-40"
             style={{ minHeight: '100px', maxHeight: '400px', overflowY: 'auto', scrollbarWidth: 'none' }}
@@ -948,7 +955,7 @@ export function InlineGenerationInput({
                 <select
                   data-component-id="inline-generation-provider-select"
                   name="generation-provider"
-                  aria-label="Generation model"
+                  aria-label={t('inlineGeneration.generationModel')}
                   value={generationProviderId ?? ''}
                   onChange={(e) => {
                     const providerId = e.target.value || null
@@ -969,7 +976,7 @@ export function InlineGenerationInput({
                         <option value="">
                           {defaultProvider
                             ? `${defaultProvider.defaultModel}`
-                            : `No provider`}
+                            : t('settings.modelSelect.noProvider')}
                         </option>
                         {providers
                           .filter(p => p.id !== globalConfig.defaultProviderId)
@@ -1009,7 +1016,7 @@ export function InlineGenerationInput({
                 data-component-id="inline-generation-stop"
               >
                 <span className="size-1.5 bg-destructive rounded-[2px]" />
-                Stop
+                {t('inlineGeneration.stop')}
               </Button>
             ) : mode === 'freeform' ? (
               <Button
@@ -1020,7 +1027,7 @@ export function InlineGenerationInput({
                 data-component-id="inline-generation-submit"
               >
                 <PenLine className="size-3" />
-                Write
+                {t('inlineGeneration.write')}
               </Button>
             ) : mode === 'compose' ? (
               <Button
@@ -1035,7 +1042,7 @@ export function InlineGenerationInput({
                 ) : (
                   <Type className="size-3" />
                 )}
-                Add Section
+                {t('inlineGeneration.addSection')}
               </Button>
             ) : null}
           </div>
