@@ -258,7 +258,7 @@ export function TavernCardImportDialog({
             className="gap-1.5"
           >
             {importMutation.isPending ? (
-              'Importing\u2026'
+              t('tavernImport.importing')
             ) : (
               <>
                 <Check className="size-3.5" />

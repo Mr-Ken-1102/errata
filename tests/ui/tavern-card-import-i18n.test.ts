@@ -23,6 +23,7 @@ describe('TavernCardImportDialog localization', () => {
     expect(source).toContain('tags: character.tags')
     expect(source).toContain("visualRefs: [{ fragmentId: imageFragment.id, kind: 'image' }]")
     expect(source).toContain('parseCardJson(text)')
+    expect(source).toContain("t('tavernImport.importing')")
     expect(source).toContain('onJsonCardDetected(parsed)')
     expect(source).toContain('{card.character.name}')
     expect(source).toContain('{card.character.description}')
