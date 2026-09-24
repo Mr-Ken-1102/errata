@@ -7,7 +7,8 @@ import { createConversation, getChatHistory, getConversationHistory } from '@/se
 import type { AgentStreamCompletion, AgentStreamResult } from '@/server/agents/stream-types'
 
 let nextStreamResult: AgentStreamResult | null = null
-let lastAgentInput: Record<string, unknown> | null = null
+let agentInputReady: { promise: Promise<Record<string, unknown>>; resolve: (value: Record<string, unknown>) => void }
+let toolResultPersisted: { promise: Promise<void>; resolve: () => void }
 const failMock = vi.fn()
 
 vi.mock('@/server/agents', async (importOriginal) => {
@@ -18,7 +19,7 @@ vi.mock('@/server/agents', async (importOriginal) => {
     createAgentInstance: () => ({
       agentName: 'librarian.chat',
       execute: async (input: Record<string, unknown>) => {
-        lastAgentInput = input
+        agentInputReady.resolve(input)
         if (!nextStreamResult) throw new Error('missing mocked stream')
         return nextStreamResult
       },
@@ -27,11 +28,32 @@ vi.mock('@/server/agents', async (importOriginal) => {
   }
 })
 
+vi.mock('@/server/librarian/storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/server/librarian/storage')>()
+  return {
+    ...actual,
+    updateChatMessageByRunId: async (...args: Parameters<typeof actual.updateChatMessageByRunId>) => {
+      const history = await actual.updateChatMessageByRunId(...args)
+      const patch = args[4]
+      if (patch.toolCalls?.some(toolCall => toolCall.result !== undefined)) {
+        toolResultPersisted.resolve()
+      }
+      return history
+    },
+  }
+})
+
 import { createApp } from '@/server/api'
 
 function deferred() {
   let resolve!: () => void
   const promise = new Promise<void>(r => { resolve = r })
+  return { promise, resolve }
+}
+
+function deferredValue<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(r => { resolve = r })
   return { promise, resolve }
 }
 
@@ -89,17 +111,6 @@ function gatedStream(gate: ReturnType<typeof deferred>, opts?: { tool?: boolean;
   return { eventStream, completion: completionPromise }
 }
 
-async function waitForPersistedToolCall(
-  dataDir: string,
-  storyId: string,
-): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const history = await getChatHistory(dataDir, storyId)
-    if (history.messages.at(-1)?.toolCalls?.[0]?.result !== undefined) return
-    await new Promise(resolve => setTimeout(resolve, 1))
-  }
-  throw new Error('tool result was not persisted before Stop')
-}
 
 async function readRunId(res: Response) {
   if (!res.body) throw new Error('missing response body')
@@ -132,7 +143,8 @@ describe('server-owned librarian chat route', () => {
     cleanup = tmp.cleanup
     clearRuns()
     nextStreamResult = null
-    lastAgentInput = null
+    agentInputReady = deferredValue<Record<string, unknown>>()
+    toolResultPersisted = deferred()
     failMock.mockReset()
     await createStory(dataDir, {
       id: storyId,
@@ -262,10 +274,8 @@ describe('server-owned librarian chat route', () => {
     ))
     const { runId, reader } = await readRunId(response)
 
-    for (let attempt = 0; attempt < 50 && !lastAgentInput; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 1))
-    }
-    expect(lastAgentInput).toMatchObject({
+    const agentInput = await agentInputReady.promise
+    expect(agentInput).toMatchObject({
       povCharacterId: 'ch-maya',
       maxSteps: expect.any(Number),
       messages: expect.any(Array),
@@ -283,10 +293,8 @@ describe('server-owned librarian chat route', () => {
     const response = await post('general question', 'general-no-pov')
     const { runId, reader } = await readRunId(response)
 
-    for (let attempt = 0; attempt < 50 && !lastAgentInput; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 1))
-    }
-    expect(lastAgentInput).not.toHaveProperty('povCharacterId')
+    const agentInput = await agentInputReady.promise
+    expect(agentInput).not.toHaveProperty('povCharacterId')
 
     gate.resolve()
     await getRun(runId)!.done
@@ -366,7 +374,7 @@ describe('server-owned librarian chat route', () => {
 
     // Stop only after the tool result has landed durably. This tests the
     // invariant directly instead of racing an arbitrary event-loop tick.
-    await waitForPersistedToolCall(dataDir, storyId)
+    await toolResultPersisted.promise
 
     const cancel = await app.fetch(new Request(
       `http://localhost/api/stories/${storyId}/runs/${runId}/cancel`,
