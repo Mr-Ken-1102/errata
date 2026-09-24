@@ -36,6 +36,8 @@ describe('OnboardingWizard introductory localization', () => {
     expect(source).toContain("setFont('prose', opt.name)")
     expect(source).toContain("setFont('display', opt.name)")
     expect(source).toContain('onClick={() => onSelect(key)}')
+    expect(source).toContain('key={f.titleKey}')
+    expect(source).toContain('{t(f.titleKey)}')
     expect(source).toContain('api.config.addProvider(data)')
     expect(source).toContain('api.config.testModels({ baseURL, apiKey, preset, customHeaders: cardHeaders })')
     expect(source).toContain('api.config.testConnection({')

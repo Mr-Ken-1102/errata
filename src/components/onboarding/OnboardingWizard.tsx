@@ -554,7 +554,7 @@ function WelcomeStep({
       <div className="mt-4 space-y-3">
         {SUPPORTING_FEATURES.map((f, i) => (
           <div
-            key={t(f.titleKey)}
+            key={f.titleKey}
             className="flex items-start gap-4 text-left p-4 rounded-lg border border-border/20 bg-card/30 animate-onboarding-fade-up"
             style={{ animationDelay: `${450 + i * 100}ms` }}
           >
@@ -562,7 +562,7 @@ function WelcomeStep({
               <f.icon className="size-4 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium mb-0.5">{f.title}</p>
+              <p className="text-sm font-medium mb-0.5">{t(f.titleKey)}</p>
               <Hint className="leading-relaxed">{t(f.descKey)}</Hint>
             </div>
           </div>
