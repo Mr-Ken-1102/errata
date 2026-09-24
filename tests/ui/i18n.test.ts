@@ -65,6 +65,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'storyInfo.edit')).toBe('Chỉnh sửa')
     expect(translate('vi', 'proseVariation.variations')).toBe('Các biến thể')
     expect(translate('vi', 'proseVariation.active')).toBe('Đang dùng')
+    expect(translate('vi', 'chapterMarker.generateSummary')).toBe('Tạo tóm tắt')
+    expect(translate('vi', 'chapterMarker.saveSummary')).toBe('Lưu tóm tắt')
     expect(translate('vi', 'storyInfo.download')).toBe('Tải xuống')
     expect(translate('vi', 'storyInfo.words')).toBe('từ')
     expect(translate('vi', 'storyInfo.authoredMemory')).toBe('Bộ nhớ do tác giả tạo')
@@ -938,6 +940,28 @@ describe('language UI wiring', () => {
     expect(variationSource).toContain("new Date(fragment.createdAt).toLocaleDateString()")
     expect(variationSource).toContain("data-component-id=\"variation-switcher-trigger\"")
     expect(variationSource).toContain("data-component-id=\"variation-switcher-menu\"")
+  })
+
+  it('localizes chapter-marker chrome without changing rename, summarize, summary-update, fragment data, or keyboard semantics', () => {
+    const chapterSource = readFileSync('src/components/prose/ChapterMarker.tsx', 'utf8')
+
+    expect(chapterSource).toContain('useLanguage()')
+    expect(chapterSource).toContain("api.fragments.update(storyId, fragment.id, {")
+    expect(chapterSource).toContain("name,")
+    expect(chapterSource).toContain("description: fragment.description")
+    expect(chapterSource).toContain("content: fragment.content")
+    expect(chapterSource).toContain("api.chapters.summarize(storyId, fragment.id)")
+    expect(chapterSource).toContain("name: fragment.name")
+    expect(chapterSource).toContain("content,")
+    expect(chapterSource).toContain("queryKey: ['fragments', storyId]")
+    expect(chapterSource).toContain("renameMutation.mutate(newName)")
+    expect(chapterSource).toContain("updateSummaryMutation.mutate(summaryDraft.trim())")
+    expect(chapterSource).toContain("onSelect(fragment)")
+    expect(chapterSource).toContain("onDelete(sectionIndex)")
+    expect(chapterSource).toContain("{fragment.name}")
+    expect(chapterSource).toContain("{fragment.content}")
+    expect(chapterSource).toContain("if (e.key === 'Enter')")
+    expect(chapterSource).toContain("if (e.key === 'Escape')")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
