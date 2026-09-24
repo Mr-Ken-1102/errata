@@ -93,6 +93,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'ttsPlayer.pause')).toBe('Tạm dừng đọc')
     expect(translate('vi', 'ttsPlayer.playbackSettings')).toBe('Cài đặt phát lại')
     expect(translate('vi', 'importDialog.title')).toBe('Nhập dữ liệu')
+    expect(translate('vi', 'savePreset.title')).toBe('Lưu thành preset truyện')
+    expect(translate('vi', 'savePreset.save')).toBe('Lưu preset')
     expect(translate('vi', 'importDialog.unsupportedFileType')).toContain('.zip')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
     expect(translate('vi', 'desktopUpdateBanner.dismiss')).toBe('Đóng')
@@ -261,6 +263,26 @@ describe('language UI wiring', () => {
     expect(importSource).toContain("parsed.card.postHistoryInstructions")
     expect(importSource).toContain("parsed.card.alternateGreetings")
     expect(importSource).toContain("parsed.card.tags")
+  })
+
+  it('localizes save-preset chrome without changing selected fragment data, bundle serialization, user fields, or preset persistence', () => {
+    const presetSource = readFileSync('src/components/presets/SavePresetDialog.tsx', 'utf8')
+
+    expect(presetSource).toContain('useLanguage()')
+    expect(presetSource).toContain('serializeBundle(selectedFragments, mediaById, storyName)')
+    expect(presetSource).toContain('api.presets.create({')
+    expect(presetSource).toContain('name: name.trim()')
+    expect(presetSource).toContain('description: description.trim() || undefined')
+    expect(presetSource).toContain('sourceStoryName: storyName')
+    expect(presetSource).toContain('bundle,')
+    expect(presetSource).toContain("queryKey: ['presets']")
+    expect(presetSource).toContain("setName(storyName ?? '')")
+    expect(presetSource).toContain("setDescription('')")
+    expect(presetSource).toContain('value={name}')
+    expect(presetSource).toContain('value={description}')
+    expect(presetSource).toContain('maxLength={80}')
+    expect(presetSource).toContain('maxLength={250}')
+    expect(presetSource).toContain('disabled={!name.trim() || selectedFragments.length === 0 || saveMutation.isPending}')
   })
 
   it('localizes Appearance and Typography presentation without changing preference values or font roles', () => {
