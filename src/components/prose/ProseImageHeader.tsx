@@ -10,6 +10,7 @@ import {
   type HeaderAspectId,
   type HeaderImage,
 } from '@/lib/fragment-visuals'
+import { useLanguage } from '@/lib/i18n'
 
 interface ProseImageHeaderProps {
   storyId: string
@@ -25,6 +26,16 @@ interface ProseImageHeaderProps {
  */
 export function ProseImageHeader({ storyId, fragment, header }: ProseImageHeaderProps) {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
+  const aspectTitle = (id: HeaderAspectId) => {
+    switch (id) {
+      case '21:9': return t('proseImageHeader.cinematic')
+      case '16:9': return t('proseImageHeader.wide')
+      case '3:2': return t('proseImageHeader.photo')
+      case '1:1': return t('proseImageHeader.square')
+      case 'original': return t('proseImageHeader.originalShape')
+    }
+  }
   const storedAspect = parseHeaderAspect(fragment.meta)
   const storedFade = parseHeaderFade(fragment.meta)
   const [aspect, setAspect] = useState<HeaderAspectId>(storedAspect)
@@ -105,7 +116,7 @@ export function ProseImageHeader({ storyId, fragment, header }: ProseImageHeader
       {/* Display controls — quiet by default, revealed on hover/focus/touch. */}
       <div
         role="group"
-        aria-label="Header image display"
+        aria-label={t('proseImageHeader.display')}
         className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border/40 bg-background/70 p-0.5 shadow-sm backdrop-blur-md opacity-0 transition-opacity duration-200 group-hover/header:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none"
       >
         {HEADER_ASPECT_RATIOS.map((o) => {
@@ -115,7 +126,7 @@ export function ProseImageHeader({ storyId, fragment, header }: ProseImageHeader
               key={o.id}
               type="button"
               aria-pressed={selected}
-              title={o.title}
+              title={aspectTitle(o.id)}
               disabled={mutation.isPending}
               onClick={(e) => {
                 e.stopPropagation()
@@ -127,7 +138,7 @@ export function ProseImageHeader({ storyId, fragment, header }: ProseImageHeader
                   : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
               }`}
             >
-              {o.label}
+              {o.id === 'original' ? t('proseImageHeader.full') : o.label}
             </button>
           )
         })}
@@ -137,7 +148,7 @@ export function ProseImageHeader({ storyId, fragment, header }: ProseImageHeader
         <button
           type="button"
           aria-pressed={fade}
-          title="Fade top &amp; bottom edges"
+          title={t('proseImageHeader.fadeEdges')}
           disabled={mutation.isPending}
           onClick={(e) => {
             e.stopPropagation()
@@ -149,7 +160,7 @@ export function ProseImageHeader({ storyId, fragment, header }: ProseImageHeader
               : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
           }`}
         >
-          Fade
+          {t('proseImageHeader.fade')}
         </button>
       </div>
     </figure>

@@ -67,6 +67,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'proseVariation.active')).toBe('Đang dùng')
     expect(translate('vi', 'chapterMarker.generateSummary')).toBe('Tạo tóm tắt')
     expect(translate('vi', 'chapterMarker.saveSummary')).toBe('Lưu tóm tắt')
+    expect(translate('vi', 'proseImageHeader.display')).toBe('Hiển thị ảnh đầu đoạn')
+    expect(translate('vi', 'proseImageHeader.full')).toBe('Gốc')
     expect(translate('vi', 'storyInfo.download')).toBe('Tải xuống')
     expect(translate('vi', 'storyInfo.words')).toBe('từ')
     expect(translate('vi', 'storyInfo.authoredMemory')).toBe('Bộ nhớ do tác giả tạo')
@@ -962,6 +964,29 @@ describe('language UI wiring', () => {
     expect(chapterSource).toContain("{fragment.content}")
     expect(chapterSource).toContain("if (e.key === 'Enter')")
     expect(chapterSource).toContain("if (e.key === 'Escape')")
+  })
+
+  it('localizes prose-image-header controls without changing aspect ids/ratios, image metadata, focal positioning, or persisted header settings', () => {
+    const headerSource = readFileSync('src/components/prose/ProseImageHeader.tsx', 'utf8')
+    const visualsSource = readFileSync('src/lib/fragment-visuals.ts', 'utf8')
+
+    expect(headerSource).toContain('useLanguage()')
+    expect(headerSource).toContain("HEADER_ASPECT_RATIOS.find((o) => o.id === aspect)")
+    expect(headerSource).toContain("HEADER_ASPECT_RATIOS.map((o) =>")
+    expect(headerSource).toContain("key={o.id}")
+    expect(headerSource).toContain("chooseAspect(o.id)")
+    expect(headerSource).toContain("mutation.mutate({ headerAspect: next })")
+    expect(headerSource).toContain("mutation.mutate({ headerFade: next })")
+    expect(headerSource).toContain("meta: { ...fragment.meta, ...patch }")
+    expect(headerSource).toContain("src={header.imageUrl}")
+    expect(headerSource).toContain("alt={header.name}")
+    expect(headerSource).toContain("headerFocalPosition(header.boundary)")
+    expect(headerSource).toContain("HEADER_FADE_MASK")
+    expect(headerSource).toContain("queryKey: ['fragments', storyId]")
+    expect(visualsSource).toContain("export type HeaderAspectId = '21:9' | '16:9' | '3:2' | '1:1' | 'original'")
+    expect(visualsSource).toContain("{ id: '21:9', label: '21:9', title: 'Cinematic 21:9', ratio: 21 / 9 }")
+    expect(visualsSource).toContain("{ id: 'original', label: 'Full', title: 'Original shape', ratio: null }")
+    expect(visualsSource).toContain("export const DEFAULT_HEADER_ASPECT: HeaderAspectId = '21:9'")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
