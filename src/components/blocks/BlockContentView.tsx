@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { componentId } from '@/lib/dom-ids'
 import { EmptyHint } from '@/components/ui/prose-text'
+import { useLanguage } from '@/lib/i18n'
 
 interface BlockContentViewProps {
   messages: Array<{ role: string; content: string }>
@@ -44,6 +45,7 @@ function parseBlockSegments(messages: Array<{ role: string; content: string }>) 
 }
 
 export function BlockContentView({ messages, blocks, tools, className }: BlockContentViewProps) {
+  const { t } = useLanguage()
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
 
@@ -64,10 +66,10 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
       groups[groups.length - 1].blocks.push({ id: block.id, name: block.name })
     }
     if (hasTools) {
-      groups.push({ role: 'tools', blocks: [{ id: TOOLS_BLOCK_ID, name: `Tools · ${enabledToolCount}/${tools!.length}` }] })
+      groups.push({ role: 'tools', blocks: [{ id: TOOLS_BLOCK_ID, name: `${t('blockContent.tools')} · ${enabledToolCount}/${tools!.length}` }] })
     }
     return groups
-  }, [blocks, segments, hasTools, enabledToolCount, tools])
+  }, [blocks, segments, hasTools, enabledToolCount, tools, t])
 
   const scrollToBlock = useCallback((blockId: string) => {
     setActiveBlockId(blockId)
@@ -80,7 +82,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
   if (segments.length === 0 && !hasTools) {
     return (
       <div className={cn('flex items-center justify-center py-16', className)}>
-        <EmptyHint>No blocks in context</EmptyHint>
+        <EmptyHint>{t('blockContent.empty')}</EmptyHint>
       </div>
     )
   }
@@ -140,7 +142,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
                   </span>
                 )}
                 <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-                  {seg.content.length.toLocaleString()} chars
+                  {seg.content.length.toLocaleString()} {t('blockContent.chars')}
                 </span>
                 <Badge
                   variant="outline"
@@ -166,12 +168,12 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
               )}
             >
               <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/10 border-b border-border/10">
-                <span className="text-[0.625rem] font-medium text-muted-foreground">Tools</span>
+                <span className="text-[0.625rem] font-medium text-muted-foreground">{t('blockContent.tools')}</span>
                 <span className="text-[0.5625rem] text-muted-foreground/70">
-                  sent to the model via the API tool schema
+                  {t('blockContent.toolSchemaHint')}
                 </span>
                 <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-                  {enabledToolCount}/{tools!.length} enabled
+                  {enabledToolCount}/{tools!.length} {t('blockContent.enabled')}
                 </span>
               </div>
 
@@ -187,7 +189,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
                           variant="outline"
                           className="text-[0.5rem] h-3.5 px-1 font-normal border-transparent text-muted-foreground bg-muted/30 shrink-0 uppercase tracking-wide"
                         >
-                          disabled
+                          {t('blockContent.disabled')}
                         </Badge>
                       )}
                     </div>
