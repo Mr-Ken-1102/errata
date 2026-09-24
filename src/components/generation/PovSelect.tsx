@@ -20,9 +20,13 @@ function filterOptions(
 ): Array<Pick<Fragment, 'id' | 'name'>> {
   const normalized = query.trim().toLocaleLowerCase()
   return [
-    ...(!normalized || narratorLabel.toLocaleLowerCase().includes(normalized)
-      ? [{ id: '', name: narratorLabel }]
-      : []),
+    ...(
+      !normalized
+      || narratorLabel.toLocaleLowerCase().includes(normalized)
+      || 'narrator'.includes(normalized)
+        ? [{ id: '', name: narratorLabel }]
+        : []
+    ),
     ...(characters ?? [])
       .filter(character => !character.archived)
       .filter(character => (

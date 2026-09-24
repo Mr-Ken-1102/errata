@@ -14,6 +14,7 @@ describe('PovSelect localization', () => {
     const source = readFileSync('src/components/generation/PovSelect.tsx', 'utf8')
 
     expect(source).toContain("? [{ id: '', name: narratorLabel }]")
+    expect(source).toContain("'narrator'.includes(normalized)")
     expect(source).toContain('readPovCharacterId(storyId, branchId)')
     expect(source).toContain('writePovCharacterId(storyId, branchId, undefined)')
     expect(source).toContain('writePovCharacterId(storyId, branchId, id || undefined)')
