@@ -51,7 +51,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
 
   const segments = useMemo(() => parseBlockSegments(messages), [messages])
   const hasTools = (tools?.length ?? 0) > 0
-  const enabledToolCount = useMemo(() => tools?.filter((t) => tool.enabled).length ?? 0, [tools])
+  const enabledToolCount = useMemo(() => tools?.filter((tool) => tool.enabled).length ?? 0, [tools])
 
   // Build nav groups from explicit blocks list, or fall back to segments
   const navGroups = useMemo(() => {
@@ -173,7 +173,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
                   {t('blockContent.toolSchemaHint')}
                 </span>
                 <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-                  {enabledToolCount}/{tools!.length} {t('blockContentool.enabled')}
+                  {enabledToolCount}/{tools!.length} {t('blockContent.enabled')}
                 </span>
               </div>
 

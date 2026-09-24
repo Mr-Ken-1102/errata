@@ -24,6 +24,8 @@ describe('BlockContentView localization', () => {
     expect(source).toContain('{seg.id}')
     expect(source).toContain('{seg.role}')
     expect(source).toContain('{seg.content}')
+    expect(source).toContain('tools?.filter((tool) => tool.enabled)')
+    expect(source).toContain("t('blockContent.enabled')")
     expect(source).toContain('{tool.name}')
     expect(source).toContain('{tool.description}')
     expect(source).toContain("const TOOLS_BLOCK_ID = '__tools__'")
