@@ -18,6 +18,7 @@ import {
   History,
   BookOpen,
 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface ChatConfigProps {
   characters: Fragment[]
@@ -77,6 +78,7 @@ export function ChatConfig({
   disabled,
   mediaById,
 }: ChatConfigProps) {
+  const { t } = useLanguage()
   const selectedCharacter = characters.find((c) => c.id === selectedCharacterId)
   const personaCharacter = persona.type === 'character'
     ? characters.find((c) => c.id === persona.characterId)
@@ -95,14 +97,14 @@ export function ChatConfig({
   }, [proseChain, proseFragments])
 
   const storyPointLabel = storyPointId
-    ? proseEntries.find((e) => e.id === storyPointId)?.name ?? 'Selected'
-    : 'Latest'
+    ? proseEntries.find((e) => e.id === storyPointId)?.name ?? t('characterChat.config.selected')
+    : t('characterChat.config.latest')
 
   const personaLabel = persona.type === 'character'
-    ? personaCharacter?.name ?? 'Character'
+    ? personaCharacter?.name ?? t('characterChat.config.character')
     : persona.type === 'stranger'
-      ? 'Stranger'
-      : 'Custom'
+      ? t('characterChat.config.stranger')
+      : t('characterChat.config.custom')
 
   return (
     <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/30 bg-card/30" data-component-id="character-chat-config">
@@ -117,7 +119,7 @@ export function ChatConfig({
             <Button variant="ghost" size="sm" className="h-7 min-w-0 max-w-[180px] shrink gap-1.5 text-xs font-medium">
               {selectedCharacter && <CharacterThumb character={selectedCharacter} mediaById={mediaById} />}
               <span className="min-w-0 truncate font-display text-sm">
-                {selectedCharacter?.name ?? 'Select character'}
+                {selectedCharacter?.name ?? t('characterChat.config.selectCharacter')}
               </span>
               <ChevronDown className="size-3 shrink-0 opacity-50" />
             </Button>
@@ -138,7 +140,7 @@ export function ChatConfig({
             ))}
             {characters.length === 0 && (
               <DropdownMenuItem disabled className="text-muted-foreground italic text-xs">
-                No characters yet
+                {t('characterChat.config.noCharacters')}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -164,8 +166,8 @@ export function ChatConfig({
             >
               <User className="size-3.5" />
               <div>
-                <div className="text-xs">Stranger</div>
-                <div className="text-[0.625rem] text-muted-foreground">Someone they just met</div>
+                <div className="text-xs">{t('characterChat.config.stranger')}</div>
+                <div className="text-[0.625rem] text-muted-foreground">{t('characterChat.config.strangerHint')}</div>
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -178,7 +180,7 @@ export function ChatConfig({
                   className="gap-2"
                 >
                   <Users className="size-3.5" />
-                  <span className="text-xs">As {ch.name}</span>
+                  <span className="text-xs">{t('characterChat.config.asPrefix')} {ch.name}</span>
                 </DropdownMenuItem>
               ))}
             {characters.filter((c) => c.id !== selectedCharacterId).length > 0 && (
@@ -186,7 +188,7 @@ export function ChatConfig({
             )}
             <DropdownMenuItem
               onClick={() => {
-                const prompt = window.prompt('Describe your persona:')
+                const prompt = window.prompt(t('characterChat.config.describePersonaPrompt'))
                 if (prompt?.trim()) {
                   onPersonaChange({ type: 'custom', prompt: prompt.trim() })
                 }
@@ -195,8 +197,8 @@ export function ChatConfig({
             >
               <Sparkles className="size-3.5" />
               <div>
-                <div className="text-xs">Custom persona</div>
-                <div className="text-[0.625rem] text-muted-foreground">Define who you are</div>
+                <div className="text-xs">{t('characterChat.config.customPersona')}</div>
+                <div className="text-[0.625rem] text-muted-foreground">{t('characterChat.config.definePersonaHint')}</div>
               </div>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -218,8 +220,8 @@ export function ChatConfig({
               onClick={() => onStoryPointChange(null)}
               className="gap-2"
             >
-              <span className="text-xs font-medium">Latest</span>
-              <span className="text-[0.625rem] text-muted-foreground ml-auto">All events</span>
+              <span className="text-xs font-medium">{t('characterChat.config.latest')}</span>
+              <span className="text-[0.625rem] text-muted-foreground ml-auto">{t('characterChat.config.allEvents')}</span>
             </DropdownMenuItem>
             {proseEntries.length > 0 && <DropdownMenuSeparator />}
             {proseEntries.map((entry) => (
@@ -248,10 +250,10 @@ export function ChatConfig({
           className="h-7 gap-1.5 text-xs text-muted-foreground"
           onClick={onShowConversations}
           disabled={disabled}
-          aria-label="Previous conversations"
+          aria-label={t('characterChat.config.previousConversations')}
         >
           <History className="size-3" />
-          <span className="hidden sm:inline">History</span>
+          <span className="hidden sm:inline">{t('characterChat.config.history')}</span>
         </Button>
 
         <Button
@@ -259,8 +261,8 @@ export function ChatConfig({
           size="icon"
           className="size-7 text-muted-foreground hover:text-foreground"
           onClick={onClose}
-          title="Return to story"
-          aria-label="Return to story"
+          title={t('characterChat.config.returnToStory')}
+          aria-label={t('characterChat.config.returnToStory')}
           data-component-id="character-chat-return-to-story"
         >
           <BookOpen className="size-3.5 md:hidden" />
