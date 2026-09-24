@@ -661,6 +661,7 @@ function ProviderSetupStep({
   onComplete: () => void
   onBack: () => void
 }) {
+  const { t } = useLanguage()
   const card = PROVIDER_CARDS[preset]
   const accent = ACCENT_COLORS[card.accent]
 
@@ -715,7 +716,7 @@ function ProviderSetupStep({
         }
       }
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Failed to fetch models')
+      setFetchError(err instanceof Error ? err.message : t('providers.fetchModelsFailed'))
     } finally {
       setFetchingModels(false)
     }
@@ -723,11 +724,11 @@ function ProviderSetupStep({
 
   const handleTestConnection = async () => {
     if (!defaultModel) {
-      setTestResult({ ok: false, error: 'Model is required to test' })
+      setTestResult({ ok: false, error: t('providers.modelRequired') })
       return
     }
     if (!baseURL || !apiKey) {
-      setTestResult({ ok: false, error: 'Base URL and API Key are required' })
+      setTestResult({ ok: false, error: t('providers.baseUrlApiKeyRequired') })
       return
     }
     setTesting(true)
@@ -742,7 +743,7 @@ function ProviderSetupStep({
       })
       setTestResult(result)
     } catch (err) {
-      setTestResult({ ok: false, error: err instanceof Error ? err.message : 'Test failed' })
+      setTestResult({ ok: false, error: err instanceof Error ? err.message : t('providers.testFailed') })
     } finally {
       setTesting(false)
     }
@@ -777,19 +778,18 @@ function ProviderSetupStep({
           className="font-display text-3xl italic mb-2 animate-onboarding-fade-up"
           style={{ animationDelay: '200ms' }}
         >
-          You're all set!
+          {t('onboarding.setup.allSet')}
         </h2>
         <Caption
           size="sm"
           className="mb-8 animate-onboarding-fade-up"
           style={{ animationDelay: '350ms' }}
         >
-          {card.name || name} is configured and ready to go. You can manage providers anytime in
-          settings.
+          {t('onboarding.setup.ready').replace('{provider}', card.name || name)}
         </Caption>
         <div className="animate-onboarding-fade-up" style={{ animationDelay: '500ms' }}>
           <Button onClick={onComplete} className="px-8">
-            Start Writing
+            {t('onboarding.setup.startWriting')}
           </Button>
         </div>
       </div>
@@ -805,11 +805,11 @@ function ProviderSetupStep({
             <Server className={`size-3.5 ${accent.text}`} />
           </div>
           <h2 className="font-display text-3xl italic">
-            {preset === 'custom' ? 'Custom Provider' : card.name}
+            {preset === 'custom' ? t('onboarding.setup.customProvider') : card.name}
           </h2>
         </div>
         <Caption size="sm">
-          Enter your credentials to get started.
+          {t('onboarding.setup.credentials')}
         </Caption>
       </div>
 
@@ -820,32 +820,32 @@ function ProviderSetupStep({
         {/* Name (only for custom) */}
         {preset === 'custom' && (
           <div>
-            <label className={labelClass}>Provider Name</label>
+            <label className={labelClass}>{t('onboarding.setup.providerName')}</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
-              placeholder="My Provider"
+              placeholder={t('onboarding.setup.providerNamePlaceholder')}
             />
           </div>
         )}
 
         {/* API Key */}
         <div>
-          <label className={labelClass}>API Key</label>
+          <label className={labelClass}>{t('providers.apiKey')}</label>
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             className={inputClass}
-            placeholder="Enter your API key"
+            placeholder={t('onboarding.setup.enterApiKey')}
             autoFocus
           />
         </div>
 
         {/* Base URL */}
         <div>
-          <label className={labelClass}>Base URL</label>
+          <label className={labelClass}>{t('providers.baseUrl')}</label>
           <input
             value={baseURL}
             onChange={(e) => setBaseURL(e.target.value)}
@@ -856,7 +856,7 @@ function ProviderSetupStep({
 
         {/* Default Model */}
         <div>
-          <label className={labelClass}>Default Model</label>
+          <label className={labelClass}>{t('providers.defaultModel')}</label>
           <div className="flex gap-2">
             {fetchedModels.length > 0 && !useCustomModel ? (
               <select
@@ -865,7 +865,7 @@ function ProviderSetupStep({
                 className={inputClass + ' flex-1'}
               >
                 {!fetchedModels.some((m) => m.id === defaultModel) && defaultModel && (
-                  <option value={defaultModel}>{defaultModel} (current)</option>
+                  <option value={defaultModel}>{defaultModel} ({t('providers.current')})</option>
                 )}
                 {fetchedModels.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -879,7 +879,7 @@ function ProviderSetupStep({
                 value={defaultModel}
                 onChange={(e) => setDefaultModel(e.target.value)}
                 className={inputClass + ' flex-1'}
-                placeholder="e.g. deepseek-v4-flash"
+                placeholder={t('onboarding.setup.modelExample')}
               />
             )}
             <Button
@@ -895,14 +895,14 @@ function ProviderSetupStep({
               ) : (
                 <RefreshCw className="size-3" />
               )}
-              Fetch
+              {t('onboarding.setup.fetch')}
             </Button>
           </div>
           {(() => {
             const suggested = (card as { models?: readonly string[] }).models ?? []
             return suggested.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mr-0.5">Suggested</span>
+                <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mr-0.5">{t('providers.suggested')}</span>
                 {suggested.map((m) => (
                   <button
                     key={m}
@@ -922,13 +922,13 @@ function ProviderSetupStep({
               className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground mt-1 underline"
               onClick={() => setUseCustomModel(!useCustomModel)}
             >
-              {useCustomModel ? 'Use fetched models' : 'Enter model ID manually'}
+              {useCustomModel ? t('providers.useFetchedModels') : t('providers.enterModelManually')}
             </button>
           )}
           {fetchError && <p className="text-xs text-destructive mt-1">{fetchError}</p>}
           {fetchedModels.length > 0 && !fetchError && (
             <p className="text-[0.6875rem] text-muted-foreground mt-1">
-              {fetchedModels.length} models available
+              {fetchedModels.length} {t('providers.modelsAvailable')}
             </p>
           )}
         </div>
@@ -940,11 +940,11 @@ function ProviderSetupStep({
           >
             {testResult.ok ? (
               <p>
-                <span className="font-medium">Success:</span> {testResult.reply}
+                <span className="font-medium">{t('providers.success')}:</span> {testResult.reply}
               </p>
             ) : (
               <p>
-                <span className="font-medium">Error:</span> {testResult.error}
+                <span className="font-medium">{t('providers.error')}:</span> {testResult.error}
               </p>
             )}
           </div>
@@ -954,8 +954,8 @@ function ProviderSetupStep({
         {addMutation.isError && (
           <div className="text-sm rounded-md p-3 bg-destructive/10 text-destructive">
             <p>
-              <span className="font-medium">Error:</span>{' '}
-              {addMutation.error instanceof Error ? addMutation.error.message : 'Failed to save'}
+              <span className="font-medium">{t('providers.error')}:</span>{' '}
+              {addMutation.error instanceof Error ? addMutation.error.message : t('onboarding.setup.saveFailed')}
             </p>
           </div>
         )}
@@ -963,7 +963,7 @@ function ProviderSetupStep({
         {/* Actions */}
         <div className="flex gap-2 pt-2">
           <Button onClick={handleSave} disabled={!canSave || addMutation.isPending} className="flex-1">
-            {addMutation.isPending ? 'Saving...' : 'Save & Continue'}
+            {addMutation.isPending ? t('providers.saving') : t('onboarding.setup.saveAndContinue')}
           </Button>
           <Button
             variant="outline"
@@ -972,7 +972,7 @@ function ProviderSetupStep({
             className="gap-1.5"
           >
             {testing ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
-            Test
+            {t('providers.test')}
           </Button>
         </div>
       </div>
@@ -981,7 +981,7 @@ function ProviderSetupStep({
         className="flex items-center justify-center mt-8 animate-onboarding-fade-up"
         style={{ animationDelay: '250ms' }}
       >
-        <Wizard.BackButton tone="link" onBack={onBack} />
+<Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
       </div>
     </div>
   )
