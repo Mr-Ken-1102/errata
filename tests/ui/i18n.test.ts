@@ -95,6 +95,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'importDialog.title')).toBe('Nhập dữ liệu')
     expect(translate('vi', 'savePreset.title')).toBe('Lưu thành preset truyện')
     expect(translate('vi', 'savePreset.save')).toBe('Lưu preset')
+    expect(translate('vi', 'voiceField.label')).toBe('Giọng nhân vật')
+    expect(translate('vi', 'voiceField.povHint')).toContain('POV')
     expect(translate('vi', 'importDialog.unsupportedFileType')).toContain('.zip')
     expect(translate('vi', 'settings.updates.checkForUpdates')).toBe('Kiểm tra cập nhật')
     expect(translate('vi', 'desktopUpdateBanner.dismiss')).toBe('Đóng')
@@ -283,6 +285,27 @@ describe('language UI wiring', () => {
     expect(presetSource).toContain('maxLength={80}')
     expect(presetSource).toContain('maxLength={250}')
     expect(presetSource).toContain('disabled={!name.trim() || selectedFragments.length === 0 || saveMutation.isPending}')
+  })
+
+  it('localizes character voice chrome without changing verbatim voice persistence, debounce, branch identity, or fragment update semantics', () => {
+    const voiceSource = readFileSync('src/components/fragments/VoiceField.tsx', 'utf8')
+
+    expect(voiceSource).toContain('useLanguage()')
+    expect(voiceSource).toContain('const SAVE_DEBOUNCE_MS = 800')
+    expect(voiceSource).toContain("const raw = fragment?.meta?.voice")
+    expect(voiceSource).toContain("return typeof raw === 'string' ? raw : ''")
+    expect(voiceSource).toContain('if (voice.trim()) meta.voice = voice')
+    expect(voiceSource).toContain('else delete meta.voice')
+    expect(voiceSource).toContain('api.fragments.update(storyId, fragment.id, {')
+    expect(voiceSource).toContain('name: fragment.name')
+    expect(voiceSource).toContain('description: fragment.description')
+    expect(voiceSource).toContain('content: fragment.content')
+    expect(voiceSource).toContain('meta,')
+    expect(voiceSource).toContain('}, branchId)')
+    expect(voiceSource).toContain('draft !== readVoice(fragment)')
+    expect(voiceSource).toContain('saveMutation.mutate(draft)')
+    expect(voiceSource).toContain('setTimeout(() => commitRef.current(), SAVE_DEBOUNCE_MS)')
+    expect(voiceSource).toContain("qk.fragments(storyId, branchId, 'character')")
   })
 
   it('localizes Appearance and Typography presentation without changing preference values or font roles', () => {
