@@ -63,6 +63,8 @@ describe('translation fallback', () => {
     expect(translate('vi', 'fragmentTypes.newType')).toBe('Loại mới')
     expect(translate('vi', 'fragmentTypes.saveChanges')).toBe('Lưu thay đổi')
     expect(translate('vi', 'storyInfo.edit')).toBe('Chỉnh sửa')
+    expect(translate('vi', 'proseVariation.variations')).toBe('Các biến thể')
+    expect(translate('vi', 'proseVariation.active')).toBe('Đang dùng')
     expect(translate('vi', 'storyInfo.download')).toBe('Tải xuống')
     expect(translate('vi', 'storyInfo.words')).toBe('từ')
     expect(translate('vi', 'storyInfo.authoredMemory')).toBe('Bộ nhớ do tác giả tạo')
@@ -920,6 +922,22 @@ describe('language UI wiring', () => {
     expect(tabsSource).toContain('onClick={onHide}')
     expect(tabsSource).toContain("t('timeline.createFromCurrent')")
     expect(tabsSource).toContain("t('timeline.hideBar')")
+  })
+
+  it('localizes variation-switcher chrome without changing active variation identity, switch mutation, cache invalidation, or fragment metadata', () => {
+    const variationSource = readFileSync('src/components/prose/VariationSwitcher.tsx', 'utf8')
+
+    expect(variationSource).toContain('useLanguage()')
+    expect(variationSource).toContain("api.proseChain.switchVariation(storyId, sectionIndex, fragmentId)")
+    expect(variationSource).toContain("invalidateStoryContent(queryClient, storyId)")
+    expect(variationSource).toContain("setIsOpen(false)")
+    expect(variationSource).toContain("entry.proseFragments.findIndex(f => f.id === entry.active) + 1")
+    expect(variationSource).toContain("fragment.id === entry.active")
+    expect(variationSource).toContain("switchMutation.mutate(fragment.id)")
+    expect(variationSource).toContain("{fragment.description || fragment.name}")
+    expect(variationSource).toContain("new Date(fragment.createdAt).toLocaleDateString()")
+    expect(variationSource).toContain("data-component-id=\"variation-switcher-trigger\"")
+    expect(variationSource).toContain("data-component-id=\"variation-switcher-menu\"")
   })
 
   it('localizes prose-color presentation without changing channel ids, presets, or preview prose', () => {
