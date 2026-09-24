@@ -48,6 +48,7 @@ import { AgentBlockConfigSchema, type AgentBlockConfig } from '@/contracts/block
 import { q } from '@/lib/query-keys'
 import { useWorkspaceSurface } from '@/hooks/use-workspace-surface'
 import { useStorySetupController } from '@/components/wizard/use-story-setup-controller'
+import { useLanguage } from '@/lib/i18n'
 
 const DebugPanel = lazy(() => import('@/components/generation/DebugPanel').then((module) => ({ default: module.DebugPanel })))
 const ProviderPanel = lazy(() => import('@/components/settings/ProviderManager').then((module) => ({ default: module.ProviderPanel })))
@@ -78,6 +79,7 @@ export const Route = createFileRoute('/story/$storyId')({
 })
 
 function StoryEditorPage() {
+  const { t } = useLanguage()
   const { storyId } = Route.useParams()
   const isMobile = useIsMobile()
   const queryClient = useQueryClient()
@@ -433,7 +435,7 @@ function StoryEditorPage() {
         if (json && typeof json.agentName === 'string' && json.config) {
           const parsed = AgentBlockConfigSchema.safeParse(json.config)
           if (!parsed.success) {
-            setAgentConfigImportError('The dropped agent configuration is invalid.')
+            setAgentConfigImportError(t('storyRoute.invalidAgentConfig'))
             return
           }
           setAgentConfigImportError(null)
@@ -498,13 +500,13 @@ function StoryEditorPage() {
         // Not a valid file, ignore
       }
     }
-  }, [])
+  }, [t])
   const isFileDragging = useWindowFileDrop(handleFileDrop)
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p className="text-sm text-muted-foreground italic">Loading story...</p>
+        <p className="text-sm text-muted-foreground italic">{t('storyRoute.loading')}</p>
       </div>
     )
   }
@@ -512,9 +514,9 @@ function StoryEditorPage() {
   if (!story) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <p className="text-sm text-muted-foreground italic">Story not found.</p>
+        <p className="text-sm text-muted-foreground italic">{t('storyRoute.notFound')}</p>
         <Link to="/">
-          <Button variant="outline" size="sm">Back to stories</Button>
+          <Button variant="outline" size="sm">{t('sidebar.backToStories')}</Button>
         </Link>
       </div>
     )
@@ -588,8 +590,8 @@ function StoryEditorPage() {
               size="icon"
               className="size-9 bg-background/80 backdrop-blur-sm border border-border/40 shadow-sm"
               onClick={() => setMainView('character-chat')}
-              title="Character chat"
-              aria-label="Open character chat"
+              title={t('storyRoute.characterChat')}
+              aria-label={t('storyRoute.openCharacterChat')}
             >
               <MessageSquare className="size-4" />
             </Button>
@@ -618,7 +620,7 @@ function StoryEditorPage() {
           {outlineOpen && (
             <button
               onClick={() => setOutlineOpen(false)}
-              title="Collapse outline"
+              title={t('storyRoute.collapseOutline')}
               data-component-id="prose-outline-toggle"
               className="flex items-center justify-center size-7 rounded-md bg-accent text-foreground hover:bg-accent/80 transition-colors duration-200"
             >
@@ -637,20 +639,20 @@ function StoryEditorPage() {
                   size="sm"
                   className="h-7 flex-1 gap-1.5 text-xs"
                   onClick={() => setMainView('prose')}
-                  title="Prose view"
+                  title={t('storyRoute.proseView')}
                 >
                   <BookOpen className="size-3.5" />
-                  Story
+                  {t('storyRoute.story')}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 flex-1 gap-1.5 text-xs"
                   onClick={() => setMainView('character-chat')}
-                  title="Character chat"
+                  title={t('storyRoute.characterChat')}
                 >
                   <MessageSquare className="size-3.5" />
-                  Chat
+                  {t('storyRoute.chat')}
                 </Button>
               </>
             ) : (
@@ -660,7 +662,7 @@ function StoryEditorPage() {
                   size="icon"
                   className="size-7"
                   onClick={() => setMainView('prose')}
-                  title="Prose view"
+                  title={t('storyRoute.proseView')}
                 >
                   <BookOpen className="size-3.5" />
                 </Button>
@@ -669,7 +671,7 @@ function StoryEditorPage() {
                   size="icon"
                   className="size-7"
                   onClick={() => setMainView('character-chat')}
-                  title="Character chat"
+                  title={t('storyRoute.characterChat')}
                 >
                   <MessageSquare className="size-3.5" />
                 </Button>
@@ -682,7 +684,7 @@ function StoryEditorPage() {
             <div className="w-7 flex justify-center">
               <button
                 onClick={() => setOutlineOpen(true)}
-                title="Expand outline"
+                title={t('storyRoute.expandOutline')}
                 data-component-id="prose-outline-toggle"
                 className="flex items-center justify-center size-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors duration-200"
               >
@@ -717,7 +719,7 @@ function StoryEditorPage() {
             }}
           />
         ) : (
-          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading chat…</div>}>
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('storyRoute.loadingChat')}</div>}>
             <CharacterChatView
               storyId={storyId}
               onClose={() => setMainView('prose')}
@@ -799,8 +801,8 @@ function StoryEditorPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-16 py-12">
             <Upload className="size-8 text-primary/50" />
-            <p className="text-sm font-medium text-primary/70">Drop file to import</p>
-            <p className="text-xs text-muted-foreground">JSON fragment, bundle, character card, agent config, or PNG</p>
+            <p className="text-sm font-medium text-primary/70">{t('storyRoute.dropFile')}</p>
+            <p className="text-xs text-muted-foreground">{t('storyRoute.dropFileHint')}</p>
           </div>
         </div>
       )}
@@ -858,13 +860,13 @@ function StoryEditorPage() {
       <Dialog open={!!pendingAgentConfigImport} onOpenChange={(open) => { if (!open) setPendingAgentConfigImport(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import Agent Config</DialogTitle>
+            <DialogTitle>{t('storyRoute.importAgentConfig')}</DialogTitle>
             <DialogDescription>
-              Replace the <span className="font-medium text-foreground">{pendingAgentConfigImport?.displayName ?? pendingAgentConfigImport?.agentName}</span> context configuration with the imported one? This will overwrite custom blocks, overrides, and tool settings.
+              {t('storyRoute.replaceAgentConfigPrefix')} <span className="font-medium text-foreground">{pendingAgentConfigImport?.displayName ?? pendingAgentConfigImport?.agentName}</span> {t('storyRoute.replaceAgentConfigSuffix')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingAgentConfigImport(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPendingAgentConfigImport(null)}>{t('storyRoute.cancel')}</Button>
             <Button onClick={async () => {
               if (!pendingAgentConfigImport) return
               const { agentName, config } = pendingAgentConfigImport
@@ -872,11 +874,11 @@ function StoryEditorPage() {
                 await api.agentBlocks.importConfig(storyId, agentName, config)
                 queryClient.invalidateQueries({ queryKey: ['agent-blocks', storyId, agentName] })
               } catch (error) {
-                setAgentConfigImportError(error instanceof Error ? error.message : 'Agent configuration import failed.')
+                setAgentConfigImportError(error instanceof Error ? error.message : t('storyRoute.agentConfigImportFailed'))
                 return
               }
               setPendingAgentConfigImport(null)
-            }}>Import</Button>
+            }}>{t('storyRoute.import')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -884,11 +886,11 @@ function StoryEditorPage() {
       <Dialog open={!!agentConfigImportError} onOpenChange={(open) => { if (!open) setAgentConfigImportError(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import failed</DialogTitle>
+            <DialogTitle>{t('storyRoute.importFailed')}</DialogTitle>
             <DialogDescription>{agentConfigImportError}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button onClick={() => setAgentConfigImportError(null)}>Close</Button>
+            <Button onClick={() => setAgentConfigImportError(null)}>{t('settings.dialog.close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
