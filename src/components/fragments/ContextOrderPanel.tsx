@@ -9,6 +9,7 @@ import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
 import { BUILTIN_FRAGMENT_TYPES } from '@/components/fragments/fragment-type-icons'
 import { q, useActiveBranchId } from '@/lib/query-keys'
+import { useLanguage } from '@/lib/i18n'
 
 interface ContextOrderPanelProps {
   storyId: string
@@ -16,6 +17,7 @@ interface ContextOrderPanelProps {
 }
 
 export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const dragItem = useRef<number | null>(null)
@@ -117,7 +119,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
     return (
       <div className="p-6 text-center">
         <EmptyHint size="sm">
-          No pinned fragments. Pin fragments from the Characters, Guidelines, Knowledge, or custom fragment panels.
+          {t('contextOrder.empty')}
         </EmptyHint>
       </div>
     )
@@ -127,7 +129,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-border/30">
         <p className="text-[0.6875rem] text-muted-foreground leading-snug">
-          Drag to reorder how pinned fragments appear in the model context
+          {t('contextOrder.dragHint')}
         </p>
       </div>
 
@@ -187,7 +189,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
                   })
                 }
                 disabled={placementMutation.isPending}
-                title={fragment.placement === 'system' ? 'Move to user message' : 'Move to system message'}
+                title={fragment.placement === 'system' ? t('contextOrder.moveToUserMessage') : t('contextOrder.moveToSystemMessage')}
               >
                 {fragment.placement === 'system' ? (
                   <Monitor className="size-3.5" />
