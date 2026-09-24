@@ -25,6 +25,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { RefinementPanel } from '@/components/refinement/RefinementPanel'
+import { withLanguageProvider } from './test-providers'
 
 const APPLIED_EDIT: ChatEvent = {
   type: 'tool-result',
@@ -86,14 +87,16 @@ function mockRefine(script: ChatEvent[] = []) {
 function renderPanel(onComplete: () => void, onClose: () => void) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const utils = render(
-    React.createElement(QueryClientProvider, { client: queryClient },
-      React.createElement(RefinementPanel, {
-        storyId: 'story-1',
-        fragmentId: 'ch-vic',
-        fragmentName: 'Victoria',
-        onComplete,
-        onClose,
-      }),
+    withLanguageProvider(
+      React.createElement(QueryClientProvider, { client: queryClient },
+        React.createElement(RefinementPanel, {
+          storyId: 'story-1',
+          fragmentId: 'ch-vic',
+          fragmentName: 'Victoria',
+          onComplete,
+          onClose,
+        }),
+      ),
     ),
   )
   const byId = <T extends HTMLElement>(id: string) =>
