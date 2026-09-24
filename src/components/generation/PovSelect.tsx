@@ -5,6 +5,7 @@ import type { Fragment } from '@/lib/api'
 import { q } from '@/lib/query-keys'
 import { readPovCharacterId, writePovCharacterId } from '@/lib/api/generation'
 import { cn } from '@/lib/utils'
+import { useLanguage } from '@/lib/i18n'
 
 interface PovSelectProps {
   storyId: string
@@ -15,12 +16,17 @@ interface PovSelectProps {
 function filterOptions(
   characters: Fragment[] | undefined,
   query: string,
+  narratorLabel: string,
 ): Array<Pick<Fragment, 'id' | 'name'>> {
   const normalized = query.trim().toLocaleLowerCase()
   return [
-    ...(!normalized || 'narrator'.includes(normalized)
-      ? [{ id: '', name: 'Narrator' }]
-      : []),
+    ...(
+      !normalized
+      || narratorLabel.toLocaleLowerCase().includes(normalized)
+      || 'narrator'.includes(normalized)
+        ? [{ id: '', name: narratorLabel }]
+        : []
+    ),
     ...(characters ?? [])
       .filter(character => !character.archived)
       .filter(character => (
@@ -37,6 +43,8 @@ function filterOptions(
  * silently inherit each other's POV.
  */
 export function PovSelect({ storyId, branchId, disabled }: PovSelectProps) {
+  const { t } = useLanguage()
+  const narratorLabel = t('povSelect.narrator')
   const [value, setValue] = useState(() => readPovCharacterId(storyId, branchId) ?? '')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -67,7 +75,7 @@ export function PovSelect({ storyId, branchId, disabled }: PovSelectProps) {
     writePovCharacterId(storyId, branchId, undefined)
   }, [branchId, characters, storyId, value])
 
-  const options = filterOptions(characters, query)
+  const options = filterOptions(characters, query, narratorLabel)
   const activeIndex = Math.max(0, Math.min(highlight, options.length - 1))
   const selectedName = (characters ?? []).find(character => (
     !character.archived && character.id === value
@@ -79,7 +87,7 @@ export function PovSelect({ storyId, branchId, disabled }: PovSelectProps) {
     setQuery('')
     setHighlight(Math.max(
       0,
-      filterOptions(characters, '').findIndex(option => option.id === value),
+      filterOptions(characters, '', narratorLabel).findIndex(option => option.id === value),
     ))
   }
 
@@ -125,9 +133,9 @@ export function PovSelect({ storyId, branchId, disabled }: PovSelectProps) {
         role="combobox"
         aria-expanded={open}
         aria-controls={listboxId}
-        aria-label="Point-of-view character"
-        value={open ? query : selectedName ?? 'Narrator'}
-        placeholder="Type to filter…"
+        aria-label={t('povSelect.ariaLabel')}
+        value={open ? query : selectedName ?? narratorLabel}
+        placeholder={t('povSelect.placeholder')}
         disabled={disabled || !branchId}
         onFocus={openList}
         onChange={(event) => {
@@ -138,7 +146,7 @@ export function PovSelect({ storyId, branchId, disabled }: PovSelectProps) {
         onBlur={() => {
           if (open) close()
         }}
-        title="Point-of-view character whose voice drives generated prose"
+        title={t('povSelect.title')}
         className={cn(
           'w-[140px] truncate rounded-md border border-border/40 bg-muted/50 py-1 pl-2 pr-2',
           'font-mono text-[0.625rem] text-foreground/60 outline-none transition-all duration-200',
@@ -176,7 +184,7 @@ export function PovSelect({ storyId, branchId, disabled }: PovSelectProps) {
           ))}
           {options.length === 0 && (
             <li className="px-2 py-1 font-mono text-xs italic text-muted-foreground">
-              No matching character
+              {t('povSelect.noMatching')}
             </li>
           )}
         </ul>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { FileDropDialog, FileDropzone } from '@/components/ui/file-drop-dialog'
 import { Check, Plus } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 function arrayBufferToDataUrl(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
@@ -40,6 +41,7 @@ export function TavernCardImportDialog({
   onImported,
   onJsonCardDetected,
 }: TavernCardImportDialogProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [cards, setCards] = useState<ParsedCard[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -76,8 +78,8 @@ export function TavernCardImportDialog({
     if (parsed.length === 0) {
       setParseError(
         buffers.length === 1
-          ? 'This PNG does not contain TavernAI character card data.'
-          : `None of the ${buffers.length} PNGs contained character card data.`,
+          ? t('tavernImport.singleNoCardData')
+          : t('tavernImport.noneNoCardData').replace('{count}', String(buffers.length)),
       )
       return
     }
@@ -92,10 +94,12 @@ export function TavernCardImportDialog({
     })
     setParseError(
       skipped > 0
-        ? `${skipped} file${skipped > 1 ? 's' : ''} skipped (no card data found).`
+        ? (skipped === 1
+          ? t('tavernImport.skippedOne')
+          : t('tavernImport.skippedMany').replace('{count}', String(skipped)))
         : null,
     )
-  }, [])
+  }, [t])
 
   const handleFiles = useCallback(async (files: File[]) => {
     // Check if any file is JSON — route to CharacterCardImportDialog
@@ -184,8 +188,8 @@ export function TavernCardImportDialog({
     <FileDropDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Import Character Card${hasCards && cards.length > 1 ? 's' : ''}`}
-      description="TavernAI & SillyTavern character card PNGs"
+      title={hasCards && cards.length > 1 ? t('tavernImport.titleMany') : t('tavernImport.titleOne')}
+      description={t('tavernImport.description')}
       contentClassName={`transition-[max-width] duration-300 ${hasCards ? 'max-w-2xl' : 'max-w-[440px]'}`}
     >
       {!hasCards && (
@@ -193,8 +197,8 @@ export function TavernCardImportDialog({
           onFiles={handleFiles}
           accept="image/png,.png,.json,application/json"
           multiple
-          label="Drop character cards here"
-          hint="one or multiple .png files"
+          label={t('tavernImport.dropLabel')}
+          hint={t('tavernImport.dropHint')}
           icon={
             <svg viewBox="0 0 48 56" className="w-12 h-14" aria-hidden="true">
               <circle cx="24" cy="16" r="8" fill="currentColor" />
@@ -231,7 +235,7 @@ export function TavernCardImportDialog({
             >
               <div className="flex flex-col items-center justify-center gap-2 py-4 text-muted-foreground">
                 <Plus className="size-5" aria-hidden="true" />
-                <p className="text-[0.6875rem]">Add more cards</p>
+                <p className="text-[0.6875rem]">{t('tavernImport.addMore')}</p>
               </div>
             </FileDropzone>
           </div>
@@ -241,10 +245,10 @@ export function TavernCardImportDialog({
       <FileDropDialog.Errors>{parseError}</FileDropDialog.Errors>
 
       <FileDropDialog.Actions
-        meta={hasCards ? `${selected.size} of ${cards.length} selected` : undefined}
+        meta={hasCards ? t('tavernImport.selectedMeta').replace('{selected}', String(selected.size)).replace('{total}', String(cards.length)) : undefined}
       >
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t('tavernImport.cancel')}
         </Button>
         {hasCards && (
           <Button
@@ -254,11 +258,11 @@ export function TavernCardImportDialog({
             className="gap-1.5"
           >
             {importMutation.isPending ? (
-              'Importing\u2026'
+              t('tavernImport.importing')
             ) : (
               <>
                 <Check className="size-3.5" />
-                Import{selected.size > 1 ? ` ${selected.size} Characters` : ' Character'}
+                {selected.size > 1 ? t('tavernImport.importMany').replace('{count}', String(selected.size)) : t('tavernImport.importOne')}
               </>
             )}
           </Button>
@@ -283,6 +287,7 @@ function CharacterCard({
   onRemove: () => void
   large: boolean
 }) {
+  const { t } = useLanguage()
   return (
     <div
       className={`relative rounded-xl overflow-hidden border transition-all duration-200 cursor-pointer group ${
@@ -315,7 +320,7 @@ function CharacterCard({
         <button
           onClick={(e) => { e.stopPropagation(); onRemove() }}
           className="absolute top-2.5 right-2.5 size-5 rounded-md bg-background/60 backdrop-blur-sm border border-border/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:bg-background/80"
-          title="Remove from list"
+          title={t('tavernImport.removeFromList')}
         >
           <span className="text-xs leading-none">&times;</span>
         </button>
@@ -327,7 +332,7 @@ function CharacterCard({
           </p>
           {card.character.meta.tavernCreator && (
             <p className="text-[0.625rem] text-muted-foreground mt-0.5 truncate">
-              by {card.character.meta.tavernCreator}
+              {t('tavernImport.by')} {card.character.meta.tavernCreator}
             </p>
           )}
         </div>

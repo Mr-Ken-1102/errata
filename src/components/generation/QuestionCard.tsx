@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { HelpCircle } from 'lucide-react'
 import type { ClarifyQuestion, Clarification } from '@/lib/api/types'
+import { useLanguage } from '@/lib/i18n'
 
 interface QuestionCardProps {
   questions: ClarifyQuestion[]
@@ -32,6 +33,7 @@ function deriveAnswer(q: ClarifyQuestion, a: AnswerState): string {
 }
 
 export function QuestionCard({ questions, onSubmit, onCancel, disabled }: QuestionCardProps) {
+  const { t } = useLanguage()
   const [answers, setAnswers] = useState<AnswerState[]>(() => questions.map(emptyAnswer))
 
   const update = (i: number, patch: Partial<AnswerState>) =>
@@ -73,7 +75,7 @@ export function QuestionCard({ questions, onSubmit, onCancel, disabled }: Questi
       <div className="flex items-center gap-2 text-muted-foreground">
         <HelpCircle className="size-3.5 text-primary/70" />
         <span className="font-sans text-[0.6875rem] uppercase tracking-[0.12em]">
-          A few questions before writing
+          {t('questionCard.heading')}
         </span>
       </div>
 
@@ -127,7 +129,7 @@ export function QuestionCard({ questions, onSubmit, onCancel, disabled }: Questi
                         : 'border-dashed border-border/50 text-muted-foreground hover:border-primary/30',
                     )}
                   >
-                    Other…
+                    {t('questionCard.other')}
                   </button>
                 </div>
               )}
@@ -138,7 +140,7 @@ export function QuestionCard({ questions, onSubmit, onCancel, disabled }: Questi
                   value={a.other}
                   disabled={disabled}
                   onChange={(e) => update(i, { other: e.target.value })}
-                  placeholder={hasOptions ? 'Your answer…' : 'Type your answer…'}
+                  placeholder={hasOptions ? t('questionCard.yourAnswerPlaceholder') : t('questionCard.typeAnswerPlaceholder')}
                   rows={hasOptions ? 1 : 2}
                   className="w-full resize-none rounded-md border border-border/40 bg-card/30 px-3 py-2 font-prose text-[0.875rem] leading-relaxed text-foreground outline-none transition-colors placeholder:italic placeholder:text-muted-foreground focus:border-primary/30 disabled:opacity-40"
                 />
@@ -150,7 +152,7 @@ export function QuestionCard({ questions, onSubmit, onCancel, disabled }: Questi
 
       <div className="flex items-center justify-between pt-1">
         <span className="font-sans text-[0.625rem] text-muted-foreground">
-          Answers guide this passage only — nothing is saved.
+          {t('questionCard.passageOnlyHint')}
         </span>
         <div className="flex gap-1.5">
           <Button
@@ -161,7 +163,7 @@ export function QuestionCard({ questions, onSubmit, onCancel, disabled }: Questi
             disabled={disabled}
             data-component-id="clarify-cancel"
           >
-            Skip
+            {t('questionCard.skip')}
           </Button>
           <Button
             size="sm"
@@ -170,7 +172,7 @@ export function QuestionCard({ questions, onSubmit, onCancel, disabled }: Questi
             disabled={!complete || disabled}
             data-component-id="clarify-submit"
           >
-            Answer &amp; continue
+            {t('questionCard.answerAndContinue')}
           </Button>
         </div>
       </div>

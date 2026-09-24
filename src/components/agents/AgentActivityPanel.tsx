@@ -9,6 +9,7 @@ import {
 import type { ActiveAgent } from '@/lib/api/agents'
 import { qk, useActiveBranchId } from '@/lib/query-keys'
 import { getAgentMeta } from '@/components/agents/agent-meta'
+import { useLanguage } from '@/lib/i18n'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EmptyState } from '@/components/ui/async-view'
@@ -74,6 +75,7 @@ interface StatusStripProps {
 // "Analyzing", …). The librarian's scheduler-only states (queued/error and the
 // last-analyzed fragment) fill in when nothing is actively running.
 function StatusStrip({ status, runStatus, active }: StatusStripProps) {
+  const { t } = useLanguage()
   const scheduled = runStatus === 'scheduled'
   const isError = runStatus === 'error'
   // Headline the librarian while it analyzes (it carries the fragment detail),
@@ -92,10 +94,10 @@ function StatusStrip({ status, runStatus, active }: StatusStripProps) {
   const label = leadName
     ? getAgentMeta(leadName).status
     : scheduled
-      ? 'Queued'
+      ? t('agentActivity.queued')
       : isError
-        ? 'Error'
-        : 'Idle'
+        ? t('agentActivity.error')
+        : t('agentActivity.idle')
 
   // Fragment id is librarian-specific detail (the analyzed/queued/last fragment).
   const fragmentId = runStatus === 'running'
@@ -146,6 +148,7 @@ function StatusStrip({ status, runStatus, active }: StatusStripProps) {
 // ─── Activity Content ─────────────────────────────────────
 
 function ActivityContent({ storyId }: { storyId: string }) {
+  const { t } = useLanguage()
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
   const branchId = useActiveBranchId(storyId)
 
@@ -161,7 +164,7 @@ function ActivityContent({ storyId }: { storyId: string }) {
     <ScrollArea className="h-full">
       <div className="px-4 py-3 space-y-1">
         <section>
-          <SectionLabel icon={<GitBranch className="size-3" />}>Agent Runs</SectionLabel>
+          <SectionLabel icon={<GitBranch className="size-3" />}>{t('agentActivity.runs')}</SectionLabel>
           {hasRuns ? (
             <div className="space-y-1 mt-1.5">
               {agentRuns.slice(0, 12).map((run) => {
@@ -197,8 +200,8 @@ function ActivityContent({ storyId }: { storyId: string }) {
           ) : (
             <EmptyState
               icon={<Radio className="size-5" />}
-              title="No activity yet"
-              hint="Agents run automatically after each generation."
+              title={t('agentActivity.noActivity')}
+              hint={t('agentActivity.noActivityHint')}
               variant="panel"
             />
           )}
@@ -227,6 +230,7 @@ function formatDuration(ms: number): string {
 }
 
 function TraceTree({ run }: { run: AgentRunTraceRecord }) {
+  const { t } = useLanguage()
   const byParent = new Map<string | null, AgentRunTraceRecord['trace']>()
   for (const entry of run.trace) {
     const key = entry.parentRunId ?? null
@@ -271,8 +275,8 @@ function TraceTree({ run }: { run: AgentRunTraceRecord }) {
 
   return (
     <div className="border-t border-border/15 px-1 py-2 bg-muted/15">
-      {run.input && <TraceDataSection label="Input" data={run.input} />}
-      {run.output && <TraceDataSection label="Output" data={run.output} />}
+      {run.input && <TraceDataSection label={t('agentActivity.input')} data={run.input} />}
+      {run.output && <TraceDataSection label={t('agentActivity.output')} data={run.output} />}
       {roots.map((root) => renderNode(root, 0))}
       {run.error && (
         <p className="text-[0.5625rem] text-red-500/60 px-2 mt-1">{run.error}</p>
@@ -282,6 +286,7 @@ function TraceTree({ run }: { run: AgentRunTraceRecord }) {
 }
 
 function TraceDataSection({ label, data }: { label: string; data: Record<string, unknown> }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const entries = Object.entries(data)
   if (entries.length === 0) return null
@@ -295,7 +300,7 @@ function TraceDataSection({ label, data }: { label: string; data: Record<string,
     }
     if (previewParts.length >= 3) break
   }
-  const preview = previewParts.length > 0 ? previewParts.join(', ') : `${entries.length} fields`
+  const preview = previewParts.length > 0 ? previewParts.join(', ') : `${entries.length} ${t('agentActivity.fields')}`
 
   return (
     <div className="px-2 py-0.5">
@@ -317,6 +322,7 @@ function TraceDataSection({ label, data }: { label: string; data: Record<string,
 }
 
 function TraceNodeOutput({ output, depth }: { output: Record<string, unknown>; depth: number }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const indent = depth * 12 + 20
 
@@ -332,7 +338,7 @@ function TraceNodeOutput({ output, depth }: { output: Record<string, unknown>; d
         className="flex items-center gap-1.5 text-[0.5625rem] text-muted-foreground hover:text-muted-foreground transition-colors"
       >
         {expanded ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
-        <span>Output</span>
+        <span>{t('agentActivity.output')}</span>
         {modelId && (
           <Badge variant="outline" className="text-[0.5rem] h-3 px-1">{modelId}</Badge>
         )}
@@ -343,7 +349,7 @@ function TraceNodeOutput({ output, depth }: { output: Record<string, unknown>; d
       {expanded && (
         <div className="mt-1 space-y-1.5">
           {reasoning && (
-            <TraceOutputSection icon={<Brain className="size-3 text-purple-400/60" />} label="Reasoning">
+            <TraceOutputSection icon={<Brain className="size-3 text-purple-400/60" />} label={t('agentActivity.reasoning')}>
               <p className="text-[0.5625rem] text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
                 {reasoning}
               </p>
@@ -397,6 +403,7 @@ type CollapsedTraceItem =
 // The live reasoning/tool trace for a running agent, streamed from its activity
 // buffer and pinned beneath the status strip while the agent runs.
 function ActivityTrace({ storyId, agentName }: { storyId: string; agentName: string }) {
+  const { t } = useLanguage()
   const [events, setEvents] = useState<ChatEvent[]>([])
   const readerRef = useRef<ReadableStreamDefaultReader<ChatEvent> | null>(null)
 
@@ -482,7 +489,7 @@ function ActivityTrace({ storyId, agentName }: { storyId: string; agentName: str
             <span className="absolute inset-0 rounded-full bg-blue-400 animate-ping" style={{ animationDuration: '2s' }} />
             <span className="relative inline-flex size-1.5 rounded-full bg-blue-400" />
           </span>
-          <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-wider">Live Trace</span>
+          <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-wider">{t('agentActivity.liveTrace')}</span>
         </div>
         <div className="space-y-0.5 max-h-32 overflow-y-auto">
           {items.map((item, i) => (

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button'
 import type { BoundaryBox } from '@/lib/fragment-visuals'
 import { Crop, RotateCcw } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface CropDialogProps {
   open: boolean
@@ -18,6 +19,7 @@ type DragMode = 'none' | 'create' | 'move' | 'resize-nw' | 'resize-ne' | 'resize
 const MIN_SIZE = 0.02 // minimum crop size (2% of image)
 
 export function CropDialog({ open, onOpenChange, imageUrl, imageName, initialBoundary, onApply }: CropDialogProps) {
+  const { t } = useLanguage()
   const [boundary, setBoundary] = useState<BoundaryBox | null>(initialBoundary ?? null)
   const [dragMode, setDragMode] = useState<DragMode>('none')
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -187,7 +189,7 @@ export function CropDialog({ open, onOpenChange, imageUrl, imageName, initialBou
         <DialogHeader className="px-5 pt-5 pb-3">
           <DialogTitle className="text-sm font-medium flex items-center gap-2">
             <Crop className="size-4 text-muted-foreground" />
-            Crop region
+            {t('cropDialog.title')}
             <span className="text-muted-foreground font-normal">— {imageName}</span>
           </DialogTitle>
         </DialogHeader>
@@ -280,7 +282,7 @@ export function CropDialog({ open, onOpenChange, imageUrl, imageName, initialBou
             {!hasCrop && dragMode === 'none' && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="bg-black/60 backdrop-blur-sm rounded-lg px-4 py-2.5">
-                  <p className="text-white/90 text-xs font-medium">Click and drag to select a crop region</p>
+                  <p className="text-white/90 text-xs font-medium">{t('cropDialog.instruction')}</p>
                 </div>
               </div>
             )}
@@ -305,18 +307,18 @@ export function CropDialog({ open, onOpenChange, imageUrl, imageName, initialBou
                   onClick={handleReset}
                 >
                   <RotateCcw className="size-3" />
-                  Reset
+                  {t('cropDialog.reset')}
                 </Button>
               </div>
             )}
             {!hasCrop && <div className="flex-1" />}
 
             <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('cropDialog.cancel')}
             </Button>
             <Button type="button" size="sm" className="h-8 text-xs gap-1.5" onClick={handleApply}>
               <Crop className="size-3" />
-              {hasCrop ? 'Apply crop' : 'No crop'}
+              {hasCrop ? t('cropDialog.applyCrop') : t('cropDialog.noCrop')}
             </Button>
           </div>
         </DialogFooter>

@@ -43,6 +43,7 @@ vi.mock('@/lib/api', () => ({
 
 import { InlineGenerationInput } from '@/components/prose/InlineGenerationInput'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { withLanguageProvider } from './test-providers'
 
 const DIRECTION = {
   title: 'Aftermath',
@@ -68,19 +69,21 @@ describe('direction card activation', () => {
 
   async function renderCards() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const view = render(React.createElement(
-      QueryClientProvider,
-      { client },
-      // The app mounts one of these near the root; Radix throws without it.
-      React.createElement(TooltipProvider, null, React.createElement(InlineGenerationInput, {
-        storyId: 'story-test',
-        isGenerating: false,
-        latestFragmentId: 'frag-head',
-        onGenerationStart,
-        onGenerationStream: () => undefined,
-        onGenerationComplete: () => undefined,
-        onGenerationError: () => undefined,
-      })),
+    const view = render(withLanguageProvider(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        // The app mounts one of these near the root; Radix throws without it.
+        React.createElement(TooltipProvider, null, React.createElement(InlineGenerationInput, {
+          storyId: 'story-test',
+          isGenerating: false,
+          latestFragmentId: 'frag-head',
+          onGenerationStart,
+          onGenerationStream: () => undefined,
+          onGenerationComplete: () => undefined,
+          onGenerationError: () => undefined,
+        })),
+      ),
     ))
     // Generous windows: the cards arrive behind mocked queries, and the default
     // 1s is tight enough to flake when the whole suite runs in parallel.
