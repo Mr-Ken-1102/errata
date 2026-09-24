@@ -6,6 +6,7 @@ import { invalidateStoryContent } from '@/lib/branch-cache'
 import { useActiveBranchId } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { useLanguage } from '@/lib/i18n'
 
 interface ProseActionInputProps {
   storyId: string
@@ -26,6 +27,7 @@ export function ProseActionInput({
   onStreamStart,
   onStream,
 }: ProseActionInputProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
@@ -66,7 +68,7 @@ export function ProseActionInput({
         return
       }
       if (result.status === 'error') {
-        setError(result.error ?? 'Operation failed')
+        setError(result.error ?? t('proseAction.operationFailed'))
         return
       }
       if (result.status === 'cancelled') return
@@ -74,15 +76,15 @@ export function ProseActionInput({
       await invalidateStoryContent(queryClient, storyId)
       onComplete()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Operation failed')
+      setError(err instanceof Error ? err.message : t('proseAction.operationFailed'))
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, storyId, branchId, fragmentId, mode, queryClient, onComplete, onStreamStart, onStream])
+  }, [input, isLoading, storyId, branchId, fragmentId, mode, queryClient, onComplete, onStreamStart, onStream, t])
 
   const placeholder = mode === 'regenerate'
-    ? 'New direction...'
-    : 'How to refine...'
+    ? t('proseAction.regeneratePlaceholder')
+    : t('proseAction.refinePlaceholder')
 
   return (
     <div className="mt-3 rounded-lg border border-primary/15 bg-card/30 p-4" data-component-id="prose-action-root">
@@ -109,16 +111,16 @@ export function ProseActionInput({
       )}
       <div className="flex items-center justify-between mt-2.5">
         <span className="text-[0.625rem] text-muted-foreground">
-          Esc to cancel &middot; Ctrl+Enter to submit
+          {t('proseAction.shortcutHint')}
         </span>
         <div className="flex gap-1.5">
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onCancel} disabled={isLoading} data-component-id="prose-action-cancel">
-            Cancel
+            {t('proseAction.cancel')}
           </Button>
           <Button size="sm" className="h-7 text-xs" onClick={handleSubmit} disabled={!input.trim() || isLoading || branchId === undefined} data-component-id="prose-action-submit">
             {isLoading
-              ? (mode === 'regenerate' ? 'Regenerating...' : 'Refining...')
-              : (mode === 'regenerate' ? 'Regenerate' : 'Refine')
+              ? (mode === 'regenerate' ? t('proseAction.regenerating') : t('proseAction.refining'))
+              : (mode === 'regenerate' ? t('proseAction.regenerate') : t('proseAction.refine'))
             }
           </Button>
         </div>
