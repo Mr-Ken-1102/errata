@@ -537,7 +537,7 @@ function OutputTab({ log }: { log: GenerationLog }) {
               {t('debugPanel.prewriterReasoning')}
             </span>
             <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-              {log.prewriterReasoning.length.toLocaleString()} chars
+              {log.prewriterReasoning.length.toLocaleString()} {t('debugPanel.chars')}
             </span>
           </button>
           {prewriterReasoningExpanded && (
@@ -603,7 +603,7 @@ function OutputTab({ log }: { log: GenerationLog }) {
               {t('debugPanel.reasoning')}
             </span>
             <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-              {log.reasoning.length.toLocaleString()} chars
+              {log.reasoning.length.toLocaleString()} {t('debugPanel.chars')}
             </span>
           </button>
           {reasoningExpanded && (
@@ -620,10 +620,10 @@ function OutputTab({ log }: { log: GenerationLog }) {
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/10 border-b border-border/10">
           <span className="text-[0.625rem] font-medium text-muted-foreground truncate">
-            Generated text
+            {t('debugPanel.generatedText')}
           </span>
           <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-            {log.generatedText.length.toLocaleString()} chars
+            {log.generatedText.length.toLocaleString()} {t('debugPanel.chars')}
           </span>
         </div>
 

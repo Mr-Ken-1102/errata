@@ -34,6 +34,8 @@ describe('DebugPanel localization', () => {
     expect(source).toContain('{log.prewriterReasoning}')
     expect(source).toContain('{log.prewriterBrief}')
     expect(source).toContain('{log.reasoning}')
+    expect(source).toContain("{t('debugPanel.generatedText')}")
+    expect(source).toContain("{log.generatedText.length.toLocaleString()} {t('debugPanel.chars')}")
     expect(source).toContain('content={log.generatedText}')
   })
 })
