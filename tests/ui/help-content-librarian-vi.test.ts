@@ -91,7 +91,7 @@ describe('Vietnamese Librarian help content', () => {
   })
 
   it('leaves later not-yet-localized sections as exact English objects', () => {
-    for (const id of ['timelines', 'stories', 'settings']) {
+    for (const id of ['stories', 'settings']) {
       expect(VI_HELP_SECTIONS.find((section) => section.id === id))
         .toBe(HELP_SECTIONS.find((section) => section.id === id))
     }
