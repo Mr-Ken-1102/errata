@@ -46,3 +46,10 @@ When another artifact is recovered:
 2. push it directly to this branch;
 3. record exact provenance here;
 4. distinguish exact recovered bytes from reconstructed material.
+
+
+## Additional exact GitHub evidence preserved
+
+- `recovery/exact-github/ci-f3bf539-vitest-job.log` — EXACT-GITHUB job log, run 36252326650, job 108432546858.
+- `recovery/exact-github/ci-f3bf539-windows-desktop-smoke.log` — EXACT-GITHUB job log, run 36252326688, job 108432547102.
+- `recovery/exact-github/GITHUB_ACTIONS_EVIDENCE_f3bf539.md` — artifact IDs, SHA-256 digests, expiry dates, workflow/job identities and independently checked vitest artifact digest.
