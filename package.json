@@ -6,7 +6,7 @@
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "bun install --frozen-lockfile && vite dev --port 7739",
+    "dev": "vite dev --port 7739",
     "dev:share": "bun install --frozen-lockfile && bun scripts/proxy-with-qr.mjs",
     "build": "bun install --frozen-lockfile && vite build",
     "new:plugin": "bun scripts/new-plugin.mjs",
