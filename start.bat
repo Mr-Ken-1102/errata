@@ -213,6 +213,21 @@ if errorlevel 1 (
 echo [Errata] Portable Node.js installed successfully.
 exit /b 0
 
+:dependencies_current
+set "ERRATA_DEPS_STAMP=%CD%\node_modules\.errata-deps-ready"
+for %%F in (
+  "node_modules\.bin\vite.exe"
+  "node_modules\.bin\electron.exe"
+  "node_modules\@viscerous\errata-plugin-sdk\package.json"
+  "node_modules\react\package.json"
+  "node_modules\elysia\package.json"
+  "node_modules\nitro\package.json"
+) do (
+  if not exist "%%~F" exit /b 1
+)
+if not exist "%ERRATA_DEPS_STAMP%" exit /b 1
+exit /b 0
+
 :prepare
 call :validate_repo
 if errorlevel 1 goto :fatal
@@ -246,17 +261,27 @@ if errorlevel 1 (
   goto :fatal
 )
 
+call :dependencies_current
+if not errorlevel 1 (
+  echo.
+  echo [Errata] Dependencies already prepared; skipping installation.
+  goto :dependencies_done
+)
+
 echo.
 echo [Errata] Preparing dependencies...
 echo [Errata] This may take a few minutes on the first run.
-"%BUN_EXE%" install --frozen-lockfile
+"%BUN_EXE%" install
 if errorlevel 1 (
   echo.
   echo [Errata] ERROR: Dependency installation failed.
-  echo [Errata] Check your internet connection and available disk space.
+  echo [Errata] Another process may be using node_modules, or the install may be incomplete.
+  echo [Errata] Close other Errata/dev processes and try again.
   goto :fatal
 )
+>"node_modules\.errata-deps-ready" echo Prepared by start.bat on %DATE% %TIME%
 
+:dependencies_done
 if /I "%ERRATA_MODE%"=="web" goto :web
 goto :desktop
 
