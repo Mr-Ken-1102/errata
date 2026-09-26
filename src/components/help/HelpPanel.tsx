@@ -5,6 +5,7 @@ import { HELP_SECTIONS, findSection, type HelpSection } from './help-content'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, BookOpen, ChevronRight, ArrowLeft } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
+import { useLanguage } from '@/lib/i18n'
 
 /** Scroll to a help anchor inside a Radix ScrollArea. Returns true if successful. */
 function scrollToHelpAnchor(container: HTMLElement, anchorId: string): boolean {
@@ -25,6 +26,7 @@ function scrollToHelpAnchor(container: HTMLElement, anchorId: string): boolean {
 export function HelpPanel() {
   const { state, closeHelp, openHelp } = useHelp()
   const isMobile = useIsMobile()
+  const { t } = useLanguage()
   const { open, section: sectionId, anchor, seq } = state
 
   const [mounted, setMounted] = useState(false)
@@ -107,7 +109,7 @@ export function HelpPanel() {
                 onClick={() => openHelp()}
                 data-cuelume-toggle="page"
                 className="shrink-0 p-1 -ml-1 rounded-md text-muted-foreground hover:text-foreground/70 transition-colors"
-                title="Back to topics"
+                title={t('help.backToTopics')}
                 data-component-id="help-back"
               >
                 <ArrowLeft className="size-4" />
@@ -115,11 +117,12 @@ export function HelpPanel() {
             )}
             <BookOpen className="size-4 text-muted-foreground shrink-0" />
             <h2 className="font-display text-lg truncate">
-              {activeSection ? activeSection.title : 'Help'}
+              {activeSection ? activeSection.title : t('sidebar.help')}
             </h2>
           </div>
           <button
             onClick={closeHelp}
+            aria-label={t('help.close')}
             className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground/70 hover:bg-accent/30 transition-colors"
             data-component-id="help-close"
           >
@@ -143,7 +146,7 @@ export function HelpPanel() {
         {/* Footer */}
         <div className="shrink-0 border-t border-border/20 px-6 py-3">
           <p className="text-[0.625rem] text-muted-foreground text-center leading-relaxed">
-            Press <kbd className="px-1 py-0.5 rounded border border-border/30 bg-muted/30 text-[0.5625rem] font-mono">Esc</kbd> to close
+            {t('help.press')} <kbd className="px-1 py-0.5 rounded border border-border/30 bg-muted/30 text-[0.5625rem] font-mono">Esc</kbd> {t('help.toClose')}
           </p>
         </div>
       </div>
@@ -156,10 +159,12 @@ export function HelpPanel() {
  * Displays all help sections as cards.
  */
 function TopicIndex({ onSelect }: { onSelect: (sectionId: string) => void }) {
+  const { t } = useLanguage()
+
   return (
     <div className="space-y-2">
       <p className="text-[0.6875rem] text-muted-foreground leading-relaxed mb-4">
-        Select a topic to learn more about Errata's features.
+        {t('help.selectTopic')}
       </p>
       {HELP_SECTIONS.map((section, idx) => (
         <button
@@ -199,6 +204,8 @@ function TopicIndex({ onSelect }: { onSelect: (sectionId: string) => void }) {
  * Renders a single help section with all its subsections.
  */
 function SectionView({ section, scrollAreaRef }: { section: HelpSection; scrollAreaRef: React.RefObject<HTMLDivElement | null> }) {
+  const { t } = useLanguage()
+
   return (
     <div className="space-y-6">
       {/* Section description */}
@@ -208,7 +215,7 @@ function SectionView({ section, scrollAreaRef }: { section: HelpSection; scrollA
 
       {/* Table of contents */}
       <nav className="rounded-lg border border-border/20 bg-accent/10 px-4 py-3">
-        <p className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-2">On this page</p>
+        <p className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-2">{t('help.onThisPage')}</p>
         <div className="space-y-1">
           {section.subsections.map((sub) => (
             <button
