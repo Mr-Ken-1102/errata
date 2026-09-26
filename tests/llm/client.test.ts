@@ -302,6 +302,62 @@ describe('llm client model resolution', () => {
     expect(runtime.providerOptions).toBeUndefined()
   })
 
+  it('normalizes an unversioned OpenAI-compatible API root before runtime calls', async () => {
+    await saveGlobalConfig(dataDir, makeTestGlobalConfig({
+      defaultProviderId: 'ollama',
+      providers: [{
+        id: 'ollama',
+        name: 'Ollama',
+        preset: 'custom',
+        baseURL: 'http://localhost:11434/',
+        apiKey: 'not-needed',
+        defaultModel: 'local-model',
+        enabled: true,
+        customHeaders: {},
+        temperature: undefined,
+        createdAt: new Date().toISOString(),
+      }],
+    }))
+    await createStory(dataDir, makeStory())
+    const resolved = await getModel(dataDir, 'story-test')
+
+    expect(resolved.config.baseURL).toBe('http://localhost:11434/v1')
+
+    const sseBody = `data: ${JSON.stringify({
+      id: 'chatcmpl-1',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'local-model',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }],
+    })}\n\n`
+      + `data: ${JSON.stringify({
+        id: 'chatcmpl-1',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'local-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      })}\n\n`
+      + 'data: [DONE]\n\n'
+
+    const fetchMock = vi.fn(async () => new Response(sseBody, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const result = streamText({ model: resolved.model, prompt: 'Hello.' })
+      await result.text
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:11434/v1/chat/completions',
+        expect.any(Object),
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('extracts inline <think> tags into reasoning parts for OpenAI-compatible providers', async () => {
     await saveGlobalConfig(dataDir, makeTestGlobalConfig({
       defaultProviderId: 'local',
