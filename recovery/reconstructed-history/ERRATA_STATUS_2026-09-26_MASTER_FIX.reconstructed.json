@@ -1,0 +1,57 @@
+{
+  "provenance": "RECONSTRUCTED-HISTORY",
+  "incident_local_time": "2026-09-27T00:53:04+07:00",
+  "authoritative_refs": {
+    "master": "230b87878379ec0290b973fc3e747a63cbd3525b",
+    "master_fix": "f3bf53930a28b4c2c9e7c934e8491272fe5c6c88",
+    "vietnamese_feature": "4bb1bcf57dde8b33c020ccab7a52f348b28f22f6",
+    "recovery_branch": "Recovery-2026-09-27-005304"
+  },
+  "pre_incident": {
+    "p1_3_localization": "closed",
+    "master_fix_clean": true,
+    "full_vitest_last_known": {
+      "tests": 1676,
+      "passes": 1676,
+      "runs_recorded": 2
+    },
+    "launcher_commits": [
+      "7485a79",
+      "f3bf539"
+    ],
+    "manual_ui": "not_closed"
+  },
+  "baseline_master_validation": {
+    "sha": "230b87878379ec0290b973fc3e747a63cbd3525b",
+    "automated": {
+      "typecheck_app": "PASS",
+      "typecheck_desktop": "PASS",
+      "architecture": "PASS",
+      "build": "PASS",
+      "vitest": "1495/1495 PASS"
+    },
+    "runtime_basic": {
+      "health": 200,
+      "stories": 200,
+      "root": 200
+    },
+    "real_provider_issue_reproduced": true
+  },
+  "provider_url_fix": {
+    "original_lost_commit": "6efe4e46f14d153dd313c63f15899b2bb080a8ee",
+    "reconstructed_local_commit": "35931929fee9aebace4ea66cfe8663bac25e742d",
+    "exact_blobs_preserved_on_recovery_branch": true,
+    "validation": {
+      "full_suite_rerun": "1499/1499 PASS",
+      "production_build": "PASS",
+      "real_ollama_story_setup": "PASS",
+      "real_ollama_librarian": "PASS"
+    }
+  },
+  "local_only_recovery": {
+    "root_handoff_files": "OUTSTANDING_OR_RECONSTRUCTED",
+    "p0_p13_result_artifacts": "OUTSTANDING",
+    "exact_project_handoff_2026_09_24": "PRESERVED_ON_RECOVERY_BRANCH",
+    "live_checkpoint": "RECONSTRUCTED_ON_RECOVERY_BRANCH"
+  }
+}
