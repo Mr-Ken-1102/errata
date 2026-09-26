@@ -1,0 +1,465 @@
+## Kết luận điều tra
+
+Đã truy ngược lịch sử commit, PR merge, đối chiếu trực tiếp với upstream và các fork tham khảo. Kết luận hiện tại có thể tách rất rõ thành **hai vấn đề khác nhau**:
+
+1. **Lỗi test Librarian + POV**: vùng chức năng này đi vào `master` qua **PR #2 – `integration/best-of-errata-2026-09`**, merge commit `332d3f25…`. Tuy nhiên, lỗi **không phải do thao tác merge PR #2 làm hỏng code**. Nó nằm tại **điểm chúng ta ghép hai thiết kế khác nguồn**: hệ `server-owned runs` từ **Didact** + POV/Voice từ **pax-co**. Test kiểm tra điểm ghép này cũng do nhánh integration của chúng ta tạo mới. Hiện bằng chứng nghiêng mạnh về **test không ổn định do timing**, chưa chứng minh có lỗi runtime thật trong ứng dụng.
+
+2. **`Test Results` vẫn đỏ sau khi rerun đã pass**: phần này thuộc **workflow báo cáo test có sẵn từ upstream chính thức `tealios/errata`**. File workflow của chúng ta có Git hash **trùng tuyệt đối upstream v1.12.0**. Khi một workflow được rerun, nó đang đọc artifact của cả attempt cũ và mới nên có thể giữ kết quả cũ. Đây **không phải lỗi Việt hóa và cũng không phải do quá trình tổng hợp PR #2 tạo ra**.
+
+Quan trọng nhất: **103 commit Việt hóa không thay đổi bất kỳ file server/test/workflow nào liên quan đến sự cố này.**
+
+---
+
+# 1. Lỗi đi vào `master` ở bản merge nào?
+
+Mốc đưa toàn bộ phần “best-of” vào `master` là:
+
+| Mục | Giá trị |
+|---|---|
+| PR | **#2 — `WIP: best-of Errata integration`** |
+| Nhánh | `integration/best-of-errata-2026-09` |
+| Base lúc bắt đầu | upstream `610c7e7…` |
+| HEAD integration cuối | `58d254a7400f…` |
+| Merge commit vào master | **`332d3f25a89f…`** |
+| Ngày merge | 22/09/2026 |
+| Quy mô | 448 commit / 447 file |
+| CI trước khi merge | Green |
+
+[PR #2 – Best-of Errata integration](https://github.com/Mr-Ken-1102/errata/pull/2)
+
+Nhưng cần phân biệt hai khái niệm:
+
+> **“Đi vào master tại merge PR #2” ≠ “bị tạo ra bởi thao tác merge PR #2”.**
+
+Các commit chứa durable Librarian, POV và test đã tồn tại **trên nhánh integration trước khi merge**. Merge commit `332d3f25…` chỉ đưa trạng thái đó vào `master`.
+
+Không có bằng chứng về một conflict resolution tại merge commit làm hỏng Librarian.
+
+---
+
+# 2. Chuỗi nguồn gốc thực tế
+
+Có thể hình dung như lắp một chiếc xe từ nhiều mẫu tham khảo:
+
+| Nguồn | Chúng ta lấy gì | Liên quan lỗi hiện tại |
+|---|---|---|
+| **tealios/errata v1.12.0** | Nền Errata chính thức | Không có test Librarian durable đang lỗi |
+| **Didact/errata** | Cơ chế server giữ tác vụ AI chạy độc lập với kết nối trình duyệt | **Có liên quan trực tiếp đến một nửa kiến trúc** |
+| **pax-co/errata** | POV/Voice — chọn nhân vật làm góc nhìn | **Có liên quan trực tiếp đến nửa còn lại** |
+| **Viscerous/errata** | Continuity/context/generation semantics được giữ làm nền | Không thấy bằng chứng là nguồn lỗi này |
+| **ivanlisovyi/errata** | Một số tối ưu hiệu năng chọn lọc | Không nằm trên đường lỗi này |
+| **Nhánh integration của chúng ta** | Ghép Didact durable-run + pax POV lên nền Viscerous/upstream | **Đây là nơi đường chạy mới được hình thành** |
+
+[Didact/errata](https://github.com/Didact/errata)  
+[pax-co/errata](https://github.com/pax-co/errata)  
+[Viscerous/errata](https://github.com/Viscerous/errata)  
+[ivanlisovyi/errata](https://github.com/ivanlisovyi/errata)
+
+---
+
+# 3. Bằng chứng nguồn gốc rất mạnh
+
+### 3.1. Hệ `server-owned runs` thực sự đến từ Didact
+
+Didact có cả chuỗi phát triển riêng về:
+
+- Librarian chat do server quản lý;
+- tác vụ không chết khi trình duyệt mất kết nối;
+- reconnect;
+- Stop/cancel;
+- idempotent retry;
+- run registry.
+
+Đặc biệt:
+
+`Didact/errata/src/server/runs/registry.ts`
+
+và bản đầu tiên chúng ta đưa vào integration tại commit:
+
+`4ad64734... feat(runs): add additive server-owned run infrastructure`
+
+có Git blob SHA giống tuyệt đối:
+
+`bdde9917b7358914a0fe55b97c36b96564e8c885`
+
+Điều đó có nghĩa:
+
+> **File registry ban đầu của chúng ta là đúng cùng nội dung với Didact.**
+
+Đây là bằng chứng provenance ở cấp byte, không phải suy đoán dựa trên tên commit.
+
+---
+
+# 4. POV/Voice thực sự đến từ `pax-co`
+
+Trên nhánh `pax-co/errata:fork-features` có commit:
+
+`2e8d3b5b...`
+`feat(generation): write prose from a character's point of view`
+
+Commit đó thay đổi hàng loạt phần liên quan đến:
+
+- `PovSelect`;
+- `VoiceField`;
+- `LibrarianPanel`;
+- API generation;
+- Librarian API;
+- Librarian storage;
+- Librarian chat;
+- generation routes;
+- POV tests.
+
+PR #2 của chính chúng ta cũng ghi rất rõ:
+
+> POV/Voice from `pax-co`, ported onto branch-aware/server-owned-run architecture rather than cherry-picked blindly.
+
+Điểm “ported ... rather than cherry-picked blindly” là cực kỳ quan trọng.
+
+Nghĩa là chúng ta **không thể lấy nguyên xi pax-co**, vì nó phải hoạt động cùng kiến trúc durable-run từ Didact và cấu trúc branch/timeline hiện tại.
+
+---
+
+# 5. Điểm giao gây nghi vấn được tạo ở đâu?
+
+Đây là chuỗi commit quan trọng:
+
+| Thứ tự | Commit | Nội dung |
+|---:|---|---|
+| 1 | `4ad64734…` | Đưa server-owned run infrastructure vào integration |
+| 2 | `c5359015…` | Thêm durable Librarian chat runner |
+| 3 | `eca49db8…` | Chuyển Librarian chat sang server-owned turns |
+| 4 | `b6299e38…` | Tạo `librarian-chat-owned-runs.test.ts` |
+| 5 | `c02372fc…` | Đưa perspective vào Librarian chat |
+| 6 | `66a03f8e…` | Cho durable Librarian chat replay POV đã lưu |
+| 7 | **`7578f5fc…`** | Thêm test kiểm tra POV trong durable chat |
+| 8 | `58d254a7…` | HEAD cuối PR #2, CI green |
+| 9 | `332d3f25…` | Merge PR #2 vào master |
+
+Vì vậy, nếu cần chỉ một mốc chính xác cho **test đang đỏ**, thì:
+
+> **Test gây báo lỗi hiện tại được đưa vào tại commit `7578f5fc…`, trước khi PR #2 merge.**
+
+Nó không đến nguyên xi từ upstream, Didact hay pax-co.
+
+---
+
+# 6. Tôi đã kiểm tra test này ở các nguồn tham khảo
+
+File:
+
+`tests/api/librarian-chat-owned-runs.test.ts`
+
+kết quả:
+
+| Repository | Có file này? |
+|---|---:|
+| upstream `tealios/errata` v1.12.0 | **Không** |
+| `Didact/errata` | **Không** |
+| `pax-co/errata:fork-features` | **Không** |
+| Nhánh integration của chúng ta | **Có** |
+
+Tôi cũng tìm chính cơ chế test:
+
+`lastAgentInput`
+
+và vòng chờ:
+
+`attempt < 50`
+
+trong Didact và pax-co.
+
+Kết quả: **không có**.
+
+Do đó, **test flaky hiện tại không phải một test lỗi được thừa hưởng từ các bản tham khảo**.
+
+Nó được tạo trong quá trình integration của chúng ta để bảo vệ một chức năng kết hợp mới.
+
+---
+
+# 7. Nhưng điều đó có nghĩa ứng dụng của chúng ta bị lỗi không?
+
+**Hiện chưa có bằng chứng để kết luận như vậy.**
+
+Đây là điểm cần phân biệt rất cẩn thận.
+
+Test hiện tại làm như sau về mặt dễ hiểu:
+
+> Khởi động công việc → chờ tối đa 50 lần, mỗi lần yêu cầu đợi khoảng 1 ms → nếu công việc nền chưa tới điểm cần kiểm tra thì báo lỗi.
+
+Đoạn thực tế:
+
+```ts id="9s7n0x"
+for (let attempt = 0; attempt < 50 && !lastAgentInput; attempt++) {
+  await new Promise(resolve => setTimeout(resolve, 1))
+}
+```
+
+Đây là cách test phụ thuộc vào **thời gian máy chạy**, thay vì đợi một tín hiệu chắc chắn rằng tác vụ đã tới đúng trạng thái.
+
+Trên máy CI đang bận, `1 ms` không có nghĩa hệ điều hành sẽ thực sự cho code chạy lại đúng sau 1 ms.
+
+---
+
+# 8. Bằng chứng cho hiện tượng flaky/timing
+
+Tôi đã mở trực tiếp hai JUnit artifact của cùng commit `4bb1bcf…`.
+
+### Attempt 1
+
+Test:
+
+`passes stored conversation POV to the durable chat agent...`
+
+FAIL.
+
+Kỳ vọng:
+
+`povCharacterId = ch-maya`
+
+nhưng biến theo dõi vẫn:
+
+`lastAgentInput = null`
+
+Điều đáng chú ý: nó **không nhận sai POV**.
+
+Nó thậm chí **chưa kịp thấy agent được gọi** trước thời điểm assertion chạy.
+
+Thời gian test: khoảng **115 ms**.
+
+### Attempt 2 — không đổi code
+
+Cùng commit.
+Cùng test.
+Cùng file server.
+
+Kết quả:
+
+**PASS**
+
+Thời gian: khoảng **17 ms**.
+
+Toàn bộ suite:
+
+**1.619 / 1.619 test pass.**
+
+Đây là dấu hiệu rất điển hình của **test synchronization/timing không ổn định**.
+
+---
+
+# 9. Bằng chứng loại trừ Việt hóa và các merge sau
+
+Tôi vừa so Git blob SHA của 6 file quan trọng tại:
+
+- HEAD cuối PR #2: `58d254a…`
+- fork `master`: `230b878…`
+- nhánh Việt hóa: `4bb1bcf…`
+
+Kết quả:
+
+| File | PR #2 final | Master hiện tại | Việt hóa |
+|---|---|---|---|
+| `src/server/routes/librarian.ts` | giống | giống | giống |
+| `src/server/librarian/chat.ts` | giống | giống | giống |
+| `src/server/librarian/storage.ts` | giống | giống | giống |
+| `src/server/runs/registry.ts` | giống | giống | giống |
+| `tests/api/librarian-chat-owned-runs.test.ts` | giống | giống | giống |
+| `vitest-results.yml` | giống | giống | giống |
+
+Đây không phải so sánh bằng tên hay nội dung nhìn bằng mắt.
+
+**SHA giống nhau nghĩa là nội dung file giống từng byte.**
+
+### Do đó loại trừ được
+
+- PR release #4 không gây lỗi này.
+- PR release #5 không gây lỗi này.
+- PR Windows launcher #8 không gây lỗi này.
+- 103 commit Việt hóa không gây lỗi này.
+- Không có merge sau PR #2 nào làm biến đổi vùng code đang điều tra.
+
+---
+
+# 10. PR #2 lúc merge có lỗi này hay không?
+
+Tại HEAD cuối PR #2:
+
+`58d254a…`
+
+chính test file hiện tại đã có **cùng SHA như bây giờ**.
+
+CI bot của PR #2 khi đó báo:
+
+- 159 suites;
+- 1.488 tests;
+- 1.491 test runs;
+- **0 failure**.
+
+Do vậy:
+
+> Cùng test này đã từng pass trên chính code integration trước khi merge.
+
+Điều này phản bác mạnh giả thuyết “PR #2 merge vào là code bị hỏng ngay”.
+
+Nó phù hợp hơn với:
+
+> **một test vốn có cửa sổ timing mong manh, chỉ thỉnh thoảng lộ ra dưới tải CI khác nhau.**
+
+---
+
+# 11. Vấn đề `Test Results` đỏ lại có nguồn gốc khác
+
+Đây là vấn đề thứ hai và không nên trộn với Librarian.
+
+Workflow:
+
+`.github/workflows/vitest-results.yml`
+
+ở upstream `tealios/errata@610c7e7…` có SHA:
+
+`78ae9461c4c3043c6ab28c4b0edc205d40383fc1`
+
+Workflow hiện tại của fork có SHA:
+
+`78ae9461c4c3043c6ab28c4b0edc205d40383fc1`
+
+**Trùng tuyệt đối.**
+
+Nghĩa là cơ chế báo cáo này được **thừa hưởng nguyên xi từ upstream**.
+
+Nó tải artifact theo `run_id`, rồi đọc:
+
+`artifacts/**/*.xml`
+
+Trong khi workflow #293 đã được rerun và hiện có:
+
+- artifact JUnit của attempt 1;
+- artifact JUnit của attempt 2;
+
+trong **cùng một run ID**.
+
+Attempt 1 có failure.
+Attempt 2 sạch hoàn toàn.
+
+Nhưng reporter vẫn giữ check đỏ của attempt cũ.
+
+### Phân loại
+
+Đây là:
+
+**bất cập CI/reporting có nguồn từ workflow upstream**, không phải do chúng ta tổng hợp Didact/pax-co và cũng không phải Việt hóa.
+
+---
+
+# 12. Bảng trách nhiệm nguồn gốc
+
+| Vấn đề | Nguồn thực tế | Kết luận |
+|---|---|---|
+| Server-owned durable runs | Didact | **Thừa hưởng từ bản tham khảo** |
+| POV/Voice | pax-co | **Thừa hưởng từ bản tham khảo** |
+| Ghép POV vào durable Librarian run | Integration của chúng ta | **Phần tích hợp mới của chúng ta** |
+| `librarian-chat-owned-runs.test.ts` | Integration của chúng ta | **Tạo mới bởi chúng ta** |
+| Cách test chờ `50 × setTimeout(1)` | Integration của chúng ta | **Điểm yếu của test do chúng ta tạo** |
+| Runtime Librarian thực sự mất POV | Chưa chứng minh | **Không được phép kết luận đang có bug sản phẩm** |
+| `Test Results` giữ failure cũ sau rerun | Workflow upstream | **Bất cập được thừa hưởng từ upstream** |
+| Việt hóa làm hỏng Librarian | Không có bằng chứng; hashes loại trừ | **Loại trừ** |
+| Merge PR #2 conflict làm hỏng code | Không có bằng chứng | **Loại trừ ở trạng thái hiện tại** |
+
+---
+
+# 13. Kết luận trách nhiệm chính xác
+
+Nếu hỏi:
+
+### “Lỗi này là của bản nguồn hay do chúng ta tổng hợp?”
+
+Không thể trả lời chỉ bằng một trong hai lựa chọn, vì có **hai lỗi khác nhau**.
+
+**Lỗi test POV không ổn định:** thuộc vùng tích hợp của chúng ta. Didact cung cấp một nửa, pax-co cung cấp một nửa, nhưng **không nguồn nào có nguyên đường chạy kết hợp đang được test**. Test và phương thức chờ timing được chúng ta viết trong PR #2.
+
+**Lỗi bảng `Test Results` đỏ sai sau rerun:** thuộc cơ chế workflow đã có từ **upstream chính thức** và chúng ta đang dùng nguyên xi.
+
+### Quan trọng hơn
+
+Hiện chưa có bằng chứng production code của Librarian bị hỏng.
+
+Bằng chứng hiện tại cho thấy vấn đề đáng xử lý đầu tiên là:
+
+**test synchronization + CI reporting**, không phải sửa mò vào Librarian runtime.
+
+---
+
+# 14. Bảng trạng thái tổng thể
+
+| Hạng mục | Trạng thái | Mức quan trọng | Ghi chú |
+|---|---|---:|---|
+| Xác minh upstream 1.12.0 | ✅ Xong | Cao | Commit `610c7e7…` |
+| Xác minh source ZIP | ✅ Xong | Cao | Toàn bộ Git tree khớp upstream |
+| Xác minh Windows binary | ✅ Xong | Cao | SHA-256 khớp GitHub Release |
+| Xác định fork master khác upstream | ✅ Xong | Cao | Ahead 464 |
+| Xác định merge chứa vùng lỗi | ✅ Xong | Rất cao | PR #2 / merge `332d3f25…` |
+| Truy nguồn durable runs | ✅ Xong | Rất cao | Didact |
+| Truy nguồn POV/Voice | ✅ Xong | Rất cao | pax-co |
+| Xác định điểm ghép | ✅ Xong | Rất cao | Integration của chúng ta |
+| Loại trừ Việt hóa | ✅ Xong | Rất cao | 6 file liên quan giống từng byte |
+| Loại trừ merge release/Windows sau đó | ✅ Xong | Cao | Các file liên quan không thay đổi |
+| So JUnit attempt 1/2 | ✅ Xong | Rất cao | Fail → pass cùng SHA |
+| Xác định CI reporter stale | ✅ Xong | Rất cao | Reporter upstream + duplicate rerun artifacts |
+| Chứng minh runtime Librarian có lỗi thực | ⏳ Chưa | Rất cao | Hiện chưa có evidence |
+| Định lượng độ flaky của test | ⏳ Chưa | Rất cao | Cần repeated deterministic experiment |
+| Sửa test timing | ⏳ Chưa | Rất cao | Chỉ làm sau khi reproduction đóng |
+| Sửa CI reporter | ⏳ Chưa | Cao | Nên tách khỏi PR Việt hóa |
+| Tiếp tục Việt hóa | ⏸ Tạm giữ | Trung bình | Nên đóng CI gate trước |
+| Merge PR #7 | ❌ Chưa được | Rất cao | Vẫn phải Draft |
+
+---
+
+# 15. Các vấn đề/bất cập hiện tồn tại
+
+| ID | Vấn đề | Ảnh hưởng | Nguồn | Tình trạng |
+|---|---|---|---|---|
+| **E-01** | POV durable-chat test đôi lúc fail | CI không đáng tin tuyệt đối | Integration của chúng ta | Mở |
+| **E-02** | Test dùng polling 1 ms × 50 | Phụ thuộc tốc độ/scheduling máy | Integration của chúng ta | Mở |
+| **E-03** | `Test Results` đọc/kế thừa artifact cũ sau rerun | GitHub hiện đỏ dù latest tests sạch | Upstream workflow | Mở |
+| **E-04** | PR #7 body đang ghi checkpoint cũ | Tài liệu PR không phản ánh HEAD mới | PR management | Mở, nhỏ |
+| **E-05** | Source upstream `run.bat` yêu cầu Bun nhưng double-click dễ đóng cửa sổ | Người không kỹ thuật tưởng chương trình lỗi | Upstream source UX | Đã hiểu nguyên nhân |
+| **E-06** | Fork đã cách upstream 464 commit | Khó quy lỗi nếu không quản lý provenance | Bản chất dự án best-of | Đang kiểm soát |
+| **E-07** | PR #7 đã hơn 100 commit | Review khó hơn nếu tiếp tục mở rộng trước stabilization | Quá trình Việt hóa | Cần kiểm soát |
+
+---
+
+# 16. Kế hoạch xử lý từ đây
+
+| Ưu tiên | Công việc | Mục đích dễ hiểu | Điều kiện coi là hoàn tất |
+|---:|---|---|---|
+| **P0.1** | Chạy riêng test POV lặp nhiều lần trên `master` exact code | Xác định nó có thực sự “lúc được lúc không” | Không thay code; có thống kê rõ pass/fail |
+| **P0.2** | Chạy cùng phép thử trên localization HEAD | Kiểm tra Việt hóa có làm thay đổi xác suất hay không | Kết quả đối chiếu được với master |
+| **P0.3** | Thay polling thời gian bằng tín hiệu đồng bộ chắc chắn trong test | Loại bỏ phụ thuộc máy nhanh/chậm | Target test ổn định nhiều lần liên tiếp |
+| **P0.4** | Nếu sau đồng bộ test vẫn fail, mới điều tra production route | Tránh sửa code thật khi lỗi chỉ nằm ở test | Có reproduction deterministic trước khi sửa runtime |
+| **P0.5** | Sửa `Test Results` để chỉ đọc artifact của attempt mới nhất | GitHub phải báo đúng những gì thực sự chạy | Latest JUnit pass → check cũng phải green |
+| **P0.6** | Chạy full suite nhiều lượt liên tiếp | Xác nhận không còn flake ẩn | Tests + typecheck + architecture + build đều green |
+| **P0.7** | Cross-check lại server tree với PR #2 / master | Đảm bảo sửa CI/test không đụng runtime | Server semantics không đổi nếu không cần |
+| **P1.1** | Cập nhật PR #7 body về HEAD `4bb1bcf…` | Hồ sơ GitHub phản ánh đúng thực tế | SHA/ahead/CI checkpoint chính xác |
+| **P1.2** | Quay lại stabilization Việt hóa | Tiếp tục công việc chính sau khi CI đáng tin | Các batch nhỏ, presentation-only |
+| **P1.3** | Library/Home → FragmentList → LibrarianPanel → Help | Đóng phần UI còn lại | Mỗi batch có exact-head validation |
+| **P2** | Deep audit + người dùng chạy thử | Xác nhận sản phẩm ngoài môi trường test | Không phát hiện regression |
+| **Cuối cùng** | Đánh giá Ready/merge PR #7 | Chỉ merge khi bằng chứng đầy đủ | PR không còn Draft chỉ sau validation |
+
+---
+
+## 17. Critical path
+
+Hiện tại **không nên sửa Librarian runtime ngay** và cũng **không nên tiếp tục mở rộng Việt hóa trước**.
+
+Thứ tự đúng là:
+
+**Xác nhận flaky → làm test deterministic → sửa reporter CI → full validation → rồi mới tiếp tục Việt hóa.**
+
+Điều kiện STOP rất rõ:
+
+> Nếu một test deterministic vẫn chứng minh `povCharacterId` thật sự bị mất trong production path, dừng mọi công việc Việt hóa và chuyển sang sửa integration seam Didact × pax-co.
+
+Ngược lại:
+
+> Nếu test deterministic chạy ổn định và full suite sạch, không được sửa production Librarian chỉ vì một kết quả CI cũ.
+
+Đây là ranh giới giúp tránh tình trạng “thấy đèn đỏ rồi sửa nhầm code đang đúng”.
