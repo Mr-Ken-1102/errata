@@ -210,17 +210,17 @@ describe('config routes', () => {
       expect(fetchMock).not.toHaveBeenCalled()
     })
 
-    it('still allows testing unsaved credentials inline', async () => {
+    it('normalizes an unversioned inline API root before testing it', async () => {
       const fetchMock = stubChatFetch()
 
       const res = await post('/config/test-connection', {
-        baseURL: 'https://inline.example/v1',
+        baseURL: 'http://localhost:11434/',
         apiKey: 'inline-key',
         model: 'm',
       })
 
       expect(await res.json()).toEqual({ ok: true, reply: 'hi' })
-      expect(fetchMock.mock.calls[0][0]).toBe('https://inline.example/v1/chat/completions')
+      expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:11434/v1/chat/completions')
     })
   })
 
