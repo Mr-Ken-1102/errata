@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw, Download } from 'lucide-react'
 import { getDesktopBridge, onDesktopBridgeReady, type DesktopUpdateState, type ErrataDesktop } from '@/lib/desktop'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 import { SectionHeading, SettingsCard, SettingRow } from './primitives'
 
 const primaryBtn =
@@ -17,41 +18,56 @@ const primaryBtn =
 const ghostBtn =
   'flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground/70 disabled:opacity-40'
 
-function statusText(state: DesktopUpdateState): string {
+type Translate = (key: TranslationKey) => string
+
+function interpolate(message: string, values: Record<string, string | number>): string {
+  let result = message
+  for (const [key, value] of Object.entries(values)) {
+    result = result.replace(`{${key}}`, String(value))
+  }
+  return result
+}
+
+function statusText(state: DesktopUpdateState, t: Translate): string {
   switch (state.status) {
     case 'checking':
-      return 'Checking for updates...'
+      return t('settings.updates.status.checking')
     case 'available':
-      return `Version ${state.version ?? ''} is available.`
+      return interpolate(t('settings.updates.status.available'), { version: state.version ?? '' })
     case 'downloading':
-      return `Downloading ${state.version ?? 'update'}... ${state.percent ?? 0}%`
+      return interpolate(t('settings.updates.status.downloading'), {
+        version: state.version ?? t('settings.updates.updateNoun'),
+        percent: state.percent ?? 0,
+      })
     case 'downloaded':
-      return `Version ${state.version ?? ''} is ready to install.`
+      return interpolate(t('settings.updates.status.downloaded'), { version: state.version ?? '' })
     case 'skipped':
-      return `Version ${state.version ?? ''} skipped.`
+      return interpolate(t('settings.updates.status.skipped'), { version: state.version ?? '' })
     case 'not-available':
-      return 'You are on the latest version.'
+      return t('settings.updates.status.latest')
     case 'error':
-      return `Update check failed: ${state.error ?? 'unknown error'}`
+      return interpolate(t('settings.updates.status.error'), {
+        error: state.error ?? t('settings.updates.unknownError'),
+      })
     default:
-      return 'Check manually when you want to look for a new release.'
+      return t('settings.updates.status.idle')
   }
 }
 
-function nextVersionText(state: DesktopUpdateState): string {
+function nextVersionText(state: DesktopUpdateState, t: Translate): string {
   if (state.version) return `v${state.version}`
-  if (state.status === 'checking') return 'Checking...'
-  if (state.status === 'not-available') return 'None available'
-  return 'Check to load'
+  if (state.status === 'checking') return t('settings.updates.next.checking')
+  if (state.status === 'not-available') return t('settings.updates.next.none')
+  return t('settings.updates.next.checkToLoad')
 }
 
-function changelogText(state: DesktopUpdateState): string {
+function changelogText(state: DesktopUpdateState, t: Translate): string {
   if (state.releaseNotes) return state.releaseNotes
   if (state.status === 'available' || state.status === 'downloaded' || state.status === 'skipped') {
-    return 'No changelog was included with this update.'
+    return t('settings.updates.changelog.none')
   }
-  if (state.status === 'checking') return 'Checking release metadata...'
-  return 'Run a manual update check to load the latest release notes.'
+  if (state.status === 'checking') return t('settings.updates.changelog.checking')
+  return t('settings.updates.changelog.idle')
 }
 
 function releaseMetaText(state: DesktopUpdateState): string | undefined {
@@ -63,6 +79,7 @@ function releaseMetaText(state: DesktopUpdateState): string | undefined {
 }
 
 export function DesktopUpdatesControls() {
+  const { t } = useLanguage()
   const [bridge, setBridge] = useState<ErrataDesktop | null>(() => getDesktopBridge())
   const [currentVersion, setCurrentVersion] = useState(__APP_VERSION__)
   const [state, setState] = useState<DesktopUpdateState>({ status: 'idle' })
@@ -97,7 +114,7 @@ export function DesktopUpdatesControls() {
   const checkButton = (
     <button type="button" className={ghostBtn} onClick={check} disabled={checking}>
       <RefreshCw className={`size-3 ${checking ? 'animate-spin' : ''}`} />
-      Check for updates
+      {t('settings.updates.checkForUpdates')}
     </button>
   )
 
@@ -108,10 +125,10 @@ export function DesktopUpdatesControls() {
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <button type="button" className={primaryBtn} onClick={() => bridge.downloadUpdate()}>
               <Download className="size-3" />
-              Download and install
+              {t('settings.updates.downloadAndInstall')}
             </button>
             <button type="button" className={ghostBtn} onClick={() => bridge.skipUpdate(state.version ?? '')}>
-              Skip
+              {t('settings.updates.skip')}
             </button>
             {checkButton}
           </div>
@@ -121,7 +138,7 @@ export function DesktopUpdatesControls() {
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <button type="button" className={ghostBtn} onClick={() => bridge.downloadUpdate()}>
               <Download className="size-3" />
-              Download
+              {t('settings.updates.download')}
             </button>
             {checkButton}
           </div>
@@ -130,7 +147,7 @@ export function DesktopUpdatesControls() {
         return (
           <button type="button" className={primaryBtn} onClick={() => bridge.installUpdate()}>
             <Download className="size-3" />
-            Restart and install
+            {t('settings.updates.restartAndInstall')}
           </button>
         )
       case 'downloading':
@@ -143,26 +160,26 @@ export function DesktopUpdatesControls() {
 
   return (
     <div>
-      <SectionHeading label="Updates" />
+      <SectionHeading label={t('settings.updates.heading')} />
       <SettingsCard>
-        <SettingRow label="Installed version">
+        <SettingRow label={t('settings.updates.installedVersion')}>
           <span className="font-mono text-[0.6875rem] tabular-nums text-muted-foreground">v{currentVersion}</span>
         </SettingRow>
-        <SettingRow label="Next version" description={releaseMetaText(state)}>
-          <span className="font-mono text-[0.6875rem] tabular-nums text-muted-foreground">{nextVersionText(state)}</span>
+        <SettingRow label={t('settings.updates.nextVersion')} description={releaseMetaText(state)}>
+          <span className="font-mono text-[0.6875rem] tabular-nums text-muted-foreground">{nextVersionText(state, t)}</span>
         </SettingRow>
-        <SettingRow label="Desktop updates" description={statusText(state)}>
+        <SettingRow label={t('settings.updates.desktopUpdates')} description={statusText(state, t)}>
           {actions()}
         </SettingRow>
         <div className="px-3 py-2.5">
-          <p className="text-[0.75rem] font-medium text-foreground/80">Changelog</p>
+          <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.updates.changelog')}</p>
           <pre className="mt-1.5 max-h-44 whitespace-pre-wrap overflow-y-auto rounded-md bg-accent/20 px-2.5 py-2 font-sans text-[0.6875rem] leading-relaxed text-muted-foreground">
-            {changelogText(state)}
+            {changelogText(state, t)}
           </pre>
         </div>
       </SettingsCard>
       <p className="mt-1.5 px-3 text-[0.625rem] leading-snug text-muted-foreground">
-        Errata only checks for updates when you click the button. Your stories are backed up before every install.
+        {t('settings.updates.backupNotice')}
       </p>
     </div>
   )

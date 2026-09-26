@@ -3,12 +3,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SlidersHorizontal, Radio } from 'lucide-react'
 import { AgentConfigurePanel } from './AgentConfigurePanel'
 import { AgentActivityPanel } from './AgentActivityPanel'
+import { useLanguage } from '@/lib/i18n'
 
 interface AgentsPanelProps {
   storyId: string
 }
 
 export function AgentsPanel({ storyId }: AgentsPanelProps) {
+  const { t } = useLanguage()
   const [tab, setTab] = useState<'activity' | 'configure'>('configure')
 
   return (
@@ -21,11 +23,11 @@ export function AgentsPanel({ storyId }: AgentsPanelProps) {
         <TabsList variant="line" className="w-full h-8 gap-0 relative z-20">
           <TabsTrigger value="configure" className="text-[0.6875rem] gap-1.5 flex-1 px-1">
             <SlidersHorizontal className="size-3" />
-            Configure
+            {t('agentsPanel.configure')}
           </TabsTrigger>
           <TabsTrigger value="activity" className="text-[0.6875rem] gap-1.5 flex-1 px-1">
             <Radio className="size-3" />
-            Activity
+            {t('agentsPanel.activity')}
           </TabsTrigger>
         </TabsList>
       </div>

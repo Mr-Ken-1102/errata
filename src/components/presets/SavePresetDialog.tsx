@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { AlertCircle, Loader2 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface SavePresetDialogProps {
   open: boolean
@@ -29,6 +30,7 @@ export function SavePresetDialog({
   mediaById,
   storyName,
 }: SavePresetDialogProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [name, setName] = useState(storyName ?? '')
   const [description, setDescription] = useState('')
@@ -68,23 +70,24 @@ export function SavePresetDialog({
     >
       <DialogContent className="sm:max-w-[440px]" data-component-id="save-preset-dialog">
         <DialogHeader>
-          <DialogTitle className="font-display text-lg">Save as story preset</DialogTitle>
+          <DialogTitle className="font-display text-lg">{t('savePreset.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Save the {selectedFragments.length} selected fragment{selectedFragments.length === 1 ? '' : 's'} as reusable
-            story context. Applying this preset creates independent copies; context/agent configuration is never included.
+            {selectedFragments.length === 1
+              ? t('savePreset.descriptionOne')
+              : t('savePreset.descriptionMany').replace('{count}', String(selectedFragments.length))}
           </p>
 
           <div>
             <label className="mb-2 block text-[0.5625rem] font-medium uppercase tracking-[0.15em] text-muted-foreground">
-              Name
+              {t('savePreset.name')}
             </label>
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="e.g. Noir Detective Cast"
+              placeholder={t('savePreset.namePlaceholder')}
               maxLength={80}
               autoFocus
               className="h-9"
@@ -94,12 +97,12 @@ export function SavePresetDialog({
 
           <div>
             <label className="mb-2 block text-[0.5625rem] font-medium uppercase tracking-[0.15em] text-muted-foreground">
-              Description
+              {t('savePreset.description')}
             </label>
             <Textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="Optional notes about this preset..."
+              placeholder={t('savePreset.descriptionPlaceholder')}
               maxLength={250}
               rows={3}
               className="resize-none text-xs"
@@ -113,7 +116,7 @@ export function SavePresetDialog({
               <span>
                 {saveMutation.error instanceof Error
                   ? saveMutation.error.message
-                  : 'Failed to save preset'}
+                  : t('savePreset.failed')}
               </span>
             </div>
           )}
@@ -126,7 +129,7 @@ export function SavePresetDialog({
             className="text-xs"
             data-component-id="save-preset-cancel"
           >
-            Cancel
+            {t('savePreset.cancel')}
           </Button>
           <Button
             onClick={() => saveMutation.mutate()}
@@ -135,7 +138,7 @@ export function SavePresetDialog({
             data-component-id="save-preset-submit"
           >
             {saveMutation.isPending && <Loader2 className="size-3 animate-spin" />}
-            Save preset
+            {t('savePreset.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

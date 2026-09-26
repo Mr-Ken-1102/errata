@@ -39,7 +39,8 @@ import {
 } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { componentId } from '@/lib/dom-ids'
-import { FragmentTypeDisplayIcon, getFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
+import { FragmentTypeDisplayIcon } from '@/components/fragments/fragment-type-icons'
+import { useLanguage } from '@/lib/i18n'
 
 export type SidebarSection =
   | 'story-info'
@@ -99,10 +100,10 @@ function PluginIcon({ icon }: { icon?: { type: 'lucide'; name: string } | { type
 }
 
 const FRAGMENT_SECTIONS = [
-  { id: 'fragments' as const, label: 'All fragments', type: null },
-  { id: 'guidelines' as const, label: getFragmentTypeVisual('guideline').label, type: 'guideline' },
-  { id: 'characters' as const, label: getFragmentTypeVisual('character').label, type: 'character' },
-  { id: 'knowledge' as const, label: getFragmentTypeVisual('knowledge').label, type: 'knowledge' },
+  { id: 'fragments' as const, type: null },
+  { id: 'guidelines' as const, type: 'guideline' },
+  { id: 'characters' as const, type: 'character' },
+  { id: 'knowledge' as const, type: 'knowledge' },
 ]
 
 export function StorySidebar({
@@ -115,6 +116,7 @@ export function StorySidebar({
   enabledPanelPlugins,
 }: StorySidebarProps) {
   const { openHelp } = useHelp()
+  const { t } = useLanguage()
   const { isMobile, setOpenMobile } = useSidebar()
   const queryClient = useQueryClient()
   const [isDragOverArchive, setIsDragOverArchive] = useState(false)
@@ -148,7 +150,7 @@ export function StorySidebar({
     <Sidebar collapsible="icon" data-component-id="story-sidebar">
       <SidebarHeader>
         <div className="flex items-center justify-between px-2 py-1.5" data-component-id="story-sidebar-header">
-          <Link to="/" className="flex items-center gap-1.5 truncate hover:opacity-80 transition-opacity" title="Back to stories">
+          <Link to="/" className="flex items-center gap-1.5 truncate hover:opacity-80 transition-opacity" title={t('sidebar.backToStories')}>
             <Home className="size-4 shrink-0 opacity-60" />
             <span className="font-display text-base italic truncate group-data-[collapsible=icon]:hidden">
               {story?.name ?? 'Errata'}
@@ -170,11 +172,11 @@ export function StorySidebar({
                 <SidebarMenuButton
                   isActive={activeSection === null && !storySetupActive}
                   onClick={() => { onSectionChange(null); dismissMobileSheet() }}
-                  tooltip="Story"
+                  tooltip={t('sidebar.story')}
                   data-component-id="sidebar-story-link"
                 >
                   <PenLine className="size-4" />
-                  <span>Story</span>
+                  <span>{t('sidebar.story')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {onLaunchWizard && (
@@ -182,11 +184,11 @@ export function StorySidebar({
                   <SidebarMenuButton
                     isActive={storySetupActive}
                     onClick={() => { onLaunchWizard(); dismissMobileSheet() }}
-                    tooltip="Story setup"
+                    tooltip={t('sidebar.storySetup')}
                     data-component-id="sidebar-story-setup"
                   >
                     <WandSparkles className="size-4" />
-                    <span>Story setup</span>
+                    <span>{t('sidebar.storySetup')}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -194,11 +196,11 @@ export function StorySidebar({
                 <SidebarMenuButton
                   isActive={activeSection === 'story-info'}
                   onClick={() => handleToggle('story-info')}
-                  tooltip="Info"
+                  tooltip={t('sidebar.info')}
                   data-component-id="sidebar-section-story-info"
                 >
                   <Info className="size-4" />
-                  <span>Info</span>
+                  <span>{t('sidebar.info')}</span>
                   <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -206,7 +208,7 @@ export function StorySidebar({
                 <SidebarMenuButton
                   isActive={activeSection === 'agent-activity'}
                   onClick={() => handleToggle('agent-activity')}
-                  tooltip="Librarian"
+                  tooltip={t('sidebar.librarian')}
                   data-component-id="sidebar-section-agent-activity"
                 >
                   <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -223,7 +225,7 @@ export function StorySidebar({
                       </linearGradient>
                     </defs>
                   </svg>
-                  <span>Librarian</span>
+                  <span>{t('sidebar.librarian')}</span>
                   <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -236,27 +238,36 @@ export function StorySidebar({
         {/* Fragments */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-[0.875rem] font-display text-muted-foreground">
-            Fragments
+            {t('sidebar.fragments')}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {FRAGMENT_SECTIONS.map((section) => (
-                <SidebarMenuItem key={section.id}>
-                  <SidebarMenuButton
-                    isActive={activeSection === section.id}
-                    onClick={() => handleToggle(section.id)}
-                    tooltip={section.label}
-                    data-component-id={componentId('sidebar-section', section.id)}
-                  >
-                    {section.type
-                      ? <FragmentTypeDisplayIcon type={section.type} className="size-4" />
-                      : <Hash className="size-4" />
-                    }
-                    <span>{section.label}</span>
-                    <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {FRAGMENT_SECTIONS.map((section) => {
+                const label = section.id === 'fragments'
+                  ? t('sidebar.allFragments')
+                  : section.id === 'guidelines'
+                    ? t('sidebar.guidelines')
+                    : section.id === 'characters'
+                      ? t('sidebar.characters')
+                      : t('sidebar.knowledge')
+                return (
+                  <SidebarMenuItem key={section.id}>
+                    <SidebarMenuButton
+                      isActive={activeSection === section.id}
+                      onClick={() => handleToggle(section.id)}
+                      tooltip={label}
+                      data-component-id={componentId('sidebar-section', section.id)}
+                    >
+                      {section.type
+                        ? <FragmentTypeDisplayIcon type={section.type} className="size-4" />
+                        : <Hash className="size-4" />
+                      }
+                      <span>{label}</span>
+                      <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
               {customFragmentSections.map((section) => (
                 <SidebarMenuItem key={section.type}>
                   <SidebarMenuButton
@@ -279,7 +290,7 @@ export function StorySidebar({
 
         <SidebarGroup>
           <SidebarGroupLabel className="text-[0.875rem] font-display text-muted-foreground">
-            Workshop
+            {t('sidebar.workshop')}
           </SidebarGroupLabel>
           <SidebarGroupContent>
               <SidebarMenu>
@@ -287,11 +298,11 @@ export function StorySidebar({
                 <SidebarMenuButton
                   isActive={activeSection === 'agents'}
                   onClick={() => handleToggle('agents')}
-                  tooltip="Agents"
+                  tooltip={t('sidebar.agents')}
                   data-component-id="sidebar-section-agents"
                 >
                   <Radio className="size-4" />
-                  <span>Agents</span>
+                  <span>{t('sidebar.agents')}</span>
                   <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -300,11 +311,11 @@ export function StorySidebar({
                 <SidebarMenuButton
                   isActive={activeSection === 'fragment-types'}
                   onClick={() => handleToggle('fragment-types')}
-                  tooltip="Fragment Types"
+                  tooltip={t('sidebar.fragmentTypes')}
                   data-component-id="sidebar-section-fragment-types"
                 >
                   <Wrench className="size-4" />
-                  <span>Fragment Types</span>
+                  <span>{t('sidebar.fragmentTypes')}</span>
                   <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -314,11 +325,11 @@ export function StorySidebar({
                   <SidebarMenuButton
                     isActive={activeSection === 'context-order'}
                     onClick={() => handleToggle('context-order')}
-                    tooltip="Fragment Order"
+                    tooltip={t('sidebar.fragmentOrder')}
                     data-component-id="sidebar-section-context-order"
                   >
                     <ArrowUpDown className="size-4" />
-                    <span>Fragment Order</span>
+                    <span>{t('sidebar.fragmentOrder')}</span>
                     <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -328,11 +339,11 @@ export function StorySidebar({
                   <SidebarMenuButton
                     isActive={activeSection === 'branches'}
                     onClick={() => handleToggle('branches')}
-                    tooltip="Timelines"
+                    tooltip={t('sidebar.timelines')}
                     data-component-id="sidebar-section-branches"
                   >
                     <GitBranch className="size-4" />
-                    <span>Timelines</span>
+                    <span>{t('sidebar.timelines')}</span>
                     <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -341,11 +352,11 @@ export function StorySidebar({
                   <SidebarMenuButton
                     isActive={activeSection === 'media'}
                     onClick={() => handleToggle('media')}
-                    tooltip="Media"
+                    tooltip={t('sidebar.media')}
                     data-component-id="sidebar-section-media"
                   >
                     <Image className="size-4" />
-                    <span>Media</span>
+                    <span>{t('sidebar.media')}</span>
                     <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -354,7 +365,7 @@ export function StorySidebar({
                 <SidebarMenuButton
                   isActive={activeSection === 'archive'}
                   onClick={() => handleToggle('archive')}
-                  tooltip="Archive"
+                  tooltip={t('sidebar.archive')}
                   data-component-id="sidebar-section-archive"
                   className={isDragOverArchive ? 'ring-1 ring-primary/50 bg-accent' : undefined}
                   onDragOver={(e: React.DragEvent) => {
@@ -381,7 +392,7 @@ export function StorySidebar({
                   }}
                 >
                   <Archive className="size-4" />
-                  <span>Archive</span>
+                  <span>{t('sidebar.archive')}</span>
                   <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -395,7 +406,7 @@ export function StorySidebar({
             <SidebarSeparator />
             <SidebarGroup>
               <SidebarGroupLabel className="text-[0.875rem] font-display text-muted-foreground">
-                Plugins
+                {t('sidebar.plugins')}
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -426,11 +437,11 @@ export function StorySidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={() => { openHelp(); dismissMobileSheet() }}
-              tooltip="Help"
+              tooltip={t('sidebar.help')}
               data-component-id="sidebar-help-button"
             >
               <CircleHelp className="size-4" />
-              <span>Help</span>
+              <span>{t('sidebar.help')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           {enetConfig?.enabled && (
@@ -451,11 +462,11 @@ export function StorySidebar({
             <SidebarMenuButton
               isActive={activeSection === 'settings'}
               onClick={() => handleToggle('settings')}
-              tooltip="Settings"
+              tooltip={t('sidebar.settings')}
               data-component-id="sidebar-section-settings"
             >
               <Settings className="size-4" />
-              <span>Settings</span>
+              <span>{t('sidebar.settings')}</span>
               <ChevronRight className="ml-auto size-3.5 text-muted-foreground" />
             </SidebarMenuButton>
           </SidebarMenuItem>

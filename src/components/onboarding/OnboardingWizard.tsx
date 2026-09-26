@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Hint, Caption } from '@/components/ui/prose-text'
 import { Wizard } from '@/components/ui/wizard'
+import { useLanguage } from '@/lib/i18n'
 
 // ── Guilloche background ─────────────────────────────
 
@@ -173,6 +174,23 @@ const PROVIDER_CARDS = {
 
 type PresetKey = keyof typeof PROVIDER_CARDS
 
+const PROVIDER_DESCRIPTION_KEYS = {
+  deepseek: 'onboarding.provider.deepseekDescription',
+  openai: 'onboarding.provider.openaiDescription',
+  anthropic: 'onboarding.provider.anthropicDescription',
+  gemini: 'onboarding.provider.geminiDescription',
+  kimi: 'onboarding.provider.kimiDescription',
+  'kimi-code': 'onboarding.provider.kimiCodeDescription',
+  openrouter: 'onboarding.provider.openrouterDescription',
+  custom: 'onboarding.provider.customDescription',
+} as const
+
+const SUPPORTING_FEATURES = [
+  { icon: Layers, titleKey: 'onboarding.feature.fragmentsTitle', descKey: 'onboarding.feature.fragmentsDescription' },
+  { icon: Sparkles, titleKey: 'onboarding.feature.generationTitle', descKey: 'onboarding.feature.generationDescription' },
+  { icon: Puzzle, titleKey: 'onboarding.feature.pluginsTitle', descKey: 'onboarding.feature.pluginsDescription' },
+] as const
+
 const ACCENT_COLORS: Record<string, { border: string; bg: string; text: string }> = {
   blue: { border: 'border-blue-500/30', bg: 'bg-blue-500/10', text: 'text-blue-400' },
   emerald: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
@@ -260,6 +278,7 @@ function ThemeStep({
 }: {
   onNext: () => void
 }) {
+  const { t } = useLanguage()
   const { theme, setTheme } = useTheme()
 
   return (
@@ -267,7 +286,7 @@ function ThemeStep({
       <div className="animate-onboarding-fade-up">
         <h1 className="font-display text-5xl italic tracking-tight mb-3">Errata</h1>
         <p className="font-prose text-lg text-muted-foreground mb-12">
-          How do you like to read?
+          {t('onboarding.themeQuestion')}
         </p>
       </div>
 
@@ -293,7 +312,7 @@ function ThemeStep({
           >
             <Sun className="size-5" />
           </div>
-          <span className="text-sm font-medium">Light</span>
+          <span className="text-sm font-medium">{t('onboarding.light')}</span>
           {theme === 'light' && (
             <div className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary flex items-center justify-center">
               <Check className="size-3 text-primary-foreground" />
@@ -319,7 +338,7 @@ function ThemeStep({
           >
             <Moon className="size-5" />
           </div>
-          <span className="text-sm font-medium">Dark</span>
+          <span className="text-sm font-medium">{t('onboarding.dark')}</span>
           {theme === 'dark' && (
             <div className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary flex items-center justify-center">
               <Check className="size-3 text-primary-foreground" />
@@ -333,7 +352,7 @@ function ThemeStep({
         style={{ animationDelay: '300ms' }}
       >
         <Button onClick={onNext} className="px-8" data-component-id="onboarding-theme-continue">
-          Continue
+          {t('onboarding.continue')}
         </Button>
       </div>
     </div>
@@ -342,8 +361,6 @@ function ThemeStep({
 
 // ── Step 0.5: Typography Selection ────────────────────
 
-const PROSE_SAMPLE = 'The morning light fell across the desk, illuminating pages scattered in careless heaps. She picked up her pen.'
-
 function TypographyStep({
   onNext,
   onBack,
@@ -351,6 +368,7 @@ function TypographyStep({
   onNext: () => void
   onBack: () => void
 }) {
+  const { t } = useLanguage()
   useEffect(() => { loadFullFontCatalogue() }, [])
   const [fontPrefs, setFont] = useFontPreferences()
   const activeProse = getActiveFont('prose', fontPrefs)
@@ -359,9 +377,9 @@ function TypographyStep({
   return (
     <div className="max-w-xl mx-auto px-6">
       <div className="text-center mb-10 animate-onboarding-fade-up">
-        <h2 className="font-display text-3xl italic mb-2">Choose your typeface</h2>
+        <h2 className="font-display text-3xl italic mb-2">{t('onboarding.chooseTypeface')}</h2>
         <Caption size="sm">
-          The reading font shapes your entire writing experience.
+          {t('onboarding.typefaceDescription')}
         </Caption>
       </div>
 
@@ -371,7 +389,7 @@ function TypographyStep({
           className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-3 animate-onboarding-fade-up"
           style={{ animationDelay: '100ms' }}
         >
-          Prose
+          {t('onboarding.prose')}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {FONT_CATALOGUE.prose.map((opt, i) => {
@@ -399,7 +417,7 @@ function TypographyStep({
                   className="text-[0.9375rem] leading-relaxed text-foreground/80"
                   style={{ fontFamily: `"${opt.name}", ${opt.fallback}` }}
                 >
-                  {PROSE_SAMPLE}
+                  {t('onboarding.proseSample')}
                 </p>
                 {isActive && (
                   <div className="absolute top-2.5 right-2.5 size-5 rounded-full bg-primary flex items-center justify-center animate-onboarding-scale-in">
@@ -418,7 +436,7 @@ function TypographyStep({
           className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-3 animate-onboarding-fade-up"
           style={{ animationDelay: '500ms' }}
         >
-          Headings
+          {t('onboarding.headings')}
         </p>
         <div
           className="grid grid-cols-2 sm:grid-cols-3 gap-3 animate-onboarding-fade-up"
@@ -440,7 +458,7 @@ function TypographyStep({
                   className="text-xl italic mb-1 text-foreground/85"
                   style={{ fontFamily: `"${opt.name}", ${opt.fallback}` }}
                 >
-                  Chapter One
+                  {t('onboarding.chapterOne')}
                 </p>
                 <p className="text-[0.625rem] text-muted-foreground flex items-center justify-center gap-1">
                   {opt.name}
@@ -466,10 +484,10 @@ function TypographyStep({
         style={{ animationDelay: '650ms' }}
       >
         <Button onClick={onNext} className="px-8">
-          Continue
+          {t('onboarding.continue')}
         </Button>
         <div className="mt-4">
-          <Wizard.BackButton tone="link" onBack={onBack} />
+          <Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
         </div>
       </div>
     </div>
@@ -483,6 +501,7 @@ function WelcomeStep({
 }: {
   onNext: () => void
 }) {
+  const { t } = useLanguage()
   const { theme, toggle } = useTheme()
 
   return (
@@ -491,7 +510,7 @@ function WelcomeStep({
       <button
         onClick={toggle}
         className="absolute -top-12 right-0 size-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-card/50 transition-all"
-        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        title={t('onboarding.switchMode').replace('{mode}', theme === 'dark' ? t('onboarding.light') : t('onboarding.dark'))}
       >
         {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
       </button>
@@ -499,7 +518,7 @@ function WelcomeStep({
       <div className="animate-onboarding-fade-up">
         <h1 className="font-display text-5xl italic tracking-tight mb-3">Errata</h1>
         <p className="font-prose text-lg text-muted-foreground">
-          Model-assisted writing, built around fragments.
+          {t('onboarding.tagline')}
         </p>
       </div>
 
@@ -512,10 +531,9 @@ function WelcomeStep({
           <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
             <BookOpen className="size-5 text-primary" />
           </div>
-          <p className="text-sm font-medium mb-1">The Librarian</p>
+          <p className="text-sm font-medium mb-1">{t('onboarding.librarian')}</p>
           <Hint className="leading-relaxed">
-            A background AI reads every generation &mdash; tracking characters,
-            contradictions, and world details into a living story reference.
+            {t('onboarding.librarianDescription')}
           </Hint>
         </div>
         <div
@@ -525,23 +543,18 @@ function WelcomeStep({
           <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
             <GitBranch className="size-5 text-primary" />
           </div>
-          <p className="text-sm font-medium mb-1">Timelines</p>
+          <p className="text-sm font-medium mb-1">{t('onboarding.timelines')}</p>
           <Hint className="leading-relaxed">
-            Fork at any point to explore alternate paths. Each timeline
-            carries its own fragments, prose, and accumulated knowledge.
+            {t('onboarding.timelinesDescription')}
           </Hint>
         </div>
       </div>
 
       {/* Supporting features */}
       <div className="mt-4 space-y-3">
-        {[
-          { icon: Layers, title: 'Fragments', desc: 'Prose, characters, guidelines, knowledge — everything is a composable fragment.' },
-          { icon: Sparkles, title: 'Generation', desc: 'Fragments compose into rich context for nuanced story continuations.' },
-          { icon: Puzzle, title: 'Plugins', desc: 'Extend with custom fragment types, tools, and pipeline hooks.' },
-        ].map((f, i) => (
+        {SUPPORTING_FEATURES.map((f, i) => (
           <div
-            key={f.title}
+            key={f.titleKey}
             className="flex items-start gap-4 text-left p-4 rounded-lg border border-border/20 bg-card/30 animate-onboarding-fade-up"
             style={{ animationDelay: `${450 + i * 100}ms` }}
           >
@@ -549,8 +562,8 @@ function WelcomeStep({
               <f.icon className="size-4 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium mb-0.5">{f.title}</p>
-              <Hint className="leading-relaxed">{f.desc}</Hint>
+              <p className="text-sm font-medium mb-0.5">{t(f.titleKey)}</p>
+              <Hint className="leading-relaxed">{t(f.descKey)}</Hint>
             </div>
           </div>
         ))}
@@ -561,7 +574,7 @@ function WelcomeStep({
         style={{ animationDelay: '800ms' }}
       >
         <Button onClick={onNext} className="px-8" data-component-id="onboarding-welcome-start">
-          Get Started
+          {t('onboarding.getStarted')}
         </Button>
       </div>
     </div>
@@ -577,14 +590,15 @@ function ProviderSelectStep({
   onSelect: (preset: PresetKey) => void
   onBack: () => void
 }) {
+  const { t } = useLanguage()
   const cards = Object.entries(PROVIDER_CARDS) as [PresetKey, (typeof PROVIDER_CARDS)[PresetKey]][]
 
   return (
     <div className="max-w-2xl mx-auto px-6">
       <div className="text-center mb-8 animate-onboarding-fade-up">
-        <h2 className="font-display text-3xl italic mb-2">Choose your provider</h2>
+        <h2 className="font-display text-3xl italic mb-2">{t('onboarding.chooseProvider')}</h2>
         <Caption size="sm">
-          Pick an LLM provider to power your writing. You can always add more later.
+          {t('onboarding.chooseProviderDescription')}
         </Caption>
       </div>
 
@@ -617,7 +631,7 @@ function ProviderSelectStep({
                     )}
                   </div>
                   <Hint className="leading-relaxed">
-                    {card.description}
+                    {t(PROVIDER_DESCRIPTION_KEYS[key])}
                   </Hint>
                 </div>
               </div>
@@ -630,7 +644,7 @@ function ProviderSelectStep({
         className="flex items-center justify-center mt-8 animate-onboarding-fade-up"
         style={{ animationDelay: '500ms' }}
       >
-        <Wizard.BackButton tone="link" onBack={onBack} />
+        <Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
       </div>
     </div>
   )
@@ -647,6 +661,7 @@ function ProviderSetupStep({
   onComplete: () => void
   onBack: () => void
 }) {
+  const { t } = useLanguage()
   const card = PROVIDER_CARDS[preset]
   const accent = ACCENT_COLORS[card.accent]
 
@@ -701,7 +716,7 @@ function ProviderSetupStep({
         }
       }
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Failed to fetch models')
+      setFetchError(err instanceof Error ? err.message : t('providers.fetchModelsFailed'))
     } finally {
       setFetchingModels(false)
     }
@@ -709,11 +724,11 @@ function ProviderSetupStep({
 
   const handleTestConnection = async () => {
     if (!defaultModel) {
-      setTestResult({ ok: false, error: 'Model is required to test' })
+      setTestResult({ ok: false, error: t('providers.modelRequired') })
       return
     }
     if (!baseURL || !apiKey) {
-      setTestResult({ ok: false, error: 'Base URL and API Key are required' })
+      setTestResult({ ok: false, error: t('providers.baseUrlApiKeyRequired') })
       return
     }
     setTesting(true)
@@ -728,7 +743,7 @@ function ProviderSetupStep({
       })
       setTestResult(result)
     } catch (err) {
-      setTestResult({ ok: false, error: err instanceof Error ? err.message : 'Test failed' })
+      setTestResult({ ok: false, error: err instanceof Error ? err.message : t('providers.testFailed') })
     } finally {
       setTesting(false)
     }
@@ -763,19 +778,18 @@ function ProviderSetupStep({
           className="font-display text-3xl italic mb-2 animate-onboarding-fade-up"
           style={{ animationDelay: '200ms' }}
         >
-          You're all set!
+          {t('onboarding.setup.allSet')}
         </h2>
         <Caption
           size="sm"
           className="mb-8 animate-onboarding-fade-up"
           style={{ animationDelay: '350ms' }}
         >
-          {card.name || name} is configured and ready to go. You can manage providers anytime in
-          settings.
+          {t('onboarding.setup.ready').replace('{provider}', card.name || name)}
         </Caption>
         <div className="animate-onboarding-fade-up" style={{ animationDelay: '500ms' }}>
           <Button onClick={onComplete} className="px-8">
-            Start Writing
+            {t('onboarding.setup.startWriting')}
           </Button>
         </div>
       </div>
@@ -791,11 +805,11 @@ function ProviderSetupStep({
             <Server className={`size-3.5 ${accent.text}`} />
           </div>
           <h2 className="font-display text-3xl italic">
-            {preset === 'custom' ? 'Custom Provider' : card.name}
+            {preset === 'custom' ? t('onboarding.setup.customProvider') : card.name}
           </h2>
         </div>
         <Caption size="sm">
-          Enter your credentials to get started.
+          {t('onboarding.setup.credentials')}
         </Caption>
       </div>
 
@@ -806,32 +820,32 @@ function ProviderSetupStep({
         {/* Name (only for custom) */}
         {preset === 'custom' && (
           <div>
-            <label className={labelClass}>Provider Name</label>
+            <label className={labelClass}>{t('onboarding.setup.providerName')}</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
-              placeholder="My Provider"
+              placeholder={t('onboarding.setup.providerNamePlaceholder')}
             />
           </div>
         )}
 
         {/* API Key */}
         <div>
-          <label className={labelClass}>API Key</label>
+          <label className={labelClass}>{t('providers.apiKey')}</label>
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             className={inputClass}
-            placeholder="Enter your API key"
+            placeholder={t('onboarding.setup.enterApiKey')}
             autoFocus
           />
         </div>
 
         {/* Base URL */}
         <div>
-          <label className={labelClass}>Base URL</label>
+          <label className={labelClass}>{t('providers.baseUrl')}</label>
           <input
             value={baseURL}
             onChange={(e) => setBaseURL(e.target.value)}
@@ -842,7 +856,7 @@ function ProviderSetupStep({
 
         {/* Default Model */}
         <div>
-          <label className={labelClass}>Default Model</label>
+          <label className={labelClass}>{t('providers.defaultModel')}</label>
           <div className="flex gap-2">
             {fetchedModels.length > 0 && !useCustomModel ? (
               <select
@@ -851,7 +865,7 @@ function ProviderSetupStep({
                 className={inputClass + ' flex-1'}
               >
                 {!fetchedModels.some((m) => m.id === defaultModel) && defaultModel && (
-                  <option value={defaultModel}>{defaultModel} (current)</option>
+                  <option value={defaultModel}>{defaultModel} ({t('providers.current')})</option>
                 )}
                 {fetchedModels.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -865,7 +879,7 @@ function ProviderSetupStep({
                 value={defaultModel}
                 onChange={(e) => setDefaultModel(e.target.value)}
                 className={inputClass + ' flex-1'}
-                placeholder="e.g. deepseek-v4-flash"
+                placeholder={t('onboarding.setup.modelExample')}
               />
             )}
             <Button
@@ -881,14 +895,14 @@ function ProviderSetupStep({
               ) : (
                 <RefreshCw className="size-3" />
               )}
-              Fetch
+              {t('onboarding.setup.fetch')}
             </Button>
           </div>
           {(() => {
             const suggested = (card as { models?: readonly string[] }).models ?? []
             return suggested.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mr-0.5">Suggested</span>
+                <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mr-0.5">{t('providers.suggested')}</span>
                 {suggested.map((m) => (
                   <button
                     key={m}
@@ -908,13 +922,13 @@ function ProviderSetupStep({
               className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground mt-1 underline"
               onClick={() => setUseCustomModel(!useCustomModel)}
             >
-              {useCustomModel ? 'Use fetched models' : 'Enter model ID manually'}
+              {useCustomModel ? t('providers.useFetchedModels') : t('providers.enterModelManually')}
             </button>
           )}
           {fetchError && <p className="text-xs text-destructive mt-1">{fetchError}</p>}
           {fetchedModels.length > 0 && !fetchError && (
             <p className="text-[0.6875rem] text-muted-foreground mt-1">
-              {fetchedModels.length} models available
+              {fetchedModels.length} {t('providers.modelsAvailable')}
             </p>
           )}
         </div>
@@ -926,11 +940,11 @@ function ProviderSetupStep({
           >
             {testResult.ok ? (
               <p>
-                <span className="font-medium">Success:</span> {testResult.reply}
+                <span className="font-medium">{t('providers.success')}:</span> {testResult.reply}
               </p>
             ) : (
               <p>
-                <span className="font-medium">Error:</span> {testResult.error}
+                <span className="font-medium">{t('providers.error')}:</span> {testResult.error}
               </p>
             )}
           </div>
@@ -940,8 +954,8 @@ function ProviderSetupStep({
         {addMutation.isError && (
           <div className="text-sm rounded-md p-3 bg-destructive/10 text-destructive">
             <p>
-              <span className="font-medium">Error:</span>{' '}
-              {addMutation.error instanceof Error ? addMutation.error.message : 'Failed to save'}
+              <span className="font-medium">{t('providers.error')}:</span>{' '}
+              {addMutation.error instanceof Error ? addMutation.error.message : t('onboarding.setup.saveFailed')}
             </p>
           </div>
         )}
@@ -949,7 +963,7 @@ function ProviderSetupStep({
         {/* Actions */}
         <div className="flex gap-2 pt-2">
           <Button onClick={handleSave} disabled={!canSave || addMutation.isPending} className="flex-1">
-            {addMutation.isPending ? 'Saving...' : 'Save & Continue'}
+            {addMutation.isPending ? t('providers.saving') : t('onboarding.setup.saveAndContinue')}
           </Button>
           <Button
             variant="outline"
@@ -958,7 +972,7 @@ function ProviderSetupStep({
             className="gap-1.5"
           >
             {testing ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
-            Test
+            {t('providers.test')}
           </Button>
         </div>
       </div>
@@ -967,7 +981,7 @@ function ProviderSetupStep({
         className="flex items-center justify-center mt-8 animate-onboarding-fade-up"
         style={{ animationDelay: '250ms' }}
       >
-        <Wizard.BackButton tone="link" onBack={onBack} />
+        <Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
       </div>
     </div>
   )

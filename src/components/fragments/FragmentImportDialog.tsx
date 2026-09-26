@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { FileDropDialog } from '@/components/ui/file-drop-dialog'
 import { Caption } from '@/components/ui/prose-text'
 import { Clipboard, FileJson, ImageIcon, Upload, Package, Settings2 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface FragmentImportDialogProps {
   storyId: string
@@ -45,6 +46,7 @@ export function FragmentImportDialog({
   initialData,
   onImported,
 }: FragmentImportDialogProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [jsonText, setJsonText] = useState('')
   const [parsed, setParsed] = useState<ErrataExportData | null>(null)
@@ -149,7 +151,7 @@ export function FragmentImportDialog({
       }
     } else {
       setParsed(null)
-      setParseError('Not a valid Errata export. Expected JSON with _errata: "fragment" or "fragment-bundle".')
+      setParseError(t('fragmentImport.invalidExport'))
     }
   }
 
@@ -159,7 +161,7 @@ export function FragmentImportDialog({
       // Names the target rather than a keystroke: this branch is reached whenever
       // the browser withholds clipboard reads, which includes every phone on a LAN
       // address, where Ctrl+V was never the gesture.
-      setParseError('Could not read the clipboard. Paste into the box below instead.')
+      setParseError(t('fragmentImport.clipboardFailed'))
       return
     }
     handleTextChange(text)
@@ -177,9 +179,9 @@ export function FragmentImportDialog({
       const text = await readFileAsText(file)
       handleTextChange(text)
     } catch {
-      setParseError('Could not read file.')
+      setParseError(t('fragmentImport.readFileFailed'))
     }
-  }, [])
+  }, [t])
 
   const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -189,10 +191,10 @@ export function FragmentImportDialog({
       const text = await readFileAsText(file)
       handleTextChange(text)
     } catch {
-      setParseError('Could not read file.')
+      setParseError(t('fragmentImport.readFileFailed'))
     }
     e.target.value = ''
-  }, [])
+  }, [t])
 
   const toggleBundleItem = useCallback((index: number) => {
     setSelectedIndices((prev) => {
@@ -265,10 +267,10 @@ export function FragmentImportDialog({
       title={
         <span className="inline-flex items-center gap-2">
           <FileJson className="size-4 text-muted-foreground" aria-hidden="true" />
-          Import Fragments
+          {t('fragmentImport.title')}
         </span>
       }
-      description="Paste fragment JSON, drop a file, or load from clipboard."
+      description={t('fragmentImport.description')}
       contentClassName="max-w-lg"
       showCloseButton
     >
@@ -282,11 +284,11 @@ export function FragmentImportDialog({
               onClick={handlePasteFromClipboard}
             >
               <Clipboard className="size-3" />
-              Paste from clipboard
+              {t('fragmentImport.pasteClipboard')}
             </Button>
             <label className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-border/40 text-xs cursor-pointer transition-colors hover:bg-accent/50">
               <Upload className="size-3" />
-              Load file
+              {t('fragmentImport.loadFile')}
               <input
                 type="file"
                 accept=".json,application/json"
@@ -306,7 +308,7 @@ export function FragmentImportDialog({
             <Textarea
               value={jsonText}
               onChange={(e) => handleTextChange(e.target.value)}
-              placeholder='Paste JSON or drop a .json file here...'
+              placeholder={t('fragmentImport.placeholder')}
               className={`min-h-[140px] resize-none font-mono text-xs bg-transparent transition-colors ${
                 dragOver ? 'border-primary/50 bg-primary/5' : ''
               }`}
@@ -315,7 +317,7 @@ export function FragmentImportDialog({
               <div className="absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary/40 bg-primary/5 pointer-events-none">
                 <div className="text-center">
                   <Upload className="size-5 text-primary/50 mx-auto mb-1" aria-hidden="true" />
-                  <p className="text-xs text-primary/60 italic font-display">Drop file here</p>
+                  <p className="text-xs text-primary/60 italic font-display">{t('fragmentImport.dropFileHere')}</p>
                 </div>
               </div>
             )}
@@ -359,7 +361,7 @@ export function FragmentImportDialog({
 
       <FileDropDialog.Actions>
         <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t('fragmentImport.cancel')}
         </Button>
         <Button
           size="sm"
@@ -367,8 +369,8 @@ export function FragmentImportDialog({
           onClick={() => parsed && importMutation.mutate(parsed)}
         >
           {importMutation.isPending
-            ? 'Importing...'
-            : `Import${importCount > 1 ? ` ${importCount} fragments` : ''}`
+            ? t('fragmentImport.importing')
+            : (importCount > 1 ? t('fragmentImport.importMany').replace('{count}', String(importCount)) : t('fragmentImport.importOne'))
           }
         </Button>
       </FileDropDialog.Actions>
@@ -383,15 +385,16 @@ export function SingleFragmentPreview({
   data: FragmentClipboardData
   onClear: () => void
 }) {
+  const { t } = useLanguage()
   const f = data.fragment
   return (
     <div className="rounded-lg border border-border/50 bg-accent/20 overflow-hidden">
       <div className="px-4 py-3 space-y-2">
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="text-[0.625rem] h-4">{f.type}</Badge>
-          {f.sticky && <Badge className="text-[0.625rem] h-4">pinned</Badge>}
+          {f.sticky && <Badge className="text-[0.625rem] h-4">{t('fragmentImport.pinned')}</Badge>}
           {data.source && (
-            <span className="text-[0.5625rem] font-mono text-muted-foreground ml-auto truncate max-w-24" title={`Source: ${data.source}`}>
+            <span className="text-[0.5625rem] font-mono text-muted-foreground ml-auto truncate max-w-24" title={t('fragmentImport.sourceTitle').replace('{source}', data.source)}>
               {data.source.slice(0, 8)}
             </span>
           )}
@@ -418,7 +421,7 @@ export function SingleFragmentPreview({
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
               <ImageIcon className="size-3" />
-              {data.attachments.length} attached {data.attachments.length === 1 ? 'image' : 'images'}
+              {data.attachments.length} {data.attachments.length === 1 ? t('fragmentImport.attachedImageOne') : t('fragmentImport.attachedImageMany')}
             </div>
             <div className="flex gap-1.5">
               {data.attachments.map((att) => {
@@ -443,7 +446,7 @@ export function SingleFragmentPreview({
           onClick={onClear}
           className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground transition-colors"
         >
-          Paste different fragment
+          {t('fragmentImport.pasteDifferent')}
         </button>
       </div>
     </div>
@@ -477,6 +480,7 @@ export function BundlePreview({
   onToggleAgentConfig?: (name: string) => void
   scriptImportWarning?: { hasGenerationScript: boolean; agentScripts: string[] } | null
 }) {
+  const { t } = useLanguage()
   const allSelected = data.fragments.length === selectedIndices.size
 
   const groupedEntries = data.fragments.reduce<Record<string, Array<{ entry: FragmentExportEntry; index: number }>>>((acc, entry, index) => {
@@ -491,13 +495,13 @@ export function BundlePreview({
       <div className="px-4 py-3 border-b border-border/30">
         <div className="flex items-center gap-2">
           <Package className="size-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Fragment Bundle</span>
+          <span className="text-xs font-medium">{t('fragmentImport.bundleTitle')}</span>
           <Badge variant="secondary" className="text-[0.625rem] h-4 tabular-nums">
-            {data.fragments.length} fragments
+            {data.fragments.length} {t('fragmentImport.fragments')}
           </Badge>
           {data.storyName && (
             <span className="text-[0.625rem] text-muted-foreground ml-auto truncate max-w-32">
-              from {data.storyName}
+              {t('fragmentImport.fromStory')} {data.storyName}
             </span>
           )}
         </div>
@@ -506,10 +510,10 @@ export function BundlePreview({
             onClick={allSelected ? onDeselectAll : onSelectAll}
             className="text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors"
           >
-            {allSelected ? 'Deselect all' : 'Select all'}
+            {allSelected ? t('fragmentImport.deselectAll') : t('fragmentImport.selectAll')}
           </button>
           <span className="text-[0.625rem] text-muted-foreground">
-            {selectedIndices.size} of {data.fragments.length} selected
+            {t('fragmentImport.selectedMeta').replace('{selected}', String(selectedIndices.size)).replace('{total}', String(data.fragments.length))}
           </span>
         </div>
       </div>
@@ -545,7 +549,7 @@ export function BundlePreview({
                   )}
                 </div>
                 {entry.sticky && (
-                  <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1 shrink-0">pinned</Badge>
+                  <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1 shrink-0">{t('fragmentImport.pinned')}</Badge>
                 )}
                 {entry.attachments && entry.attachments.length > 0 && (
                   <ImageIcon className="size-3 text-muted-foreground shrink-0" />
@@ -561,20 +565,20 @@ export function BundlePreview({
           <div className="px-4 py-2 bg-background/30 border-b border-border/20">
             <div className="flex items-center gap-1.5">
               <Settings2 className="size-3 text-muted-foreground" />
-              <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">Context Configuration</span>
+              <span className="text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">{t('fragmentImport.contextConfiguration')}</span>
             </div>
           </div>
           <div className="px-4 py-1.5">
             {scriptImportWarning && (
               <div className="mb-2 rounded-md border border-amber-500/20 bg-amber-500/8 px-3 py-2">
                 <p className="text-[0.6875rem] leading-relaxed text-amber-600/90 dark:text-amber-400/90">
-                  This pack includes script blocks. They execute JavaScript during generation, so only import from trusted sources.
+                  {t('fragmentImport.scriptWarning')}
                 </p>
                 <p className="mt-1 text-[0.625rem] leading-relaxed text-amber-600/80 dark:text-amber-400/80">
-                  {scriptImportWarning.hasGenerationScript ? 'Includes generation script blocks.' : ''}
+                  {scriptImportWarning.hasGenerationScript ? t('fragmentImport.includesGenerationScripts') : ''}
                   {scriptImportWarning.hasGenerationScript && scriptImportWarning.agentScripts.length > 0 ? ' ' : ''}
                   {scriptImportWarning.agentScripts.length > 0
-                    ? `Includes agent scripts: ${scriptImportWarning.agentScripts.map((name) => formatAgentName(name)).join(', ')}.`
+                    ? t('fragmentImport.includesAgentScripts').replace('{agents}', scriptImportWarning.agentScripts.map((name) => formatAgentName(name)).join(', '))
                     : ''}
                 </p>
               </div>
@@ -591,8 +595,8 @@ export function BundlePreview({
               >
                 <Checkbox checked={importBlockConfig} className="size-3.5 shrink-0" tabIndex={-1} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate leading-tight">Generation blocks</p>
-                  <p className="text-[0.6875rem] text-muted-foreground truncate">Custom blocks and overrides for generation context</p>
+                  <p className="text-sm truncate leading-tight">{t('fragmentImport.generationBlocks')}</p>
+                  <p className="text-[0.6875rem] text-muted-foreground truncate">{t('fragmentImport.generationBlocksHint')}</p>
                 </div>
               </div>
             )}
@@ -610,7 +614,7 @@ export function BundlePreview({
                 <Checkbox checked={importAgentConfigs?.has(name)} className="size-3.5 shrink-0" tabIndex={-1} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate leading-tight">{formatAgentName(name)}</p>
-                  <p className="text-[0.6875rem] text-muted-foreground truncate">Agent-specific block configuration</p>
+                  <p className="text-[0.6875rem] text-muted-foreground truncate">{t('fragmentImport.agentConfigHint')}</p>
                 </div>
               </div>
             ))}
@@ -623,7 +627,7 @@ export function BundlePreview({
           onClick={onClear}
           className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground transition-colors"
         >
-          Load different file
+          {t('fragmentImport.loadDifferent')}
         </button>
       </div>
     </div>

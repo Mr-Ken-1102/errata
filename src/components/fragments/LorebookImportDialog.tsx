@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Check, BookOpen, User, FileText, ScrollText, Pin, ChevronDown, Loader2 } from 'lucide-react'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -36,11 +37,11 @@ interface LorebookImportDialogProps {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const TYPE_CONFIG: Record<ImportableItemType, { label: string; icon: typeof User; className: string }> = {
-  character: { label: 'Character', icon: User, className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  knowledge: { label: 'Knowledge', icon: BookOpen, className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-  guideline: { label: 'Guideline', icon: ScrollText, className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  prose: { label: 'Prose', icon: FileText, className: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
+const TYPE_CONFIG: Record<ImportableItemType, { labelKey: TranslationKey; icon: typeof User; className: string }> = {
+  character: { labelKey: 'lorebookImport.type.character', icon: User, className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  knowledge: { labelKey: 'lorebookImport.type.knowledge', icon: BookOpen, className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  guideline: { labelKey: 'lorebookImport.type.guideline', icon: ScrollText, className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  prose: { labelKey: 'lorebookImport.type.prose', icon: FileText, className: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ export function LorebookImportDialog({
   initialData,
   onImported,
 }: LorebookImportDialogProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
 
   const [lorebookData, setLorebookData] = useState<ParsedLorebook | null>(null)
@@ -89,12 +91,12 @@ export function LorebookImportDialog({
       if (parsed) {
         loadLorebook(parsed)
       } else {
-        setParseError('This file does not contain a recognized SillyTavern lorebook format.')
+        setParseError(t('lorebookImport.unrecognizedFormat'))
       }
     } catch {
-      setParseError('Could not read file.')
+      setParseError(t('lorebookImport.couldNotReadFile'))
     }
-  }, [loadLorebook])
+  }, [loadLorebook, t])
 
   const toggleItem = useCallback((key: string) => {
     setItemStates((prev) => {
@@ -180,10 +182,10 @@ export function LorebookImportDialog({
     <FileDropDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Import Lorebook"
+      title={t('lorebookImport.title')}
       description={hasData
-        ? `${lorebookData.book.name || 'Untitled lorebook'} — ${totalCount} ${totalCount === 1 ? 'entry' : 'entries'}`
-        : 'SillyTavern lorebook JSON file'
+        ? `${lorebookData.book.name || t('lorebookImport.untitled')} — ${totalCount} ${totalCount === 1 ? t('lorebookImport.entryOne') : t('lorebookImport.entryMany')}`
+        : t('lorebookImport.description')
       }
       contentClassName={`transition-[max-width] duration-300 ${hasData ? 'max-w-2xl' : 'max-w-[480px]'}`}
     >
@@ -191,8 +193,8 @@ export function LorebookImportDialog({
         <FileDropDialog.Dropzone
           onFiles={handleFiles}
           accept=".json,application/json"
-          label="Drop lorebook JSON"
-          hint="SillyTavern world info / lorebook .json files"
+          label={t('lorebookImport.dropLabel')}
+          hint={t('lorebookImport.dropHint')}
           icon={<BookOpen className="size-7" aria-hidden="true" />}
         />
       )}
@@ -204,17 +206,17 @@ export function LorebookImportDialog({
               onClick={selectAll}
               className="text-primary/60 hover:text-primary transition-colors"
             >
-              Select all
+              {t('lorebookImport.selectAll')}
             </button>
             <span className="text-border/60">/</span>
             <button
               onClick={deselectAll}
               className="text-muted-foreground hover:text-muted-foreground transition-colors"
             >
-              Deselect all
+              {t('lorebookImport.deselectAll')}
             </button>
             <span className="ml-auto text-muted-foreground tabular-nums">
-              {selectedCount} selected
+              {selectedCount} {t('lorebookImport.selected')}
             </span>
           </div>
 
@@ -237,14 +239,14 @@ export function LorebookImportDialog({
       <FileDropDialog.Errors>{parseError}</FileDropDialog.Errors>
 
       {importMutation.isError && (
-        <FileDropDialog.Errors>Import failed. Please try again.</FileDropDialog.Errors>
+        <FileDropDialog.Errors>{t('lorebookImport.importFailed')}</FileDropDialog.Errors>
       )}
 
       <FileDropDialog.Actions
-        meta={hasData ? `${selectedCount} of ${totalCount} selected` : undefined}
+        meta={hasData ? `${selectedCount} ${t('lorebookImport.of')} ${totalCount} ${t('lorebookImport.selected')}` : undefined}
       >
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t('lorebookImport.cancel')}
         </Button>
         {hasData && (
           <Button
@@ -256,12 +258,12 @@ export function LorebookImportDialog({
             {importMutation.isPending ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" />
-                Importing…
+                {t('lorebookImport.importing')}
               </>
             ) : (
               <>
                 <Check className="size-3.5" />
-                Import {selectedCount} {selectedCount === 1 ? 'Entry' : 'Entries'}
+                {t('lorebookImport.import')} {selectedCount} {selectedCount === 1 ? t('lorebookImport.entryCapitalOne') : t('lorebookImport.entryCapitalMany')}
               </>
             )}
           </Button>
@@ -284,6 +286,7 @@ function ItemRow({
   onToggle: () => void
   onTypeChange: (type: ImportableItemType) => void
 }) {
+  const { t } = useLanguage()
   const activeType = state.typeOverride ?? item.suggestedType
   const config = TYPE_CONFIG[activeType]
   const Icon = config.icon
@@ -336,7 +339,7 @@ function ItemRow({
             className={`shrink-0 flex items-center gap-1 text-[0.625rem] h-5 px-1.5 rounded-md border transition-colors ${config.className} hover:opacity-80`}
           >
             <Icon className="size-3" />
-            <span>{config.label}</span>
+            <span>{t(config.labelKey)}</span>
             <ChevronDown className="size-2.5 opacity-50" />
           </button>
         </DropdownMenuTrigger>
@@ -351,7 +354,7 @@ function ItemRow({
                   className="gap-2 text-xs"
                 >
                   <TypeIcon className="size-3.5" />
-                  {cfg.label}
+                  {t(cfg.labelKey)}
                   {type === activeType && <Check className="size-3 ml-auto text-primary" />}
                 </DropdownMenuItem>
               )

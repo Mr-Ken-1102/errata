@@ -11,6 +11,7 @@ import {
 import { GitBranch, Plus, MoreVertical, Pencil, Trash2, EyeOff } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { onActiveBranchChanged } from '@/lib/branch-cache'
+import { useLanguage } from '@/lib/i18n'
 
 interface TimelineTabsProps {
   storyId: string
@@ -21,6 +22,7 @@ interface TimelineTabsProps {
 }
 
 export function TimelineTabs({ storyId, branches, activeBranchId, rootBranchId, onHide }: TimelineTabsProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const confirm = useConfirm()
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -126,19 +128,19 @@ export function TimelineTabs({ storyId, branches, activeBranchId, rootBranchId, 
                 <DropdownMenuContent align="start" className="min-w-[120px]">
                   <DropdownMenuItem onClick={() => startRename(branch)}>
                     <Pencil className="size-3 mr-2" />
-                    Rename
+                    {t('timeline.rename')}
                   </DropdownMenuItem>
                   {!isRoot && (
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={async () => {
-                        if (await confirm({ title: `Delete timeline "${branch.name}"?`, description: 'This cannot be undone.', confirmText: 'Delete', destructive: true })) {
+                        if (await confirm({ title: `${t('timeline.deleteConfirmPrefix')} "${branch.name}"?`, description: t('timeline.deleteConfirmDescription'), confirmText: t('timeline.delete'), destructive: true })) {
                           deleteMutation.mutate(branch.id)
                         }
                       }}
                     >
                       <Trash2 className="size-3 mr-2" />
-                      Delete
+                      {t('timeline.delete')}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
@@ -155,7 +157,7 @@ export function TimelineTabs({ storyId, branches, activeBranchId, rootBranchId, 
             type="text"
             value={newTimelineName}
             onChange={(e) => setNewTimelineName(e.target.value)}
-            placeholder="Timeline name..."
+            placeholder={t('timeline.namePlaceholder')}
             className="h-6 w-28 rounded border border-primary/30 bg-background px-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
             autoFocus
             onKeyDown={(e) => {
@@ -180,7 +182,7 @@ export function TimelineTabs({ storyId, branches, activeBranchId, rootBranchId, 
           variant="ghost"
           className="size-6 text-muted-foreground hover:text-foreground shrink-0"
           onClick={() => setCreatingTimeline(true)}
-          title="Create timeline from current"
+          title={t('timeline.createFromCurrent')}
           data-component-id="timeline-create-button"
         >
           <Plus className="size-3" />
@@ -194,7 +196,7 @@ export function TimelineTabs({ storyId, branches, activeBranchId, rootBranchId, 
           variant="ghost"
           className="size-6 text-muted-foreground hover:text-muted-foreground shrink-0"
           onClick={onHide}
-          title="Hide timeline bar"
+          title={t('timeline.hideBar')}
           data-component-id="timeline-hide-button"
         >
           <EyeOff className="size-3" />

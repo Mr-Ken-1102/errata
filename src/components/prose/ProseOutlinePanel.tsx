@@ -6,6 +6,30 @@ import { Bookmark, ArrowUpDown, ArrowDown, GripVertical, X } from 'lucide-react'
 import type { Fragment } from '@/lib/api'
 import { invalidateStoryContent } from '@/lib/branch-cache'
 
+interface ProseOutlineLabels {
+  passages: string
+  exitReorderMode: string
+  reorderSections: string
+  addChapter: string
+  closePassages: string
+  noChaptersHint: string
+  addFirstChapter: string
+  jumpToLatestPassage: string
+  jumpToLatest: string
+}
+
+const DEFAULT_PROSE_OUTLINE_LABELS: ProseOutlineLabels = {
+  passages: 'Passages',
+  exitReorderMode: 'Exit reorder mode',
+  reorderSections: 'Reorder sections',
+  addChapter: 'Add chapter',
+  closePassages: 'Close passages',
+  noChaptersHint: 'No chapters yet. Add one to group your summaries and find your place.',
+  addFirstChapter: 'Add first chapter',
+  jumpToLatestPassage: 'Jump to latest passage',
+  jumpToLatest: 'Jump to the latest',
+}
+
 interface ProseOutlinePanelProps {
   storyId: string
   fragments: Fragment[]
@@ -16,6 +40,7 @@ interface ProseOutlinePanelProps {
   mobile?: boolean
   /** When provided (mobile), renders a close control in the header. */
   onClose?: () => void
+  labels?: ProseOutlineLabels
 }
 
 export function ProseOutlinePanel({
@@ -26,6 +51,7 @@ export function ProseOutlinePanel({
   onJump,
   mobile = false,
   onClose,
+  labels = DEFAULT_PROSE_OUTLINE_LABELS,
 }: ProseOutlinePanelProps) {
   const activeRef = useRef<HTMLButtonElement>(null)
   const collapsedActiveRef = useRef<HTMLButtonElement>(null)
@@ -145,14 +171,14 @@ export function ProseOutlinePanel({
                 in the mobile overlay there is none. */}
             <div className={`shrink-0 px-4 ${mobile ? 'pt-4' : 'pt-12'} pb-3 flex items-center justify-between`}>
               <h3 className={`uppercase tracking-[0.15em] text-muted-foreground font-medium ${mobile ? 'text-xs' : 'text-[0.625rem]'}`}>
-                Passages
+                {labels.passages}
               </h3>
               <div className="flex items-center gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       onClick={toggleEditMode}
-                      aria-label={editMode ? 'Exit reorder mode' : 'Reorder sections'}
+                      aria-label={editMode ? labels.exitReorderMode : labels.reorderSections}
                       className={`flex items-center justify-center size-7 rounded transition-colors duration-200 ${
                         editMode
                           ? 'text-primary bg-accent/70'
@@ -163,7 +189,7 @@ export function ProseOutlinePanel({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="left" className="text-[0.625rem]">
-                    {editMode ? 'Exit reorder mode' : 'Reorder sections'}
+                    {editMode ? labels.exitReorderMode : labels.reorderSections}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -171,18 +197,18 @@ export function ProseOutlinePanel({
                     <button
                       onClick={() => addChapterMutation.mutate()}
                       disabled={addChapterMutation.isPending}
-                      aria-label="Add chapter"
+                      aria-label={labels.addChapter}
                       className="flex items-center justify-center size-7 rounded text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10 transition-colors duration-200"
                     >
                       <Bookmark className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="left" className="text-[0.625rem]">Add chapter</TooltipContent>
+                  <TooltipContent side="left" className="text-[0.625rem]">{labels.addChapter}</TooltipContent>
                 </Tooltip>
                 {onClose && (
                   <button
                     onClick={onClose}
-                    aria-label="Close passages"
+                    aria-label={labels.closePassages}
                     data-component-id="prose-outline-close"
                     className="flex items-center justify-center size-7 -mr-1.5 ml-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
                   >
@@ -197,7 +223,7 @@ export function ProseOutlinePanel({
             {!fragments.some(f => f.type === 'marker') && fragments.length > 1 && (
               <div className="shrink-0 px-4 pb-3">
                 <p className="text-[0.6875rem] font-display italic text-muted-foreground leading-relaxed">
-                  No chapters yet. Add one to group your summaries and find your place.
+                  {labels.noChaptersHint}
                 </p>
                 <button
                   onClick={() => addChapterMutation.mutate()}
@@ -205,7 +231,7 @@ export function ProseOutlinePanel({
                   className="mt-1.5 text-[0.6875rem] font-display italic text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
                 >
                   <Bookmark className="size-2.5" aria-hidden />
-                  <span>Add first chapter</span>
+                  <span>{labels.addFirstChapter}</span>
                 </button>
               </div>
             )}
@@ -311,7 +337,7 @@ export function ProseOutlinePanel({
                   className="w-full flex items-center justify-center gap-1.5 text-[0.6875rem] font-display italic text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:text-foreground"
                 >
                   <ArrowDown className="size-2.5" aria-hidden />
-                  <span>Jump to latest passage</span>
+                  <span>{labels.jumpToLatestPassage}</span>
                 </button>
               </div>
             )}
@@ -381,7 +407,7 @@ export function ProseOutlinePanel({
                     <ArrowDown className="size-3" aria-hidden />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="left" className="text-[0.625rem]">Jump to the latest</TooltipContent>
+                <TooltipContent side="left" className="text-[0.625rem]">{labels.jumpToLatest}</TooltipContent>
               </Tooltip>
             )}
 

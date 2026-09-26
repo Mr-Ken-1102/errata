@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { ChevronDown, ChevronRight, Brain, Loader2, Wrench } from 'lucide-react'
 import { StreamMarkdown } from '@/components/ui/stream-markdown'
 import { LibrarianEditCard, isAppliedEditResult } from '@/components/chat/LibrarianEditCard'
+import { useLanguage } from '@/lib/i18n'
 
 /** The direct edit tools render as a legible diff card (with Undo) instead of a
  * raw tool-call card whenever they actually changed storage. */
@@ -29,6 +30,7 @@ export type ChatMessage =
   | AssistantMessage
 
 export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo; defaultExpanded?: boolean }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(defaultExpanded)
 
   const args = tc.args ?? {}
@@ -57,26 +59,26 @@ export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo
         )}
         {hasResult && (
           <Badge variant="secondary" className="text-[0.5625rem] px-1 py-0 h-4 ml-auto shrink-0">
-            done
+            {t('chatMessage.done')}
           </Badge>
         )}
         {hasError && (
           <Badge variant="destructive" className="text-[0.5625rem] px-1 py-0 h-4 ml-auto shrink-0">
-            error
+            {t('chatMessage.errorBadge')}
           </Badge>
         )}
       </button>
       {expanded && (
         <div className="px-2 pb-2 space-y-1.5 border-t border-border/20">
           <div>
-            <div className="text-muted-foreground mt-1.5 mb-0.5">Arguments</div>
+            <div className="text-muted-foreground mt-1.5 mb-0.5">{t('chatMessage.arguments')}</div>
             <pre className="bg-muted/30 rounded px-1.5 py-1 font-mono text-[0.625rem] overflow-x-auto whitespace-pre-wrap break-all">
               {JSON.stringify(args, null, 2)}
             </pre>
           </div>
           {hasResult && (
             <div>
-              <div className="text-muted-foreground mb-0.5">Result</div>
+              <div className="text-muted-foreground mb-0.5">{t('chatMessage.result')}</div>
               <pre className="bg-muted/30 rounded px-1.5 py-1 font-mono text-[0.625rem] overflow-x-auto whitespace-pre-wrap break-all">
                 {JSON.stringify(tc.result, null, 2)}
               </pre>
@@ -84,7 +86,7 @@ export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo
           )}
           {hasError && (
             <div>
-              <div className="text-destructive mb-0.5">Error</div>
+              <div className="text-destructive mb-0.5">{t('chatMessage.error')}</div>
               <pre className="bg-destructive/5 text-destructive rounded px-1.5 py-1 font-mono text-[0.625rem] overflow-x-auto whitespace-pre-wrap break-all">
                 {tc.error}
               </pre>
@@ -97,6 +99,7 @@ export function ToolCallCard({ tc, defaultExpanded = false }: { tc: ToolCallInfo
 }
 
 export function ReasoningSection({ reasoning, streaming }: { reasoning: string; streaming: boolean }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -108,7 +111,7 @@ export function ReasoningSection({ reasoning, streaming }: { reasoning: string; 
         {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         <Brain className="size-3" />
         <span className="italic">
-          {streaming ? 'Thinking...' : 'Reasoning'}
+          {streaming ? t('chatMessage.thinking') : t('chatMessage.reasoning')}
         </span>
         {streaming && <Loader2 className="size-3 animate-spin" />}
       </button>

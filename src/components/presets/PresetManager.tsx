@@ -11,34 +11,39 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EmptyHint, Hint } from '@/components/ui/prose-text'
 import { Check, Download, Pencil, Trash2, Upload, X } from 'lucide-react'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
-function relativeDate(iso: string): string {
+type Translate = (key: TranslationKey) => string
+
+function relativeDate(iso: string, t: Translate): string {
   const diffMs = Date.now() - Date.parse(iso)
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (days <= 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 30) return `${days}d ago`
+  if (days <= 0) return t('presetManager.today')
+  if (days === 1) return t('presetManager.yesterday')
+  if (days < 30) return `${days}${t('storyInfo.daysAgoSuffix')}`
   const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo ago`
-  return `${Math.floor(months / 12)}y ago`
+  if (months < 12) return `${months}${t('storyInfo.monthsAgoSuffix')}`
+  return `${Math.floor(months / 12)}${t('presetManager.yearsAgoSuffix')}`
 }
 
-function countsSummary(counts: Record<string, number>): string {
-  const labels: Record<string, string> = {
-    character: 'character',
-    guideline: 'guideline',
-    knowledge: 'knowledge',
+function countsSummary(counts: Record<string, number>, t: Translate): string {
+  const labels: Record<string, { one: TranslationKey; many: TranslationKey }> = {
+    character: { one: 'presetManager.characterOne', many: 'presetManager.characterMany' },
+    guideline: { one: 'presetManager.guidelineOne', many: 'presetManager.guidelineMany' },
+    knowledge: { one: 'presetManager.knowledgeOne', many: 'presetManager.knowledgeMany' },
   }
   return ['character', 'guideline', 'knowledge']
     .filter(type => (counts[type] ?? 0) > 0)
     .map(type => {
       const count = counts[type] ?? 0
-      return `${count} ${labels[type]}${count === 1 ? '' : 's'}`
+      const label = labels[type]
+      return `${count} ${t(count === 1 ? label.one : label.many)}`
     })
-    .join(', ') || 'empty'
+    .join(', ') || t('presetManager.empty')
 }
 
 function PresetRow({ preset }: { preset: StoryPresetMeta }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(preset.name)
@@ -96,7 +101,7 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
             className="size-6 shrink-0"
             disabled={!name.trim() || renameMutation.isPending}
             onClick={() => renameMutation.mutate(name.trim())}
-            aria-label={`Save name for ${preset.name}`}
+            aria-label={`${t('presetManager.saveNameFor')} ${preset.name}`}
           >
             <Check className="size-3.5" />
           </Button>
@@ -108,7 +113,7 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
               setEditing(false)
               setName(preset.name)
             }}
-            aria-label={`Cancel renaming ${preset.name}`}
+            aria-label={`${t('presetManager.cancelRenaming')} ${preset.name}`}
           >
             <X className="size-3.5" />
           </Button>
@@ -118,7 +123,7 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm">{preset.name}</p>
             <p className="truncate text-[0.6875rem] text-muted-foreground">
-              {countsSummary(preset.countsByType)} · {relativeDate(preset.createdAt)}
+              {countsSummary(preset.countsByType, t)} · {relativeDate(preset.createdAt, t)}
             </p>
             {preset.description && (
               <p className="mt-0.5 line-clamp-1 text-[0.625rem] text-muted-foreground/80">
@@ -128,7 +133,7 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
           </div>
           {confirmingDelete ? (
             <>
-              <span className="shrink-0 text-[0.6875rem] text-muted-foreground">Delete?</span>
+              <span className="shrink-0 text-[0.6875rem] text-muted-foreground">{t('presetManager.deleteQuestion')}</span>
               <Button
                 size="sm"
                 variant="destructive"
@@ -136,14 +141,14 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
                 disabled={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate()}
               >
-                Delete
+                {t('presetManager.delete')}
               </Button>
               <Button
                 size="icon"
                 variant="ghost"
                 className="size-6 shrink-0"
                 onClick={() => setConfirmingDelete(false)}
-                aria-label={`Cancel deleting ${preset.name}`}
+                aria-label={`${t('presetManager.cancelDeleting')} ${preset.name}`}
               >
                 <X className="size-3.5" />
               </Button>
@@ -155,8 +160,8 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
                 variant="ghost"
                 className="size-6 shrink-0 text-muted-foreground"
                 onClick={() => { void handleDownload() }}
-                title="Download .json"
-                aria-label={`Download ${preset.name}`}
+                title={t('presetManager.downloadJson')}
+                aria-label={`${t('presetManager.download')} ${preset.name}`}
               >
                 <Download className="size-3.5" />
               </Button>
@@ -165,8 +170,8 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
                 variant="ghost"
                 className="size-6 shrink-0 text-muted-foreground"
                 onClick={() => setEditing(true)}
-                title="Rename"
-                aria-label={`Rename ${preset.name}`}
+                title={t('presetManager.rename')}
+                aria-label={`${t('presetManager.rename')} ${preset.name}`}
               >
                 <Pencil className="size-3.5" />
               </Button>
@@ -175,8 +180,8 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
                 variant="ghost"
                 className="size-6 shrink-0 text-muted-foreground hover:text-destructive"
                 onClick={() => setConfirmingDelete(true)}
-                title="Delete"
-                aria-label={`Delete ${preset.name}`}
+                title={t('presetManager.delete')}
+                aria-label={`${t('presetManager.delete')} ${preset.name}`}
               >
                 <Trash2 className="size-3.5" />
               </Button>
@@ -189,6 +194,7 @@ function PresetRow({ preset }: { preset: StoryPresetMeta }) {
 }
 
 export function PresetManager() {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -201,7 +207,7 @@ export function PresetManager() {
   const importMutation = useMutation({
     mutationFn: async (text: string) => {
       const parsed = parseErrataExport(text)
-      if (!parsed) throw new Error('Not a valid Errata fragment export')
+      if (!parsed) throw new Error(t('presetManager.invalidExport'))
 
       if (parsed._errata === 'fragment') {
         const bundle: FragmentBundleData = {
@@ -227,7 +233,7 @@ export function PresetManager() {
       setImportError(null)
     },
     onError: (error) => {
-      setImportError(error instanceof Error ? error.message : 'Failed to import preset')
+      setImportError(error instanceof Error ? error.message : t('presetManager.importFailed'))
     },
   })
 
@@ -239,18 +245,18 @@ export function PresetManager() {
       const text = await readFileAsText(file)
       importMutation.mutate(text)
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Could not read preset file')
+      setImportError(error instanceof Error ? error.message : t('presetManager.readFailed'))
     }
-  }, [importMutation])
+  }, [importMutation, t])
 
   const presets = data?.presets ?? []
 
   return (
     <div className="space-y-2">
-      {isLoading && <Hint>Loading presets...</Hint>}
+      {isLoading && <Hint>{t('presetManager.loading')}</Hint>}
       {!isLoading && presets.length === 0 && (
         <EmptyHint>
-          No story presets yet. Save selected characters, guidelines, or knowledge from a story's export panel.
+          {t('presetManager.noPresets')}
         </EmptyHint>
       )}
       {presets.length > 0 && (
@@ -279,7 +285,7 @@ export function PresetManager() {
         data-component-id="preset-manager-import"
       >
         <Upload className="size-3.5" />
-        Import story preset from file
+        {t('presetManager.importFromFile')}
       </Button>
     </div>
   )

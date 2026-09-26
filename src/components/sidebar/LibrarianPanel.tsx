@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { diffRows } from '@/lib/diff'
 import { toolResultOutcome } from '@/lib/librarian-outcome'
 import { continuityKeyLabel } from '@/lib/continuity-keys'
+import { translate, useLanguage, type AppLanguage } from '@/lib/i18n'
 import { DiffRowsView } from '@/components/DiffRowsView'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -97,6 +98,7 @@ export function LibrarianPanel({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
+  const { t } = useLanguage()
 
   // Fetch conversation list
   const { data: conversations } = useQuery({
@@ -166,15 +168,15 @@ export function LibrarianPanel({
         <TabsList variant="line" className="w-full h-8 gap-0 relative z-20">
           <TabsTrigger value="chat" className="text-[0.6875rem] gap-1.5 flex-1 px-1" data-component-id="librarian-tab-chat">
             <MessageSquare className="size-3" />
-            Chat
+            {t('librarianPanel.tab.chat')}
           </TabsTrigger>
           <TabsTrigger value="story" className="text-[0.6875rem] gap-1.5 flex-1 px-1" data-component-id="librarian-tab-story">
             <BookOpen className="size-3" />
-            Story
+            {t('librarianPanel.tab.story')}
           </TabsTrigger>
           <TabsTrigger value="summaries" className="text-[0.6875rem] gap-1.5 flex-1 px-1" data-component-id="librarian-tab-summaries">
             <Bookmark className="size-3" />
-            Memory
+            {t('librarianPanel.tab.memory')}
           </TabsTrigger>
         </TabsList>
       </div>
@@ -188,12 +190,12 @@ export function LibrarianPanel({
               <button
                 onClick={() => { setActiveConversationId(null); setChatInitialInput('') }}
                 className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
-                title="Back to conversations"
+                title={t('librarianPanel.backToConversations')}
               >
                 <ArrowLeft className="size-3" />
               </button>
               <span className="text-[0.6875rem] text-muted-foreground truncate flex-1">
-                {conversations?.find(c => c.id === activeConversationId)?.title ?? 'Chat'}
+                {conversations?.find(c => c.id === activeConversationId)?.title ?? t('librarianPanel.tab.chat')}
               </span>
               <button
                 onClick={() => {
@@ -202,7 +204,7 @@ export function LibrarianPanel({
                   })
                 }}
                 className="text-muted-foreground/50 hover:text-destructive transition-colors p-0.5 rounded"
-                title="Delete conversation"
+                title={t('librarianPanel.deleteConversation')}
               >
                 <Trash2 className="size-3" />
               </button>
@@ -258,6 +260,7 @@ interface ConversationListProps {
 }
 
 function ConversationList({ conversations, onSelect, onNew, onDelete }: ConversationListProps) {
+  const { language, t } = useLanguage()
   const sorted = useMemo(() =>
     [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [conversations],
@@ -274,7 +277,7 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
           onClick={onNew}
         >
           <Plus className="size-3" />
-          New chat
+          {t('librarianPanel.newChat')}
         </Button>
       </div>
 
@@ -284,14 +287,14 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
           {sorted.length === 0 && (
             <EmptyState
               icon={<MessageSquare className="size-5" />}
-              title="No conversations yet"
-              hint="Start a new chat to ask the librarian about your story."
+              title={t('librarianPanel.noConversations')}
+              hint={t('librarianPanel.startChatHint')}
             />
           )}
 
           {sorted.map((conv) => {
             const date = new Date(conv.updatedAt)
-            const timeStr = formatRelativeTime(date)
+            const timeStr = formatRelativeTime(date, language)
 
             return (
               <div
@@ -317,7 +320,7 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
                   type="button"
                   onClick={() => onDelete(conv.id)}
                   className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive transition-all p-0.5 rounded shrink-0"
-                  title="Delete conversation"
+                  title={t('librarianPanel.deleteConversation')}
                 >
                   <Trash2 className="size-3" />
                 </button>
@@ -330,17 +333,17 @@ function ConversationList({ conversations, onSelect, onNew, onDelete }: Conversa
   )
 }
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(date: Date, language: AppLanguage): string {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMin = Math.floor(diffMs / 60000)
-  if (diffMin < 1) return 'Just now'
-  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffMin < 1) return translate(language, 'librarianPanel.justNow')
+  if (diffMin < 60) return `${diffMin}${translate(language, 'storyInfo.minutesAgoSuffix')}`
   const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return `${diffHr}h ago`
+  if (diffHr < 24) return `${diffHr}${translate(language, 'storyInfo.hoursAgoSuffix')}`
   const diffDays = Math.floor(diffHr / 24)
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  if (diffDays < 7) return `${diffDays}${translate(language, 'storyInfo.daysAgoSuffix')}`
+  return date.toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' })
 }
 
 function buildMentionGroups(
@@ -408,6 +411,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showAllAnalyses, setShowAllAnalyses] = useState(false)
   const branchId = useActiveBranchId(storyId)
+  const { t } = useLanguage()
 
   const { data: characters } = useQuery(q.fragments(storyId, branchId, 'character'))
   const { data: guidelines } = useQuery(q.fragments(storyId, branchId, 'guideline'))
@@ -467,18 +471,18 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
         {/* Findings overview */}
         {hasFindings && (
           <section>
-            <SectionLabel>Findings</SectionLabel>
+            <SectionLabel>{t('librarianPanel.findings')}</SectionLabel>
             <div className="flex gap-1.5 flex-wrap mt-1.5">
               {totalContradictions > 0 && (
                 <Badge variant="destructive" className="text-[0.625rem] gap-1 h-5">
                   <AlertTriangle className="size-2.5" />
-                  {totalContradictions} contradiction{totalContradictions !== 1 ? 's' : ''}
+                  {t(totalContradictions === 1 ? 'librarianPanel.contradictionOne' : 'librarianPanel.contradictionMany').replace('{count}', String(totalContradictions))}
                 </Badge>
               )}
               {totalSuggestions > 0 && (
                 <Badge variant="secondary" className="text-[0.625rem] gap-1 h-5">
                   <Lightbulb className="size-2.5" />
-                  {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''}
+                  {t(totalSuggestions === 1 ? 'librarianPanel.suggestionOne' : 'librarianPanel.suggestionMany').replace('{count}', String(totalSuggestions))}
                 </Badge>
               )}
             </div>
@@ -489,7 +493,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
         {/* Recent analyses with inline findings */}
         {analyses && analyses.length > 0 && (
           <section>
-            {!hasFindings && <SectionLabel>Analyses</SectionLabel>}
+            {!hasFindings && <SectionLabel>{t('librarianPanel.analyses')}</SectionLabel>}
             {hasFindings && <div className="h-2" />}
             <div className="space-y-1.5">
               {(showAllAnalyses ? analyses : analyses.slice(0, 6)).map((summary) => (
@@ -511,7 +515,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
                   onClick={() => setShowAllAnalyses(true)}
                   className="w-full text-center text-[0.625rem] text-muted-foreground hover:text-foreground py-1.5 transition-colors"
                 >
-                  Show {analyses.length - 6} more
+                  {t('librarianPanel.showMore').replace('{count}', String(analyses.length - 6))}
                 </button>
               )}
             </div>
@@ -521,8 +525,8 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
         {!analyses?.length && !hasMentions && !hasTimeline && (
           <EmptyState
             icon={<BookOpen className="size-5" />}
-            title="Nothing tracked yet"
-            hint="Generate some prose and the librarian will annotate your story here."
+            title={t('librarianPanel.nothingTracked')}
+            hint={t('librarianPanel.nothingTrackedHint')}
             variant="panel"
           />
         )}
@@ -551,7 +555,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
         {/* Timeline */}
         {hasTimeline && status && (
           <section>
-            <SectionLabel icon={<Clock className="size-3" />}>Timeline</SectionLabel>
+            <SectionLabel icon={<Clock className="size-3" />}>{t('librarianPanel.timeline')}</SectionLabel>
             <div className="mt-1.5 relative">
               {/* Vertical thread line */}
               <div className="absolute left-[5px] top-2 bottom-2 w-px bg-border/40" />
@@ -572,7 +576,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
 
         {/* Refine */}
         <section>
-          <SectionLabel icon={<Sparkles className="size-3" />}>Refine</SectionLabel>
+          <SectionLabel icon={<Sparkles className="size-3" />}>{t('librarianPanel.refine')}</SectionLabel>
           <div className="mt-1.5">
             {refineTarget ? (
               <RefinementPanel
@@ -594,14 +598,14 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
                     }
                   }}
                 >
-                  <option value="" disabled>Select a fragment to refine...</option>
+                  <option value="" disabled>{t('librarianPanel.selectFragmentToRefine')}</option>
                   {refinableFragments.map((f) => (
                     <option key={f.id} value={f.id}>{f.name} ({f.type})</option>
                   ))}
                 </select>
               ) : (
                 <p className="text-[0.6875rem] text-muted-foreground italic">
-                  No fragments to refine yet.
+                  {t('librarianPanel.noFragmentsToRefine')}
                 </p>
               )
             )}
@@ -753,6 +757,7 @@ function MentionGroupsSummary({
   customTypeByType: Map<string, CustomFragmentType>
 }) {
   const [expandedByType, setExpandedByType] = useState<Record<string, boolean>>({})
+  const { t } = useLanguage()
 
   if (groups.length === 0) return null
 
@@ -778,7 +783,7 @@ function MentionGroupsSummary({
                 {group.visual.label}
               </span>
               <span className="ml-auto font-mono text-[0.5625rem] text-muted-foreground">
-                {mentionCount} mention{mentionCount !== 1 ? 's' : ''}
+                {t(mentionCount === 1 ? 'librarianPanel.mentionOne' : 'librarianPanel.mentionMany').replace('{count}', String(mentionCount))}
               </span>
             </button>
 
@@ -790,7 +795,7 @@ function MentionGroupsSummary({
                     <div key={fragmentId} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-accent/30 transition-colors">
                       <span className="text-[0.6875rem] text-foreground/70">{charName(fragmentId)}</span>
                       <span className="text-[0.625rem] font-mono text-muted-foreground">
-                        {count} mention{count !== 1 ? 's' : ''}
+                        {t(count === 1 ? 'librarianPanel.mentionOne' : 'librarianPanel.mentionMany').replace('{count}', String(count))}
                       </span>
                     </div>
                   )
@@ -826,11 +831,12 @@ function AnalysisItem({
   customTypeByType: Map<string, CustomFragmentType>
 }) {
   const queryClient = useQueryClient()
+  const { language, t } = useLanguage()
   const [editingSummary, setEditingSummary] = useState(false)
   const [summaryDraft, setSummaryDraft] = useState('')
   const [expandedProposalDiffs, setExpandedProposalDiffs] = useState<Record<number, boolean>>({})
   const date = new Date(summary.createdAt)
-  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const timeStr = date.toLocaleTimeString(language === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
 
   useEffect(() => {
     setSummaryDraft(analysis?.summaryUpdate ?? '')
@@ -938,7 +944,7 @@ function AnalysisItem({
             {summary.continuityStale && (
               <span
                 className="inline-flex items-center justify-center size-4 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                title="The prose changed after this analysis, so its continuity notes are no longer used. Re-analyze this passage to restore them."
+                title={t('librarianPanel.analysisStaleTooltip')}
               >
                 <AlertTriangle className="size-2.5" />
               </span>
@@ -968,7 +974,7 @@ function AnalysisItem({
         <div className="border-t border-border/15 px-3 py-2.5 space-y-2.5 text-[0.6875rem] bg-muted/10">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <AnalysisFieldLabel>Summary update</AnalysisFieldLabel>
+              <AnalysisFieldLabel>{t('librarianPanel.summaryUpdate')}</AnalysisFieldLabel>
               {!editingSummary ? (
                 <Button
                   size="sm"
@@ -976,7 +982,7 @@ function AnalysisItem({
                   className="h-5 px-1.5 text-[0.5625rem]"
                   onClick={() => setEditingSummary(true)}
                 >
-                  Edit
+                  {t('storyInfo.edit')}
                 </Button>
               ) : (
                 <div className="flex items-center gap-1">
@@ -989,7 +995,7 @@ function AnalysisItem({
                       setEditingSummary(false)
                     }}
                   >
-                    Cancel
+                    {t('storyInfo.cancel')}
                   </Button>
                   <Button
                     size="sm"
@@ -997,7 +1003,7 @@ function AnalysisItem({
                     disabled={updateSummaryMutation.isPending}
                     onClick={() => updateSummaryMutation.mutate(summaryDraft.trim())}
                   >
-                    {updateSummaryMutation.isPending ? 'Saving...' : 'Save'}
+                    {updateSummaryMutation.isPending ? t('storyInfo.saving') : t('storyInfo.save')}
                   </Button>
                 </div>
               )}
@@ -1007,25 +1013,24 @@ function AnalysisItem({
                 value={summaryDraft}
                 onChange={(e) => setSummaryDraft(e.target.value)}
                 className="mt-1.5 min-h-[88px] resize-y bg-background/50 text-[0.6875rem] leading-relaxed"
-                placeholder="Summary update..."
+                placeholder={t('librarianPanel.summaryUpdatePlaceholder')}
               />
             ) : analysis.summaryUpdate ? (
               <p className="text-foreground/65 leading-relaxed mt-0.5 whitespace-pre-wrap">{analysis.summaryUpdate}</p>
             ) : (
-              <p className="text-muted-foreground italic mt-0.5">No summary update</p>
+              <p className="text-muted-foreground italic mt-0.5">{t('librarianPanel.noSummaryUpdate')}</p>
             )}
           </div>
 
           {analysis.continuityProjection && (
             <div className="space-y-1.5">
-              <AnalysisFieldLabel>Continuity notes</AnalysisFieldLabel>
+              <AnalysisFieldLabel>{t('librarianPanel.continuityNotes')}</AnalysisFieldLabel>
               {summary.continuityStale && (
                 <p className="text-amber-600 dark:text-amber-400 leading-relaxed">
-                  The prose changed after this analysis ran, so these notes are excluded from story
-                  continuity. Re-analyze this passage to rebuild them.
+                  {t('librarianPanel.continuityStale')}
                 </p>
               )}
-              <AnalysisInlineField label="Scene frame">
+              <AnalysisInlineField label={t('librarianPanel.sceneFrame')}>
                 {analysis.continuityProjection.scene.transition}
                 {analysis.continuityProjection.scene.line
                   ? ` — ${analysis.continuityProjection.scene.line}`
@@ -1040,7 +1045,7 @@ function AnalysisItem({
 
               {analysis.continuityProjection.stateOperations.length > 0 && (
                 <div>
-                  <AnalysisSubLabel>Current state</AnalysisSubLabel>
+                  <AnalysisSubLabel>{t('librarianPanel.currentState')}</AnalysisSubLabel>
                   <AnalysisList items={analysis.continuityProjection.stateOperations.map((operation, i) => ({
                     key: `continuity-state-${i}`,
                     content: operation.action === 'clear'
@@ -1053,7 +1058,7 @@ function AnalysisItem({
               {(analysis.continuityProjection.threadOperations.length > 0
                 || analysis.continuityProjection.threadFocus.length > 0) && (
                 <div>
-                  <AnalysisSubLabel>Unresolved threads</AnalysisSubLabel>
+                  <AnalysisSubLabel>{t('librarianPanel.unresolvedThreads')}</AnalysisSubLabel>
                   <AnalysisList items={threadContinuityRows(
                     analysis.continuityProjection.threadOperations,
                     analysis.continuityProjection.threadFocus,
@@ -1063,7 +1068,7 @@ function AnalysisItem({
 
               {analysis.continuityProjection.knowledgeOperations.length > 0 && (
                 <div>
-                  <AnalysisSubLabel>Character awareness</AnalysisSubLabel>
+                  <AnalysisSubLabel>{t('librarianPanel.characterAwareness')}</AnalysisSubLabel>
                   <AnalysisList items={analysis.continuityProjection.knowledgeOperations.map((operation, i) => ({
                     key: `continuity-knowledge-${i}`,
                     content: `${charName(operation.characterId)}: ${operation.action}${operation.fact ? ` — ${operation.fact}` : ''}`,
@@ -1086,7 +1091,7 @@ function AnalysisItem({
 
           {analysis.contradictions.some((contradiction) => !contradiction.dismissed) && (
             <div className="space-y-1.5">
-              <AnalysisFieldLabel tone="destructive">Contradictions</AnalysisFieldLabel>
+              <AnalysisFieldLabel tone="destructive">{t('librarianPanel.contradictions')}</AnalysisFieldLabel>
               {analysis.contradictions.map((c, i) => {
                 if (c.dismissed) return null
                 // Collect all unique fragment IDs: the analyzed prose + those cited in the contradiction
@@ -1115,15 +1120,15 @@ function AnalysisItem({
                             }}
                           >
                             <MessageSquare className="size-2.5" />
-                            Review
+                            {t('librarianPanel.review')}
                           </Button>
                         )}
                         <Button
                           size="icon"
                           variant="ghost"
                           className="size-5 text-muted-foreground/50 hover:text-foreground"
-                          title="Dismiss contradiction"
-                          aria-label="Dismiss contradiction"
+                          title={t('librarianPanel.dismissContradiction')}
+                          aria-label={t('librarianPanel.dismissContradiction')}
                           disabled={dismissContradictionMutation.isPending}
                           onClick={(e) => {
                             e.stopPropagation()
@@ -1142,10 +1147,11 @@ function AnalysisItem({
 
           {analysis.fragmentChangeProposals.length > 0 && (
             <div className="space-y-1.5">
-              <AnalysisFieldLabel tone="primary">Suggestions</AnalysisFieldLabel>
+              <AnalysisFieldLabel tone="primary">{t('librarianPanel.suggestions')}</AnalysisFieldLabel>
               {analysis.fragmentChangeProposals.map((proposal, i) => {
                 const title = proposal.title?.trim()
-                  || `${proposal.operations.length} fragment change${proposal.operations.length === 1 ? '' : 's'}`
+                  || t(proposal.operations.length === 1 ? 'librarianPanel.fragmentChangeOne' : 'librarianPanel.fragmentChangeMany')
+                    .replace('{count}', String(proposal.operations.length))
                 const validationResults = proposal.appliedResults?.length ? proposal.appliedResults : proposal.validation
                 const diffItemsByOperation = proposalOperationDiffItems(proposal)
                 const diffCount = [...diffItemsByOperation.values()].reduce((count, items) => count + items.length, 0)
@@ -1167,7 +1173,7 @@ function AnalysisItem({
                         <div className="flex items-center gap-1 flex-wrap">
                           <Badge variant="outline" className="text-[0.5625rem] h-3.5 gap-0.5 px-1">
                             <Wrench className="size-2" />
-                            proposal
+                            {t('librarianPanel.proposal')}
                           </Badge>
                           <span className="font-medium text-foreground/70">{title}</span>
                           <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
@@ -1176,12 +1182,12 @@ function AnalysisItem({
                           {proposal.accepted && (
                             <Badge variant="secondary" className="text-[0.5625rem] h-3.5 gap-0.5 px-1">
                               <Check className="size-2" />
-                              Applied
+                              {t('librarianPanel.applied')}
                             </Badge>
                           )}
                           {proposal.accepted && proposal.autoApplied && (
                             <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
-                              Auto
+                              {t('librarianPanel.auto')}
                             </Badge>
                           )}
                           {diffCount > 0 && (
@@ -1197,7 +1203,7 @@ function AnalysisItem({
                               }}
                             >
                               {diffExpanded ? <ChevronDown className="size-2" /> : <ChevronRight className="size-2" />}
-                              Diff
+                              {t('librarianPanel.diff')}
                             </button>
                           )}
                         </div>
@@ -1207,7 +1213,7 @@ function AnalysisItem({
                           className="text-[0.5625rem] text-muted-foreground italic shrink-0"
                           title={proposal.stale ? proposal.staleReason : undefined}
                         >
-                          {proposal.stale ? 'no longer applicable' : 'dismissed'}
+                          {proposal.stale ? t('librarianPanel.noLongerApplicable') : t('librarianPanel.dismissed')}
                         </span>
                       ) : (!proposal.accepted || canRevert) && (
                         <div className="flex gap-0.5 shrink-0">
@@ -1222,7 +1228,7 @@ function AnalysisItem({
                                   handleAcceptProposal(proposal, i)
                                 }}
                                 disabled={acceptProposalMutation.isPending}
-                                title="Apply suggestion"
+                                title={t('librarianPanel.applySuggestion')}
                               >
                                 <Plus className="size-3" />
                               </Button>
@@ -1235,7 +1241,7 @@ function AnalysisItem({
                                   dismissProposalMutation.mutate(i)
                                 }}
                                 disabled={dismissProposalMutation.isPending}
-                                title="Dismiss suggestion"
+                                title={t('librarianPanel.dismissSuggestion')}
                               >
                                 <X className="size-3" />
                               </Button>
@@ -1251,7 +1257,7 @@ function AnalysisItem({
                                 revertProposalMutation.mutate(i)
                               }}
                               disabled={revertProposalMutation.isPending}
-                              title="Revert suggestion"
+                              title={t('librarianPanel.revertSuggestion')}
                             >
                               <Undo2 className="size-3" />
                             </Button>
@@ -1264,7 +1270,7 @@ function AnalysisItem({
                     )}
                     {proposal.evidenceText && (
                       <p className="text-muted-foreground/80 mt-0.5 break-words italic">
-                        Evidence: “{proposal.evidenceText}”
+                        {t('librarianPanel.evidence')}: “{proposal.evidenceText}”
                       </p>
                     )}
                     <div className="mt-1 space-y-0.5">
@@ -1292,13 +1298,13 @@ function AnalysisItem({
                       })}
                       {proposal.operations.length > 5 && (
                         <p className="text-[0.5625rem] text-muted-foreground">
-                          +{proposal.operations.length - 5} more
+                          {t('librarianPanel.more').replace('{count}', String(proposal.operations.length - 5))}
                         </p>
                       )}
                     </div>
                     {proposal.sourceFragmentId && (
                       <p className="text-[0.5625rem] text-muted-foreground mt-0.5 font-mono">
-                        from {proposal.sourceFragmentId}
+                        {t('librarianPanel.from')} {proposal.sourceFragmentId}
                       </p>
                     )}
                   </div>
@@ -1306,7 +1312,7 @@ function AnalysisItem({
               })}
               {proposalMutationError && (
                 <p className="rounded-md border border-destructive/10 bg-destructive/5 px-2 py-1 text-[0.5625rem] text-destructive/80 leading-relaxed">
-                  {proposalMutationError instanceof Error ? proposalMutationError.message : 'Suggestion action failed.'}
+                  {proposalMutationError instanceof Error ? proposalMutationError.message : t('librarianPanel.suggestionActionFailed')}
                 </p>
               )}
             </div>
@@ -1314,7 +1320,7 @@ function AnalysisItem({
 
           {analysis.timelineEvents.length > 0 && (
             <div className="space-y-1">
-              <AnalysisFieldLabel>Timeline events</AnalysisFieldLabel>
+              <AnalysisFieldLabel>{t('librarianPanel.timelineEvents')}</AnalysisFieldLabel>
               <AnalysisList marker={false} items={analysis.timelineEvents.map((t) => ({
                 key: `${t.position}-${t.event}`,
                 content: (
@@ -1329,7 +1335,7 @@ function AnalysisItem({
 
           {analysis.passes && analysis.passes.length > 0 && (
             <div className="space-y-1">
-              <AnalysisFieldLabel>Passes</AnalysisFieldLabel>
+              <AnalysisFieldLabel>{t('librarianPanel.passes')}</AnalysisFieldLabel>
               <div className="flex flex-wrap gap-1">
                 {analysis.passes.map((pass, index) => (
                   <span
@@ -1366,6 +1372,7 @@ function AnalysisItem({
 // ─── Stored Trace Viewer ────────────────────────────────────
 
 function StoredTraceViewer({ trace }: { trace: LibrarianAnalysis['trace'] }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   if (!trace || trace.length === 0) return null
 
@@ -1379,7 +1386,7 @@ function StoredTraceViewer({ trace }: { trace: LibrarianAnalysis['trace'] }) {
         className="flex items-center gap-1 text-[0.625rem] text-muted-foreground hover:text-muted-foreground transition-colors"
       >
         {expanded ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
-        Analysis trace
+        {t('librarianPanel.analysisTrace')}
         <span className="text-muted-foreground">({items.length})</span>
       </button>
       {expanded && (
@@ -1441,6 +1448,7 @@ function collapseTraceEvents(trace: LibrarianAnalysis['trace']): CollapsedTraceI
 }
 
 function TraceItem({ item }: { item: CollapsedTraceItem }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
 
   if (item.kind === 'reasoning') {
@@ -1451,8 +1459,8 @@ function TraceItem({ item }: { item: CollapsedTraceItem }) {
           className="w-full flex items-center gap-1.5 px-2 py-1 text-[0.625rem] hover:bg-accent/20 transition-colors"
         >
           <Brain className="size-3 text-purple-400/60 shrink-0" />
-          <span className="text-muted-foreground">Reasoning</span>
-          <span className="text-muted-foreground ml-auto">{item.text.length} chars</span>
+          <span className="text-muted-foreground">{t('agentActivity.reasoning')}</span>
+          <span className="text-muted-foreground ml-auto">{t('librarianPanel.chars').replace('{count}', String(item.text.length))}</span>
         </button>
         {expanded && (
           <div className="border-t border-border/10 px-2 py-1.5">
@@ -1503,8 +1511,8 @@ function TraceItem({ item }: { item: CollapsedTraceItem }) {
             ? <Check className="size-2.5 text-emerald-500/50" />
             : <X className="size-2.5 text-amber-500/70" />}
           <span className="text-[0.5625rem] text-muted-foreground">
-            {item.toolName} {outcome.ok ? 'completed' : 'rejected'}
-            {outcome.ok && outcome.dropped > 0 ? ` — ${outcome.dropped} skipped` : ''}
+            {item.toolName} {outcome.ok ? t('librarianPanel.traceCompleted') : t('librarianPanel.traceRejected')}
+            {outcome.ok && outcome.dropped > 0 ? ` — ${t('librarianPanel.traceSkipped').replace('{count}', String(outcome.dropped))}` : ''}
           </span>
         </div>
         {outcome.reasons.map((reason, i) => (
@@ -1512,7 +1520,7 @@ function TraceItem({ item }: { item: CollapsedTraceItem }) {
         ))}
         {outcome.dropped > outcome.reasons.length && (
           <p className="pl-3.5 text-[0.5625rem] leading-relaxed text-amber-500/40 italic">
-            {outcome.dropped - outcome.reasons.length} gave no reason
+            {t('librarianPanel.gaveNoReason').replace('{count}', String(outcome.dropped - outcome.reasons.length))}
           </p>
         )}
       </div>
@@ -1525,6 +1533,7 @@ function TraceItem({ item }: { item: CollapsedTraceItem }) {
 // ── Authored memory tab ──────────────────────────────────────
 
 function SummariesTab({ storyId }: { storyId: string }) {
+  const { t } = useLanguage()
   const [showArchived, setShowArchived] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const branchId = useActiveBranchId(storyId)
@@ -1562,8 +1571,8 @@ function SummariesTab({ storyId }: { storyId: string }) {
           <div className="pt-6">
             <EmptyState
               icon={<Bookmark className="size-5" />}
-              title="No authored memory"
-              hint="Story history is derived automatically from source-linked analyses. Optional summary fragments you author appear here."
+              title={t('storyInfo.noAuthoredMemory')}
+              hint={t('librarianPanel.authoredMemoryHint')}
               variant="panel"
             />
           </div>
@@ -1585,7 +1594,7 @@ function SummariesTab({ storyId }: { storyId: string }) {
                 onClick={() => setShowArchived(s => !s)}
                 className="text-[0.6875rem] font-display italic text-muted-foreground/70 hover:text-foreground transition-colors px-1"
               >
-                {showArchived ? 'hide archived' : 'show archived'}
+                {showArchived ? t('librarianPanel.hideArchived') : t('librarianPanel.showArchived')}
               </button>
               {showArchived && archivedSummaries && archivedSummaries.length > 0 && (
                 <div className="space-y-1.5 pt-2 opacity-75">
@@ -1628,6 +1637,7 @@ function SummaryCard({
   archived?: boolean
 }) {
   const queryClient = useQueryClient()
+  const { language, t } = useLanguage()
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
     queryClient.invalidateQueries({ queryKey: ['fragments-archived', storyId] })
@@ -1654,12 +1664,12 @@ function SummaryCard({
         <div className="flex-1 min-w-0">
           <p className="text-[0.8125rem] font-display italic leading-tight text-foreground/90 truncate">{fragment.name}</p>
           <div className="flex items-center gap-1.5 mt-0.5 text-[0.5625rem] text-muted-foreground uppercase tracking-[0.12em]">
-            <span>authored</span>
+            <span>{t('librarianPanel.authored')}</span>
             <span aria-hidden className="text-muted-foreground/40">·</span>
-            <span className="tabular-nums normal-case tracking-normal">{fragment.content.length.toLocaleString()} chars</span>
+            <span className="tabular-nums normal-case tracking-normal">{t('librarianPanel.chars').replace('{count}', fragment.content.length.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US'))}</span>
           </div>
           <p className="mt-1.5 text-[0.6875rem] font-prose text-foreground/60 leading-relaxed line-clamp-2">
-            {fragment.content || <span className="italic text-muted-foreground/40">(empty)</span>}
+            {fragment.content || <span className="italic text-muted-foreground/40">{t('librarianPanel.empty')}</span>}
           </p>
         </div>
       </button>
@@ -1668,7 +1678,7 @@ function SummaryCard({
           <button
             onClick={(e) => { e.stopPropagation(); restoreMutation.mutate() }}
             disabled={restoreMutation.isPending}
-            aria-label="Restore summary"
+            aria-label={t('librarianPanel.restoreSummary')}
             className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             <ArchiveRestore className="size-3" />
@@ -1677,7 +1687,7 @@ function SummaryCard({
           <button
             onClick={(e) => { e.stopPropagation(); archiveMutation.mutate() }}
             disabled={archiveMutation.isPending}
-            aria-label="Archive summary"
+            aria-label={t('librarianPanel.archiveSummary')}
             className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             <Archive className="size-3" />
@@ -1703,6 +1713,7 @@ function FullscreenSummaryEditor({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
+  const { language, t } = useLanguage()
   const [draft, setDraft] = useState(fragment.content)
   const savedRef = useRef(fragment.content)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -1778,7 +1789,7 @@ function FullscreenSummaryEditor({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`Summary editor: ${fragment.name}`}
+      aria-label={t('librarianPanel.summaryEditor').replace('{name}', fragment.name)}
       data-cuelume-surface="bloom"
       className="fixed inset-0 z-50 flex flex-col bg-background animate-onboarding-fade-in"
     >
@@ -1789,15 +1800,15 @@ function FullscreenSummaryEditor({
             {fragment.name}
           </p>
           <div className="flex items-center gap-2 text-[0.625rem] uppercase tracking-[0.15em] text-muted-foreground">
-            <span>authored memory</span>
+            <span>{t('storyInfo.authoredMemory')}</span>
             <span aria-hidden className="text-muted-foreground/40">·</span>
             <span className="normal-case tracking-normal tabular-nums">
-              {draft.length.toLocaleString()} chars
+              {t('librarianPanel.chars').replace('{count}', draft.length.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US'))}
             </span>
             {fragment.archived && (
               <>
                 <span aria-hidden className="text-muted-foreground/40">·</span>
-                <span className="text-destructive/70">archived</span>
+                <span className="text-destructive/70">{t('storyInfo.archived')}</span>
               </>
             )}
           </div>
@@ -1807,17 +1818,17 @@ function FullscreenSummaryEditor({
             <button
               onClick={() => restoreMutation.mutate()}
               disabled={restoreMutation.isPending}
-              aria-label="Restore summary"
+              aria-label={t('librarianPanel.restoreSummary')}
               className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-display italic text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <ArchiveRestore className="size-3.5" aria-hidden />
-              restore
+              {t('archive.restore')}
             </button>
           ) : (
             <button
               onClick={() => archiveMutation.mutate()}
               disabled={archiveMutation.isPending}
-              aria-label="Archive summary"
+              aria-label={t('librarianPanel.archiveSummary')}
               className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-display italic text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Archive className="size-3.5" aria-hidden />
@@ -1827,7 +1838,7 @@ function FullscreenSummaryEditor({
           <button
             type="button"
             onClick={() => { saveIfDirty(); onClose() }}
-            aria-label="Close editor"
+            aria-label={t('librarianPanel.closeEditor')}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <X className="size-4" aria-hidden />
@@ -1842,7 +1853,7 @@ function FullscreenSummaryEditor({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onBlur={saveIfDirty}
-            placeholder="Write author-owned story memory…"
+            placeholder={t('librarianPanel.writeMemoryPlaceholder')}
             autoFocus
             spellCheck
             className="w-full min-h-[60vh] font-prose text-[1.0625rem] leading-[1.75] bg-transparent border-none shadow-none px-0 py-0 resize-none focus-visible:ring-0 focus-visible:outline-none placeholder:text-muted-foreground/35 placeholder:italic"
@@ -1853,17 +1864,17 @@ function FullscreenSummaryEditor({
       {/* Footer — Esc hint + save status */}
       <footer className="shrink-0 flex items-center justify-between px-6 py-2 border-t border-border/30 text-[0.6875rem] text-muted-foreground/70">
         <span className="font-display italic">
-          Press <kbd className="font-mono text-[0.625rem] px-1 py-0.5 rounded bg-muted/50 not-italic">Esc</kbd> to close · edits autosave on blur
+          {t('librarianPanel.press')} <kbd className="font-mono text-[0.625rem] px-1 py-0.5 rounded bg-muted/50 not-italic">Esc</kbd> {t('librarianPanel.closeAutosaveHint')}
         </span>
         <span className="font-display italic min-w-[6rem] text-right">
           {saveState === 'saving' && (
             <span className="inline-flex items-center gap-1.5">
               <span aria-hidden className="inline-block size-1 rounded-full bg-primary/50 animate-wisp-breathe" />
-              saving…
+              {t('storyInfo.saving')}
             </span>
           )}
-          {saveState === 'saved' && <span>saved</span>}
-          {saveState === 'error' && <span className="text-destructive/80">couldn't save</span>}
+          {saveState === 'saved' && <span>{t('fragmentTypes.saved')}</span>}
+          {saveState === 'error' && <span className="text-destructive/80">{t('librarianPanel.saveFailed')}</span>}
         </span>
       </footer>
     </div>,

@@ -59,11 +59,13 @@ export function SettingsSection({
 export function SectionHeading({
   label,
   helpTopic,
+  helpLabel = 'Learn more',
   action,
   className,
 }: {
   label: string
   helpTopic?: string
+  helpLabel?: string
   action?: ReactNode
   className?: string
 }) {
@@ -77,7 +79,7 @@ export function SectionHeading({
             type="button"
             onClick={() => openHelp(helpTopic)}
             className="text-muted-foreground transition-colors hover:text-primary/60"
-            title="Learn more"
+            title={helpLabel}
           >
             <CircleHelp className="size-3" />
           </button>
@@ -110,6 +112,7 @@ export function SettingRow({
   label,
   description,
   helpTopic,
+  helpLabel = 'Learn more',
   children,
   disabled,
   className,
@@ -117,6 +120,7 @@ export function SettingRow({
   label: string
   description?: string
   helpTopic?: string
+  helpLabel?: string
   children: ReactNode
   disabled?: boolean
   className?: string
@@ -139,7 +143,7 @@ export function SettingRow({
               type="button"
               onClick={(e) => { e.stopPropagation(); openHelp(helpTopic) }}
               className="text-muted-foreground transition-colors hover:text-primary/60"
-              title="Learn more"
+              title={helpLabel}
             >
               <CircleHelp className="size-3" />
             </button>

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/panel'
 import { X, Plus, Trash2, MessageSquare, User, Users, Sparkles } from 'lucide-react'
 import { resolveFragmentVisual } from '@/lib/fragment-visuals'
+import { useLanguage, type AppLanguage, type TranslationKey } from '@/lib/i18n'
 
 function personaIcon(persona: PersonaMode) {
   switch (persona.type) {
@@ -22,29 +23,31 @@ function personaIcon(persona: PersonaMode) {
   }
 }
 
-function personaLabel(persona: PersonaMode, characters: Fragment[]) {
+type Translate = (key: TranslationKey) => string
+
+function personaLabel(persona: PersonaMode, characters: Fragment[], t: Translate) {
   switch (persona.type) {
-    case 'stranger': return 'as stranger'
+    case 'stranger': return t('characterChat.asStranger')
     case 'character': {
       const ch = characters.find((c) => c.id === persona.characterId)
-      return `as ${ch?.name ?? 'character'}`
+      return `${t('characterChat.asPrefix')} ${ch?.name ?? t('characterChat.characterFallback')}`
     }
-    case 'custom': return 'custom persona'
+    case 'custom': return t('characterChat.customPersona')
   }
 }
 
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, language: AppLanguage, t: Translate): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
   const diff = now - then
   const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1) return t('storyInfo.justNow')
+  if (mins < 60) return `${mins}${t('storyInfo.minutesAgoSuffix')}`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return `${hours}${t('storyInfo.hoursAgoSuffix')}`
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  if (days < 7) return `${days}${t('storyInfo.daysAgoSuffix')}`
+  return new Date(dateStr).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' })
 }
 
 interface ConversationListProps {
@@ -66,6 +69,7 @@ export function ConversationList({
   onNew,
   onClose,
 }: ConversationListProps) {
+  const { language, t } = useLanguage()
   const queryClient = useQueryClient()
 
   const { data: conversations, isLoading } = useQuery({
@@ -94,7 +98,7 @@ export function ConversationList({
     >
       <PanelHeader className="px-4 py-3">
         <PanelHeaderText>
-          <PanelTitle>Conversations</PanelTitle>
+          <PanelTitle>{t('characterChat.conversations')}</PanelTitle>
         </PanelHeaderText>
         <PanelActions className="gap-2">
           <Button
@@ -104,7 +108,7 @@ export function ConversationList({
             onClick={onNew}
           >
             <Plus className="size-3" />
-            New
+            {t('characterChat.new')}
           </Button>
           <Button
             variant="ghost"
@@ -127,8 +131,8 @@ export function ConversationList({
           {!isLoading && (!conversations || conversations.length === 0) && (
             <EmptyState
               icon={<MessageSquare className="size-5" />}
-              title="No conversations yet"
-              hint="Start one to talk with your characters."
+              title={t('characterChat.noConversations')}
+              hint={t('characterChat.startConversationHint')}
             />
           )}
 
@@ -187,16 +191,16 @@ export function ConversationList({
                         <div className="flex items-baseline gap-2">
                           <span className="text-xs font-medium truncate">{conv.title}</span>
                           <span className="text-[0.625rem] text-muted-foreground shrink-0 ml-auto">
-                            {formatRelativeTime(conv.updatedAt)}
+                            {formatRelativeTime(conv.updatedAt, language, t)}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className="text-[0.625rem] text-muted-foreground">
-                            {personaLabel(conv.persona, characters)}
+                            {personaLabel(conv.persona, characters, t)}
                           </span>
                           <span className="text-[0.625rem] text-muted-foreground">·</span>
                           <span className="text-[0.625rem] text-muted-foreground">
-                            {conv.messageCount} message{conv.messageCount !== 1 ? 's' : ''}
+                            {conv.messageCount} {conv.messageCount === 1 ? t('characterChat.messageOne') : t('characterChat.messageMany')}
                           </span>
                         </div>
                       </div>

@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Image as ImageIcon,
 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface PublishPackDialogProps {
   open: boolean
@@ -79,6 +80,7 @@ export function PublishPackDialog({
 }: PublishPackDialogProps) {
   const isStory = mode === 'story'
   const qc = useQueryClient()
+  const { t } = useLanguage()
   const branchId = useActiveBranchId(storyId)
   const [slug, setSlug] = useState('')
   const [title, setTitle] = useState('')
@@ -93,6 +95,9 @@ export function PublishPackDialog({
   const [thumbnailId, setThumbnailId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [publishedId, setPublishedId] = useState<string | null>(null)
+
+  const ratingLabel = (value: ContentRating) => value === 'general' ? t('erratanet.publish.ratingGeneral') : value === 'mature' ? t('erratanet.publish.ratingMature') : t('erratanet.publish.ratingR18')
+  const ratingHint = (value: ContentRating) => value === 'general' ? t('erratanet.publish.ratingGeneralHint') : value === 'mature' ? t('erratanet.publish.ratingMatureHint') : t('erratanet.publish.ratingR18Hint')
 
   // Resolve the signed-in handle. New packs need it to form the @handle/slug id.
   const { data: account } = useQuery({
@@ -224,15 +229,15 @@ export function PublishPackDialog({
 
   const publishMut = useMutation({
     mutationFn: async () => {
-      if (!handle) throw new Error('Connect a hub account in Settings first.')
+      if (!handle) throw new Error(t('erratanet.publish.connectAccountFirst'))
       const cleanSlug = slug.trim() || slugify(title)
-      if (!cleanSlug) throw new Error('Enter a title or a slug for the pack.')
+      if (!cleanSlug) throw new Error(t('erratanet.publish.enterTitleOrSlug'))
       const id = `@${handle}/${cleanSlug}`
       if (!GLOBAL_PACK_ID_REGEX.test(id)) {
-        throw new Error('Slug must be lowercase letters, numbers, and dashes.')
+        throw new Error(t('erratanet.publish.invalidSlug'))
       }
-      if (!title.trim()) throw new Error('Enter a title.')
-      if (description.length > 250) throw new Error('Description must be 250 characters or fewer.')
+      if (!title.trim()) throw new Error(t('erratanet.publish.enterTitle'))
+      if (description.length > 250) throw new Error(t('erratanet.publish.descriptionTooLong'))
 
       const thumbnailFragment = thumbnailId ? mediaById.get(thumbnailId) : undefined
       const trimmedReadme = readme.trim()
@@ -256,7 +261,7 @@ export function PublishPackDialog({
       }
 
       if (isStory) {
-        if (!storyId) throw new Error('No story to publish.')
+        if (!storyId) throw new Error(t('erratanet.publish.noStory'))
         const manifest: PackManifestDraft = {
           ...base,
           ...(chapters.length > 0 ? { chapters } : {}),
@@ -264,7 +269,7 @@ export function PublishPackDialog({
         return api.erratanet.publish({ storyId, manifest, unlisted: visibility === 'unlisted' })
       }
 
-      if (selectedFragments.length === 0) throw new Error('Select at least one fragment to publish.')
+      if (selectedFragments.length === 0) throw new Error(t('erratanet.publish.selectFragment'))
       const bundleJson = serializeBundle(selectedFragments, mediaById, storyName)
       return api.erratanet.publish({
         bundleJson,
@@ -285,7 +290,7 @@ export function PublishPackDialog({
       }
     },
     onError: (e: unknown) => {
-      setError(e instanceof Error ? e.message : 'Publish failed.')
+      setError(e instanceof Error ? e.message : t('erratanet.publish.failed'))
     },
   })
 
@@ -304,12 +309,12 @@ export function PublishPackDialog({
         <DialogHeader>
           <DialogTitle className="font-display text-lg flex items-center gap-2">
             <UploadCloud className="size-4 text-muted-foreground" />
-            Publish to ErrataNet
+            {t('erratanet.publish.title')}
           </DialogTitle>
           <DialogDescription>
             {isStory
-              ? 'Publish this whole story: branches, prose chain, and fragments.'
-              : `Share ${selectedFragments.length} fragment${selectedFragments.length !== 1 ? 's' : ''} as a reusable pack.`}
+              ? t('erratanet.publish.storyDescription')
+              : `${t('erratanet.publish.sharePrefix')} ${selectedFragments.length} ${t('erratanet.publish.fragment')} ${t('erratanet.publish.shareSuffix')}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -319,9 +324,9 @@ export function PublishPackDialog({
               <Check className="size-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium">Published</p>
+              <p className="text-sm font-medium">{t('erratanet.publish.published')}</p>
               <p className="mt-1 font-mono text-[0.8125rem] text-muted-foreground">{publishedId}</p>
-              <p className="mt-1 text-[0.6875rem] text-muted-foreground">version {nextVersion}</p>
+              <p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('erratanet.publish.versionLower')} {nextVersion}</p>
             </div>
             {(() => {
               const packUrl = packPageUrl(config?.hubUrl, publishedId)
@@ -332,7 +337,7 @@ export function PublishPackDialog({
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-md border border-border/40 px-3 py-1.5 text-[0.75rem] text-foreground/80 transition-colors hover:border-border hover:text-foreground"
                 >
-                  View on ErrataNet
+                  {t('erratanet.publish.viewOnErrataNet')}
                   <ExternalLink className="size-3.5" />
                 </a>
               ) : null
@@ -345,14 +350,14 @@ export function PublishPackDialog({
               <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500/80" />
                 <p className="text-[0.6875rem] leading-snug text-amber-600/80 dark:text-amber-400/80">
-                  No hub account connected. Sign in from the ErrataNet panel before publishing.
+                  {t('erratanet.publish.noAccount')}
                 </p>
               </div>
             )}
 
             {/* Slug */}
             <div>
-              <h4 className={sectionLabel}>Slug</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.slug')}</h4>
               <div className="flex items-center gap-2">
                 <span className="shrink-0 font-mono text-[0.8125rem] text-muted-foreground">
                   @{handle ?? 'handle'}/
@@ -360,7 +365,7 @@ export function PublishPackDialog({
                 <Input
                   value={slug}
                   onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  placeholder={derivedSlug || 'cozy-fantasy-starter'}
+                  placeholder={derivedSlug || t('erratanet.publish.slugPlaceholder')}
                   className="h-9 font-mono"
                   autoFocus
                   data-component-id="publish-pack-slug"
@@ -370,11 +375,11 @@ export function PublishPackDialog({
 
             {/* Title */}
             <div>
-              <h4 className={sectionLabel}>Title</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.packTitle')}</h4>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Cozy Fantasy Starter"
+                placeholder={t('erratanet.publish.titlePlaceholder')}
                 maxLength={120}
                 className="h-9"
                 data-component-id="publish-pack-title"
@@ -384,7 +389,7 @@ export function PublishPackDialog({
             {/* Description */}
             <div>
               <div className="flex items-baseline justify-between">
-                <h4 className={sectionLabel}>Description</h4>
+                <h4 className={sectionLabel}>{t('erratanet.publish.description')}</h4>
                 <span className={cn('text-[0.625rem] tabular-nums', descOver ? 'text-destructive' : 'text-muted-foreground')}>
                   {description.length}/250
                 </span>
@@ -392,7 +397,7 @@ export function PublishPackDialog({
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="A short summary of what this pack contains..."
+                placeholder={t('erratanet.publish.descriptionPlaceholder')}
                 rows={3}
                 className="text-xs resize-y min-h-16 max-h-40"
                 aria-invalid={descOver}
@@ -403,7 +408,7 @@ export function PublishPackDialog({
             {/* Information (readme) */}
             <div>
               <div className="flex items-baseline justify-between">
-                <h4 className={sectionLabel}>Information</h4>
+                <h4 className={sectionLabel}>{t('erratanet.publish.information')}</h4>
                 <span className="text-[0.625rem] tabular-nums text-muted-foreground">
                   {readme.length}/{README_MAX}
                 </span>
@@ -411,19 +416,19 @@ export function PublishPackDialog({
               <Textarea
                 value={readme}
                 onChange={(e) => setReadme(e.target.value.slice(0, README_MAX))}
-                placeholder="Long-form notes, setup, credits... Markdown is supported."
+                placeholder={t('erratanet.publish.informationPlaceholder')}
                 rows={4}
                 className="text-xs resize-y min-h-20 max-h-56"
                 data-component-id="publish-pack-readme"
               />
               <p className="mt-1.5 text-[0.625rem] text-muted-foreground">
-                Shown on the pack page. Optional.
+                {t('erratanet.publish.informationHint')}
               </p>
             </div>
 
             {/* License */}
             <div>
-              <h4 className={sectionLabel}>License</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.license')}</h4>
               <select
                 value={license}
                 onChange={(e) => setLicense(e.target.value)}
@@ -438,7 +443,7 @@ export function PublishPackDialog({
 
             {/* Tags */}
             <div>
-              <h4 className={sectionLabel}>Tags</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.tags')}</h4>
               {tags.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {tags.map((tag) => (
@@ -448,7 +453,7 @@ export function PublishPackDialog({
                         type="button"
                         onClick={() => removeTag(tag)}
                         className="text-muted-foreground hover:text-foreground"
-                        aria-label={`Remove ${tag}`}
+                        aria-label={`${t('erratanet.publish.removeTag')} ${tag}`}
                       >
                         <X className="size-3" />
                       </button>
@@ -466,7 +471,7 @@ export function PublishPackDialog({
                   }
                 }}
                 onBlur={addTag}
-                placeholder="Add a tag and press Enter"
+                placeholder={t('erratanet.publish.addTagPlaceholder')}
                 className="h-9"
                 data-component-id="publish-pack-tags"
               />
@@ -475,7 +480,7 @@ export function PublishPackDialog({
             {/* Chapters (story mode, derived from markers) */}
             {isStory && chapters.length > 0 && (
               <div>
-                <h4 className={sectionLabel}>Chapters ({chapters.length})</h4>
+                <h4 className={sectionLabel}>{t('erratanet.publish.chapters')} ({chapters.length})</h4>
                 <ol className="max-h-28 overflow-y-auto rounded-md border border-border/40 bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
                   {chapters.map((ch, i) => (
                     <li key={i} className="flex gap-2 py-0.5">
@@ -485,7 +490,7 @@ export function PublishPackDialog({
                   ))}
                 </ol>
                 <p className="mt-1.5 text-[0.625rem] text-muted-foreground">
-                  Derived from chapter markers. Shown on the pack page.
+                  {t('erratanet.publish.chaptersHint')}
                 </p>
               </div>
             )}
@@ -493,7 +498,7 @@ export function PublishPackDialog({
             {/* Thumbnail */}
             {thumbnailCandidates.length > 0 && (
               <div>
-                <h4 className={sectionLabel}>Thumbnail</h4>
+                <h4 className={sectionLabel}>{t('erratanet.publish.thumbnail')}</h4>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -502,7 +507,7 @@ export function PublishPackDialog({
                       'grid size-14 place-items-center rounded-md border text-muted-foreground transition-colors',
                       thumbnailId === null ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-border/40 hover:border-border',
                     )}
-                    aria-label="No thumbnail"
+                    aria-label={t('erratanet.publish.noThumbnail')}
                   >
                     <ImageIcon className="size-4" />
                   </button>
@@ -526,7 +531,7 @@ export function PublishPackDialog({
 
             {/* Content rating */}
             <div>
-              <h4 className={sectionLabel}>Content rating</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.contentRating')}</h4>
               <div className="flex w-fit gap-[3px] rounded-lg bg-muted/25 p-[3px]">
                 {CONTENT_RATINGS.map((r) => (
                   <button
@@ -539,18 +544,18 @@ export function PublishPackDialog({
                     )}
                     data-component-id={`publish-pack-rating-${r.value}`}
                   >
-                    {r.label}
+                    {ratingLabel(r.value)}
                   </button>
                 ))}
               </div>
               <p className="mt-1.5 text-[0.625rem] text-muted-foreground">
-                {CONTENT_RATINGS.find((r) => r.value === contentRating)?.hint}
+                {ratingHint(contentRating)}
               </p>
             </div>
 
             {/* Visibility */}
             <div>
-              <h4 className={sectionLabel}>Visibility</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.visibility')}</h4>
               <div className="flex w-fit gap-[3px] rounded-lg bg-muted/25 p-[3px]">
                 {(['public', 'unlisted'] as const).map((v) => (
                   <button
@@ -562,20 +567,20 @@ export function PublishPackDialog({
                       visibility === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
-                    {v}
+                    {v === 'public' ? t('erratanet.publish.public') : t('erratanet.publish.unlisted')}
                   </button>
                 ))}
               </div>
               <p className="mt-1.5 text-[0.625rem] text-muted-foreground">
                 {visibility === 'public'
-                  ? 'Listed in search and explore.'
-                  : 'Hidden from search. Only people with the link can find it.'}
+                  ? t('erratanet.publish.publicHint')
+                  : t('erratanet.publish.unlistedHint')}
               </p>
             </div>
 
             {/* Version */}
             <div>
-              <h4 className={sectionLabel}>Version</h4>
+              <h4 className={sectionLabel}>{t('erratanet.publish.version')}</h4>
               <div className="flex items-center gap-3">
                 <div className="flex rounded-lg bg-muted/25 p-[3px] gap-[3px]">
                   {(['patch', 'minor', 'major'] as const).map((kind) => (
@@ -588,7 +593,7 @@ export function PublishPackDialog({
                         bump === kind ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                       )}
                     >
-                      {kind}
+                      {kind === 'patch' ? t('erratanet.publish.patch') : kind === 'minor' ? t('erratanet.publish.minor') : t('erratanet.publish.major')}
                     </button>
                   ))}
                 </div>
@@ -596,15 +601,15 @@ export function PublishPackDialog({
                 {checkingPack && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
               </div>
               <p className="mt-1.5 text-[0.625rem] text-muted-foreground">
-                {latestVersion ? `Latest published: ${latestVersion}` : 'New pack, starting at 1.0.0'}
+                {latestVersion ? `${t('erratanet.publish.latestPublished')} ${latestVersion}` : t('erratanet.publish.newPackVersion')}
               </p>
             </div>
 
             {/* MVP note */}
             <p className="text-[0.625rem] leading-snug text-muted-foreground">
               {isStory
-                ? 'The whole story is published: branches, prose chain, fragments, and images. Context blocks and agent configuration are not included.'
-                : 'Packs carry fragments and their images only. Context blocks and agent configuration are not included.'}
+                ? t('erratanet.publish.storyScopeNote')
+                : t('erratanet.publish.packScopeNote')}
             </p>
 
             {error && <p className="text-[0.6875rem] text-destructive">{error}</p>}
@@ -613,7 +618,7 @@ export function PublishPackDialog({
 
         <DialogFooter className="gap-2 pt-3 border-t border-border/30">
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-xs">
-            {publishedId ? 'Done' : 'Cancel'}
+            {publishedId ? t('erratanet.publish.done') : t('erratanet.publish.cancel')}
           </Button>
           {!publishedId && (
             <Button
@@ -623,7 +628,7 @@ export function PublishPackDialog({
               data-component-id="publish-pack-submit"
             >
               {publishMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <UploadCloud className="size-3.5" />}
-              Publish {nextVersion}
+              {t('erratanet.publish.publish')} {nextVersion}
             </Button>
           )}
         </DialogFooter>

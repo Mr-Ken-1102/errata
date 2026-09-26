@@ -46,11 +46,12 @@ import { useConfirm } from '@/components/ui/confirm-dialog'
 import { getStoryDisplayName } from '@/lib/story-display'
 import type { FileDropDetails } from '@/lib/file-drop'
 import { createStoryArchiveFromFolderDrop } from '@/lib/story-folder-import'
+import { useLanguage } from '@/lib/i18n'
 
 const THEME_OPTIONS = [
-  { value: 'light' as const, label: 'Light', Icon: Sun },
-  { value: 'dark' as const, label: 'Dark', Icon: Moon },
-  { value: 'high-contrast' as const, label: 'High contrast', Icon: Contrast },
+  { value: 'light' as const, labelKey: 'settings.appearance.light' as const, Icon: Sun },
+  { value: 'dark' as const, labelKey: 'settings.appearance.dark' as const, Icon: Moon },
+  { value: 'high-contrast' as const, labelKey: 'storyLibrary.themeHighContrast' as const, Icon: Contrast },
 ]
 
 export const Route = createFileRoute('/')({ component: StoryListPage })
@@ -60,6 +61,7 @@ function StoryListPage() {
   const confirm = useConfirm()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
+  const { t } = useLanguage()
   const [interactionSounds, setInteractionSounds] = useInteractionSounds()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -134,9 +136,9 @@ function StoryListPage() {
       }
     } else {
       setParsed(null)
-      setParseError('Not a valid Errata export. Expected JSON with _errata: "fragment" or "fragment-bundle".')
+      setParseError(t('fragmentImport.invalidExport'))
     }
-  }, [])
+  }, [t])
 
   const handleImportFileDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
@@ -148,9 +150,9 @@ function StoryListPage() {
       const text = await readFileAsText(file)
       handleImportTextChange(text)
     } catch {
-      setParseError('Could not read file.')
+      setParseError(t('fragmentImport.readFileFailed'))
     }
-  }, [handleImportTextChange])
+  }, [handleImportTextChange, t])
 
   const handleImportFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -159,20 +161,20 @@ function StoryListPage() {
       const text = await readFileAsText(file)
       handleImportTextChange(text)
     } catch {
-      setParseError('Could not read file.')
+      setParseError(t('fragmentImport.readFileFailed'))
     }
     e.target.value = ''
-  }, [handleImportTextChange])
+  }, [handleImportTextChange, t])
 
   const handleImportPaste = useCallback(async () => {
     const text = await readClipboardText()
     if (text === null) {
       // Device-neutral on purpose; see the note in FragmentImportDialog.
-      setParseError('Could not read the clipboard. Paste into the box below instead.')
+      setParseError(t('fragmentImport.clipboardFailed'))
       return
     }
     handleImportTextChange(text)
-  }, [handleImportTextChange])
+  }, [handleImportTextChange, t])
 
   const toggleBundleItem = useCallback((index: number) => {
     setSelectedIndices((prev) => {
@@ -278,13 +280,15 @@ function StoryListPage() {
             await queryClient.invalidateQueries({ queryKey: ['stories'] })
             navigate({ to: '/story/$storyId', params: { storyId: newStory.id } })
           } else if (folderResult.kind === 'ambiguous') {
-            setDropError('Drop one unpacked Errata story folder at a time.')
+            setDropError(t('storyLibrary.dropSingleFolder'))
           } else if (folderResult.kind === 'invalid') {
-            setDropError(`Couldn't import "${folderResult.directoryName}": missing ${folderResult.missing}`)
+            setDropError(
+              `${t('storyLibrary.couldNotImport')} "${folderResult.directoryName}": ${t('storyLibrary.missing')} ${folderResult.missing}`,
+            )
           }
         } catch (err) {
           setDropError(
-            `Couldn't import story folder: ${err instanceof Error ? err.message : 'invalid story archive'}`,
+            `${t('storyLibrary.couldNotImportStoryFolder')} ${err instanceof Error ? err.message : t('storyLibrary.invalidStoryArchive')}`,
           )
         }
         return
@@ -391,14 +395,14 @@ function StoryListPage() {
             // A file that is clearly a .zip but fails to import is a real error,
             // not a format mismatch — surface it rather than silently doing nothing.
             setDropError(
-              `Couldn't import "${file.name}": ${err instanceof Error ? err.message : 'invalid story archive'}`,
+              `${t('storyLibrary.couldNotImport')} "${file.name}": ${err instanceof Error ? err.message : t('storyLibrary.invalidStoryArchive')}`,
             )
             return
           }
         }
       }
     },
-    [navigate, queryClient],
+    [navigate, queryClient, t],
   )
   const isFileDragging = useWindowFileDrop(handleFileDrop)
 
@@ -433,33 +437,33 @@ function StoryListPage() {
               variant="ghost"
               className="size-11 gap-1.5 sm:h-8 sm:w-auto sm:px-3"
               onClick={() => setShowSettings(true)}
-              aria-label="Open settings"
+              aria-label={t('storyLibrary.openSettings')}
               data-component-id="story-settings-button"
             >
               <Settings className="size-3.5" />
-              <span className="hidden sm:inline">Settings</span>
+              <span className="hidden sm:inline">{t('sidebar.settings')}</span>
             </Button>
             <Button
               size="sm"
               variant="ghost"
               className="size-11 gap-1.5 sm:h-8 sm:w-auto sm:px-3"
               onClick={() => setShowImportDialog(true)}
-              aria-label="Import a story or character card"
+              aria-label={t('storyLibrary.importStoryOrCharacterCard')}
               data-component-id="story-import-button"
             >
               <Upload className="size-3.5" />
-              <span className="hidden sm:inline">Import</span>
+              <span className="hidden sm:inline">{t('storyRoute.import')}</span>
             </Button>
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetDialog() }}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-11 gap-1.5 px-3 sm:h-8" data-component-id="story-create-open">
                 <Plus className="size-3.5" />
-                New story
+                {t('storyLibrary.newStory')}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
               <DialogHeader>
-                <DialogTitle className="font-display text-xl">Create a new story</DialogTitle>
+                <DialogTitle className="font-display text-xl">{t('storyLibrary.createNewStory')}</DialogTitle>
               </DialogHeader>
               <form
                 data-component-id="story-create-form"
@@ -470,10 +474,10 @@ function StoryListPage() {
                 className="space-y-4 mt-2 overflow-y-auto min-h-0 flex-1"
               >
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Title</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('storyLibrary.title')}</label>
                   <Input
                     data-component-id="story-create-title-input"
-                    placeholder="Untitled Story"
+                    placeholder={t('storyLibrary.untitledStory')}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="font-display text-lg"
@@ -481,10 +485,10 @@ function StoryListPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Description</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('storyInfo.description')}</label>
                   <Textarea
                     data-component-id="story-create-description-input"
-                    placeholder="A brief description of your story..."
+                    placeholder={t('storyLibrary.descriptionPlaceholder')}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="resize-none min-h-[80px]"
@@ -495,7 +499,7 @@ function StoryListPage() {
                 {availablePresets.length > 0 && (
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                      Start from
+                      {t('storyLibrary.startFrom')}
                     </label>
                     <div className="max-h-40 overflow-y-auto overflow-hidden rounded-lg border border-border/40 divide-y divide-border/20">
                       <button
@@ -508,7 +512,7 @@ function StoryListPage() {
                         }`}
                         data-component-id="story-create-preset-none"
                       >
-                        No preset
+                        {t('storyLibrary.noPreset')}
                       </button>
                       {availablePresets.map((preset) => (
                         <button
@@ -529,7 +533,7 @@ function StoryListPage() {
                         >
                           <span className="truncate">{preset.name}</span>
                           <span className="shrink-0 text-[0.625rem] text-muted-foreground">
-                            {preset.fragmentCount} fragment{preset.fragmentCount === 1 ? '' : 's'}
+                            {preset.fragmentCount} {preset.fragmentCount === 1 ? t('storyLibrary.fragmentOne') : t('storyLibrary.fragmentMany')}
                           </span>
                         </button>
                       ))}
@@ -539,10 +543,10 @@ function StoryListPage() {
 
                 {/* Cover Image Upload */}
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Cover Image</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('storyInfo.coverImage')}</label>
                   {coverImage ? (
                     <div className="relative group/cover rounded-lg overflow-hidden" style={{ aspectRatio: '3/4', maxWidth: 180 }}>
-                      <img src={coverImage} alt="Cover preview" className="w-full h-full object-cover" />
+                      <img src={coverImage} alt={t('storyLibrary.coverPreview')} className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => setCoverImage(null)}
@@ -554,7 +558,7 @@ function StoryListPage() {
                   ) : (
                     <label className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 hover:border-border cursor-pointer transition-colors py-6 px-4">
                       <ImagePlus className="size-5 text-muted-foreground/60" />
-                      <span className="text-xs text-muted-foreground">Click to upload a cover image</span>
+                      <span className="text-xs text-muted-foreground">{t('storyLibrary.uploadCoverImage')}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -577,7 +581,7 @@ function StoryListPage() {
                     className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-muted-foreground transition-colors"
                   >
                     <ChevronRight className={`size-3 transition-transform ${showOptions ? 'rotate-90' : ''}`} />
-                    Options
+                    {t('storyLibrary.options')}
                   </button>
 
                   {showOptions && (
@@ -586,12 +590,12 @@ function StoryListPage() {
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
                           <FileJson className="size-3" />
-                          Import Fragments
+                          {t('fragmentImport.title')}
                         </label>
 
                         {selectedPresetId && (
                           <p className="text-[0.6875rem] italic text-muted-foreground">
-                            A story preset is selected above. Choose “No preset” to import a one-off fragment bundle instead.
+                            {t('storyLibrary.presetImportHint')}
                           </p>
                         )}
 
@@ -606,11 +610,11 @@ function StoryListPage() {
                                 onClick={handleImportPaste}
                               >
                                 <Clipboard className="size-3" />
-                                Paste from clipboard
+                                {t('fragmentImport.pasteClipboard')}
                               </Button>
                               <label className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-border/40 text-xs cursor-pointer transition-colors hover:bg-accent/50">
                                 <Upload className="size-3" />
-                                Load file
+                                {t('fragmentImport.loadFile')}
                                 <input
                                   type="file"
                                   accept=".json,application/json"
@@ -629,7 +633,7 @@ function StoryListPage() {
                               <Textarea
                                 value=""
                                 onChange={(e) => handleImportTextChange(e.target.value)}
-                                placeholder='Paste JSON or drop a .json file here...'
+                                placeholder={t('fragmentImport.placeholder')}
                                 className={`min-h-[80px] resize-none font-mono text-xs bg-transparent transition-colors ${
                                   dragOver ? 'border-primary/50 bg-primary/5' : ''
                                 }`}
@@ -638,7 +642,7 @@ function StoryListPage() {
                                 <div className="absolute inset-0 flex items-center justify-center rounded-md border-2 border-dashed border-primary/40 bg-primary/5 pointer-events-none">
                                   <div className="text-center">
                                     <Upload className="size-5 text-primary/50 mx-auto mb-1" />
-                                    <p className="text-xs text-primary/60">Drop file here</p>
+                                    <p className="text-xs text-primary/60">{t('fragmentImport.dropFileHere')}</p>
                                   </div>
                                 </div>
                               )}
@@ -671,16 +675,16 @@ function StoryListPage() {
 
                       {/* Librarian Settings */}
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Librarian</label>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('sidebar.librarian')}</label>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">Auto-apply suggestions</span>
+                          <span className="text-xs text-muted-foreground">{t('storyLibrary.autoApplySuggestions')}</span>
                           <button
                             type="button"
                             onClick={() => setAutoApplyLibrarian(!autoApplyLibrarian)}
                             className={`relative shrink-0 h-[14px] w-[26px] rounded-full transition-colors ${
                               autoApplyLibrarian ? 'bg-foreground' : 'bg-muted-foreground/20'
                             }`}
-                            aria-label="Toggle auto-apply librarian suggestions"
+                            aria-label={t('storyLibrary.toggleAutoApplySuggestions')}
                           >
                             <span
                               className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-background transition-[left] duration-150 ${
@@ -696,7 +700,7 @@ function StoryListPage() {
 
                 <div className="flex justify-end">
                   <Button type="submit" disabled={createMutation.isPending} data-component-id="story-create-submit">
-                    {createMutation.isPending ? 'Creating story...' : 'Create story'}
+                    {createMutation.isPending ? t('storyLibrary.creatingStory') : t('storyLibrary.createStory')}
                   </Button>
                 </div>
               </form>
@@ -709,20 +713,20 @@ function StoryListPage() {
       {/* Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         {isLoading && (
-          <p className="text-muted-foreground text-sm">Loading stories...</p>
+          <p className="text-muted-foreground text-sm">{t('storyLibrary.loadingStories')}</p>
         )}
 
         {stories && stories.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <p className="font-display text-2xl italic text-muted-foreground mb-2">
-              Begin something new.
+              {t('storyLibrary.beginSomethingNew')}
             </p>
             <p className="text-sm text-muted-foreground mb-8 max-w-xs">
-              Every great story starts with a blank page. Create your first story to get started.
+              {t('storyLibrary.emptyHint')}
             </p>
             <Button onClick={() => setOpen(true)} className="gap-1.5">
               <Plus className="size-3.5" />
-              Create your first story
+              {t('storyLibrary.createFirstStory')}
             </Button>
           </div>
         )}
@@ -737,7 +741,7 @@ function StoryListPage() {
               story={story}
               isRecent={i === 0 && sortedStories.length > 1}
               onDelete={async () => {
-                if (await confirm({ title: `Delete "${getStoryDisplayName(story.name)}"?`, description: 'This permanently deletes the story and all its fragments.', confirmText: 'Delete', destructive: true })) {
+                if (await confirm({ title: `${t('storyLibrary.delete')} "${getStoryDisplayName(story.name)}"?`, description: t('storyLibrary.deleteDescription'), confirmText: t('storyLibrary.delete'), destructive: true })) {
                   deleteMutation.mutate(story.id)
                 }
               }}
@@ -751,8 +755,8 @@ function StoryListPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 px-16 py-12">
             <Upload className="size-8 text-primary/50" />
-            <p className="text-sm font-medium text-primary/70">Drop to import</p>
-            <p className="text-xs text-muted-foreground">Story archive (.zip), character card (.json / .png)</p>
+            <p className="text-sm font-medium text-primary/70">{t('storyLibrary.dropToImport')}</p>
+            <p className="text-xs text-muted-foreground">{t('storyLibrary.dropImportHint')}</p>
           </div>
         </div>
       )}
@@ -764,7 +768,7 @@ function StoryListPage() {
           <button
             onClick={() => setDropError(null)}
             className="ml-1 shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Dismiss"
+            aria-label={t('storyLibrary.dismiss')}
           >
             <X className="size-4" />
           </button>
@@ -777,13 +781,13 @@ function StoryListPage() {
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
         <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle className="font-display text-xl">Settings</DialogTitle>
+            <DialogTitle className="font-display text-xl">{t('sidebar.settings')}</DialogTitle>
           </DialogHeader>
           <div className="mt-1 min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
             <section>
-              <SectionHeading label="Appearance" />
+              <SectionHeading label={t('settings.appearance.heading')} />
               <div className="mt-2 grid grid-cols-3 gap-2">
-                {THEME_OPTIONS.map(({ value, label, Icon }) => (
+                {THEME_OPTIONS.map(({ value, labelKey, Icon }) => (
                   <button
                     key={value}
                     type="button"
@@ -797,30 +801,30 @@ function StoryListPage() {
                     }`}
                   >
                     <Icon className="size-4" />
-                    {label}
+                    {t(labelKey)}
                   </button>
                 ))}
               </div>
               <SettingsCard className="mt-3">
-                <SettingRow label="Interaction sounds" description="Play subtle feedback for controls">
+                <SettingRow label={t('settings.appearance.interactionSounds')} description={t('settings.appearance.interactionSoundsDescription')}>
                   <Toggle
                     checked={interactionSounds}
                     onChange={setInteractionSounds}
-                    label="Toggle interaction sounds"
+                    label={t('settings.appearance.toggleInteractionSounds')}
                   />
                 </SettingRow>
               </SettingsCard>
             </section>
 
             <section>
-              <SectionHeading label="LLM providers" />
+              <SectionHeading label={t('storyLibrary.llmProviders')} />
               <div className="mt-2">
                 <ProviderList onManage={() => { setShowSettings(false); setShowProviders(true) }} />
               </div>
             </section>
 
             <section>
-              <SectionHeading label="Story presets" />
+              <SectionHeading label={t('storyLibrary.storyPresets')} />
               <div className="mt-2">
                 <PresetManager />
               </div>
@@ -830,7 +834,7 @@ function StoryListPage() {
             <AboutSection />
 
             <section>
-              <SectionHeading label="Setup" />
+              <SectionHeading label={t('storyLibrary.setup')} />
               <Button
                 type="button"
                 variant="outline"
@@ -841,7 +845,7 @@ function StoryListPage() {
                 }}
               >
                 <Sparkles className="size-3.5" />
-                Run setup wizard
+                {t('storyLibrary.runSetupWizard')}
               </Button>
             </section>
           </div>
@@ -857,6 +861,7 @@ function StoryListPage() {
 
 function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: () => void; isRecent?: boolean }) {
   const queryClient = useQueryClient()
+  const { language, t } = useLanguage()
   const coverInputRef = useRef<HTMLInputElement>(null)
 
   const { data: fragments } = useQuery({
@@ -938,8 +943,8 @@ function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: 
           )}
           {isRecent && (
             <span className="absolute bottom-2 left-2 rounded-full bg-background/90 px-2 py-0.5 text-[0.625rem] font-medium text-foreground/75 sm:bottom-auto sm:top-2">
-              <span className="sm:hidden">Recent</span>
-              <span className="hidden sm:inline">Last opened</span>
+              <span className="sm:hidden">{t('storyLibrary.recent')}</span>
+              <span className="hidden sm:inline">{t('storyLibrary.lastOpened')}</span>
             </span>
           )}
         </div>
@@ -958,25 +963,25 @@ function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: 
             {hasStats ? (
               <>
                 {stats.prose > 0 && (
-                  <span className="flex items-center gap-1" title={`${stats.prose} passage${stats.prose !== 1 ? 's' : ''}`}>
+                  <span className="flex items-center gap-1" title={`${stats.prose} ${stats.prose === 1 ? t('storyLibrary.passageOne') : t('storyLibrary.passageMany')}`}>
                     <BookOpen className="size-3" />
                     {stats.prose}
                   </span>
                 )}
                 {stats.characters > 0 && (
-                  <span className="flex items-center gap-1" title={`${stats.characters} character${stats.characters !== 1 ? 's' : ''}`}>
+                  <span className="flex items-center gap-1" title={`${stats.characters} ${stats.characters === 1 ? t('storyLibrary.characterOne') : t('storyLibrary.characterMany')}`}>
                     <Users className="size-3" />
                     {stats.characters}
                   </span>
                 )}
                 {stats.knowledge > 0 && (
-                  <span className="flex items-center gap-1" title={`${stats.knowledge} knowledge`}>
+                  <span className="flex items-center gap-1" title={`${stats.knowledge} ${t('storyLibrary.knowledge')}`}>
                     <Globe className="size-3" />
                     {stats.knowledge}
                   </span>
                 )}
                 {stats.guidelines > 0 && (
-                  <span className="flex items-center gap-1" title={`${stats.guidelines} guideline${stats.guidelines !== 1 ? 's' : ''}`}>
+                  <span className="flex items-center gap-1" title={`${stats.guidelines} ${stats.guidelines === 1 ? t('storyLibrary.guidelineOne') : t('storyLibrary.guidelineMany')}`}>
                     <Scroll className="size-3" />
                     {stats.guidelines}
                   </span>
@@ -984,7 +989,7 @@ function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: 
               </>
             ) : null}
             <span className="ml-auto">
-              {new Date(story.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {new Date(story.updatedAt).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' })}
             </span>
           </div>
         </div>
@@ -994,8 +999,8 @@ function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: 
       <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
         <button
           className="grid size-11 place-items-center rounded-full bg-black/60 text-white/90 transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-7"
-          title="Set cover image"
-          aria-label={`Set cover image for ${displayName}`}
+          title={t('storyLibrary.setCoverImage')}
+          aria-label={`${t('storyLibrary.setCoverImageFor')} ${displayName}`}
           onClick={() => coverInputRef.current?.click()}
         >
           <Camera className="size-4 sm:size-3.5" />
@@ -1003,8 +1008,8 @@ function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: 
         {hasCover && (
           <button
             className="grid size-11 place-items-center rounded-full bg-black/60 text-white/90 transition-colors hover:bg-black/80 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-7"
-            title="Remove cover"
-            aria-label={`Remove cover image from ${displayName}`}
+            title={t('storyLibrary.removeCover')}
+            aria-label={`${t('storyLibrary.removeCoverFrom')} ${displayName}`}
             onClick={() => updateCoverMutation.mutate(null)}
           >
             <X className="size-4 sm:size-3.5" />
@@ -1012,8 +1017,8 @@ function StoryCard({ story, onDelete, isRecent }: { story: StoryMeta; onDelete: 
         )}
         <button
           className="grid size-11 place-items-center rounded-full bg-black/60 text-white/90 transition-colors hover:bg-red-600/85 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-7"
-          title={`Delete "${displayName}"`}
-          aria-label={`Delete ${displayName}`}
+          title={`${t('storyLibrary.delete')} "${displayName}"`}
+          aria-label={`${t('storyLibrary.delete')} ${displayName}`}
           data-component-id={`story-${story.id}-delete-button`}
           onClick={onDelete}
         >

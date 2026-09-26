@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLanguage } from '@/lib/i18n'
 
 interface ProseInlineEditorProps {
   content: string
@@ -17,6 +18,7 @@ interface ProseInlineEditorProps {
  * Ctrl/Cmd+Enter saves, Esc cancels. Saving with unchanged text just closes.
  */
 export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCancel }: ProseInlineEditorProps) {
+  const { t } = useLanguage()
   const [draft, setDraft] = useState(content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dirty = draft !== content
@@ -78,7 +80,7 @@ export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCan
         onChange={(e) => setDraft(e.target.value)}
         disabled={saving}
         spellCheck
-        aria-label="Edit passage"
+        aria-label={t('proseInlineEditor.editPassage')}
         className="prose-content w-full resize-none overflow-hidden bg-transparent p-0 text-foreground outline-none border-none caret-primary disabled:opacity-60"
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); onCancel(); return }
@@ -87,7 +89,7 @@ export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCan
       />
       <div className="mt-3 flex items-center gap-2 border-t border-border/20 pt-2">
         <span className="text-[0.6rem] font-mono tracking-wide text-muted-foreground/50">
-          {saving ? 'SAVING' : 'CTRL+ENTER · CLICK AWAY TO SAVE · ESC'}
+          {saving ? t('proseInlineEditor.saving') : t('proseInlineEditor.shortcutHint')}
         </span>
         <button
           type="button"
@@ -95,7 +97,7 @@ export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCan
           onClick={onCancel}
           disabled={saving}
         >
-          Cancel
+          {t('proseInlineEditor.cancel')}
         </button>
         <button
           type="button"
@@ -103,7 +105,7 @@ export function ProseInlineEditor({ content, initialCaret, saving, onSave, onCan
           onClick={commit}
           disabled={saving || !dirty}
         >
-          Save
+          {t('proseInlineEditor.save')}
         </button>
       </div>
     </div>

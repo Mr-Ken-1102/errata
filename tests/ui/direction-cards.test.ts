@@ -43,6 +43,7 @@ vi.mock('@/lib/api', () => ({
 
 import { InlineGenerationInput } from '@/components/prose/InlineGenerationInput'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { withLanguageProvider } from './test-providers'
 
 const DIRECTION = {
   title: 'Aftermath',
@@ -63,24 +64,26 @@ const DIRECTION = {
  * button focuses it, and focus expands the card, so the live state already reads
  * "open" by the time the click handler runs.
  */
-describe('direction card activation', () => {
+describe('direction card activation', { timeout: 15_000 }, () => {
   let onGenerationStart: ReturnType<typeof vi.fn>
 
   async function renderCards() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const view = render(React.createElement(
-      QueryClientProvider,
-      { client },
-      // The app mounts one of these near the root; Radix throws without it.
-      React.createElement(TooltipProvider, null, React.createElement(InlineGenerationInput, {
-        storyId: 'story-test',
-        isGenerating: false,
-        latestFragmentId: 'frag-head',
-        onGenerationStart,
-        onGenerationStream: () => undefined,
-        onGenerationComplete: () => undefined,
-        onGenerationError: () => undefined,
-      })),
+    const view = render(withLanguageProvider(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        // The app mounts one of these near the root; Radix throws without it.
+        React.createElement(TooltipProvider, null, React.createElement(InlineGenerationInput, {
+          storyId: 'story-test',
+          isGenerating: false,
+          latestFragmentId: 'frag-head',
+          onGenerationStart,
+          onGenerationStream: () => undefined,
+          onGenerationComplete: () => undefined,
+          onGenerationError: () => undefined,
+        })),
+      ),
     ))
     // Generous windows: the cards arrive behind mocked queries, and the default
     // 1s is tight enough to flake when the whole suite runs in parallel.
@@ -175,6 +178,7 @@ describe('direction card activation', () => {
   it('commits on the second press', async () => {
     await renderCards()
     press(body())
+    await waitFor(() => expect(body().getAttribute('aria-expanded')).toBe('true'), { timeout: 10_000 })
     press(body())
 
     expect(onGenerationStart).toHaveBeenCalledWith(DIRECTION.instruction)
