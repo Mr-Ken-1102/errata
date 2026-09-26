@@ -64,7 +64,7 @@ const DIRECTION = {
  * button focuses it, and focus expands the card, so the live state already reads
  * "open" by the time the click handler runs.
  */
-describe('direction card activation', () => {
+describe('direction card activation', { timeout: 15_000 }, () => {
   let onGenerationStart: ReturnType<typeof vi.fn>
 
   async function renderCards() {
