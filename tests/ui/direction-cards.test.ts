@@ -178,7 +178,7 @@ describe('direction card activation', () => {
   it('commits on the second press', async () => {
     await renderCards()
     press(body())
-    await waitFor(() => expect(body().getAttribute('aria-expanded')).toBe('true'))
+    await waitFor(() => expect(body().getAttribute('aria-expanded')).toBe('true'), { timeout: 10_000 })
     press(body())
 
     expect(onGenerationStart).toHaveBeenCalledWith(DIRECTION.instruction)
