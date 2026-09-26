@@ -11,6 +11,7 @@ interface SamplingNumberInputProps {
   disabled?: boolean
   placeholder?: string
   title: string
+  invalidTitle?: string
   className?: string
 }
 
@@ -28,6 +29,7 @@ export function SamplingNumberInput({
   disabled,
   placeholder,
   title,
+  invalidTitle,
   className,
 }: SamplingNumberInputProps) {
   const [draft, setDraft] = useState(() => formatValue(value))
@@ -94,7 +96,7 @@ export function SamplingNumberInput({
       }}
       disabled={disabled}
       placeholder={placeholder}
-      title={invalid ? `Enter a value from ${min} to ${max}${integer ? ' using a whole number' : ''}.` : title}
+      title={invalid ? (invalidTitle ?? `Enter a value from ${min} to ${max}${integer ? ' using a whole number' : ''}.`) : title}
       aria-invalid={invalid || undefined}
       className={cn(
         'h-[26px] px-1.5 text-[0.6875rem] font-mono text-center bg-background border border-border/40 rounded-md focus:border-foreground/20 focus:outline-none placeholder:text-muted-foreground/50',

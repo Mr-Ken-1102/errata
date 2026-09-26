@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import type { ActiveAgent } from '@/lib/api/agents'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { getAgentMeta } from '@/components/agents/agent-meta'
+import { useLanguage } from '@/lib/i18n'
 
 // ── Wisp state management ───────────────────────────────
 
@@ -24,6 +25,7 @@ function formatElapsed(startedAt: string): string {
 // ── Component ───────────────────────────────────────────
 
 export function AgentActivityIndicator({ storyId }: { storyId: string }) {
+  const { t } = useLanguage()
   const [wisps, setWisps] = useState<WispState[]>([])
   const prevIdsRef = useRef(new Set<string>())
 
@@ -81,7 +83,7 @@ export function AgentActivityIndicator({ storyId }: { storyId: string }) {
     <div
       role="status"
       aria-live="polite"
-      aria-label="Agent activity"
+      aria-label={t('agentActivity.label')}
       className="absolute z-20 flex flex-col-reverse items-start gap-2.5 pointer-events-auto bottom-[calc(1rem+env(safe-area-inset-bottom))] left-[calc(1rem+env(safe-area-inset-left))]"
     >
       {wisps.map((wisp, i) => (

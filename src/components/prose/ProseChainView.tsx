@@ -18,6 +18,7 @@ import { formatDialogue } from '@/lib/fragment-mentions'
 import { onActiveBranchChanged, invalidateStoryContent } from '@/lib/branch-cache'
 import { qk, q, useActiveBranchId } from '@/lib/query-keys'
 import { createGenerationStreamStore, EMPTY_STREAM_SNAPSHOT, type GenerationStreamStore } from './generation-stream-store'
+import { useLanguage } from '@/lib/i18n'
 
 interface ProseChainViewProps {
   storyId: string
@@ -63,9 +64,13 @@ function estimateProseRowSize(content: string | undefined): number {
 const InsertChapterDivider = memo(function InsertChapterDivider({
   storyId,
   position,
+  insertLabel,
+  chapterLabel,
 }: {
   storyId: string
   position: number
+  insertLabel: string
+  chapterLabel: string
 }) {
   const queryClient = useQueryClient()
   const createMutation = useMutation({
@@ -82,13 +87,13 @@ const InsertChapterDivider = memo(function InsertChapterDivider({
       type="button"
       onClick={() => createMutation.mutate()}
       disabled={createMutation.isPending}
-      aria-label="Insert chapter marker here"
+      aria-label={insertLabel}
       className="group/insert min-h-6 w-full flex items-center gap-3 py-1.5 my-0.5 transition-opacity focus-visible:outline-none focus-visible:opacity-100"
     >
       <span aria-hidden className="flex-1 h-px bg-border/30 group-hover/insert:bg-primary/40 transition-colors" />
       <span className="text-[0.6875rem] font-display italic text-muted-foreground group-hover/insert:text-foreground transition-colors whitespace-nowrap flex items-center gap-1.5">
         <Bookmark className="size-2.5 text-muted-foreground group-hover/insert:text-primary transition-colors" aria-hidden />
-        <span>chapter</span>
+        <span>{chapterLabel}</span>
       </span>
       <span aria-hidden className="flex-1 h-px bg-border/30 group-hover/insert:bg-primary/40 transition-colors" />
     </button>
@@ -159,6 +164,18 @@ export function ProseChainView({
   onLaunchWizard,
   onAskLibrarian,
 }: ProseChainViewProps) {
+  const { t } = useLanguage()
+  const outlineLabels = {
+    passages: t('proseOutline.passages'),
+    exitReorderMode: t('proseOutline.exitReorderMode'),
+    reorderSections: t('proseOutline.reorderSections'),
+    addChapter: t('proseOutline.addChapter'),
+    closePassages: t('proseOutline.closePassages'),
+    noChaptersHint: t('proseOutline.noChaptersHint'),
+    addFirstChapter: t('proseOutline.addFirstChapter'),
+    jumpToLatestPassage: t('proseOutline.jumpToLatestPassage'),
+    jumpToLatest: t('proseOutline.jumpToLatest'),
+  }
 
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
@@ -935,7 +952,14 @@ export function ProseChainView({
 
     return (
       <>
-        {idx === 0 && !isMarker && <InsertChapterDivider storyId={storyId} position={0} />}
+        {idx === 0 && !isMarker && (
+          <InsertChapterDivider
+            storyId={storyId}
+            position={0}
+            insertLabel={t('proseChain.insertChapterMarker')}
+            chapterLabel={t('proseChain.chapterLabel')}
+          />
+        )}
         {isMarker ? (
           <ChapterMarker
             storyId={storyId}
@@ -974,7 +998,12 @@ export function ProseChainView({
           />
         )}
         {!isMarker && !nextIsMarker && (
-          <InsertChapterDivider storyId={storyId} position={idx + 1} />
+          <InsertChapterDivider
+            storyId={storyId}
+            position={idx + 1}
+            insertLabel={t('proseChain.insertChapterMarker')}
+            chapterLabel={t('proseChain.chapterLabel')}
+          />
         )}
       </>
     )
@@ -1031,10 +1060,10 @@ export function ProseChainView({
             ) : !showPendingGeneration ? (
               <div className="flex flex-col items-center justify-center py-20 text-center" data-component-id="prose-empty-state">
                 <p className="font-display text-2xl italic text-muted-foreground mb-2">
-                  The page awaits.
+                  {t('proseChain.emptyTitle')}
                 </p>
                 <Hint size="sm" className="mb-8 max-w-xs leading-relaxed">
-                  Write your first passage below, or let the wizard help you set up your story.
+                  {t('proseChain.emptyHint')}
                 </Hint>
                 {onLaunchWizard && (
                   <button
@@ -1042,7 +1071,7 @@ export function ProseChainView({
                     className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl border-2 border-primary/20 bg-primary/[0.04] text-sm font-medium text-primary/80 hover:text-primary hover:border-primary/40 hover:bg-primary/[0.08] transition-all duration-200"
                   >
                     <Wand2 className="size-4" />
-                    <span>Story Setup Wizard</span>
+                    <span>{t('proseChain.storySetupWizard')}</span>
                   </button>
                 )}
               </div>
@@ -1146,6 +1175,7 @@ export function ProseChainView({
             activeIndex={activeIndex}
             open={outlineOpen ?? true}
             onJump={scrollToIndex}
+            labels={outlineLabels}
           />
         </div>
       )}
@@ -1157,8 +1187,8 @@ export function ProseChainView({
           <button
             type="button"
             onClick={() => setMobileTocOpen(true)}
-            title="Passages"
-            aria-label="Open passages outline"
+            title={t('proseChain.passages')}
+            aria-label={t('proseChain.openPassagesOutline')}
             data-component-id="prose-mobile-toc-trigger"
             className="md:hidden absolute top-3 right-14 z-20 flex items-center justify-center size-9 rounded-md bg-background/80 backdrop-blur-sm border border-border/40 shadow-sm text-muted-foreground hover:text-foreground transition-colors"
           >
@@ -1176,6 +1206,7 @@ export function ProseChainView({
                 activeIndex={activeIndex}
                 open
                 mobile
+                labels={outlineLabels}
                 onClose={() => setMobileTocOpen(false)}
                 onJump={(i) => { scrollToIndex(i); setMobileTocOpen(false) }}
               />

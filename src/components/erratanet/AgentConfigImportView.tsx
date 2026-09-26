@@ -21,6 +21,7 @@ import {
   selectedScripts,
   type AgentConfigSelectionState,
 } from './AgentConfigSelector'
+import { useLanguage } from '@/lib/i18n'
 
 interface AgentConfigImportViewProps {
   id: string
@@ -42,6 +43,7 @@ function humanizeAgent(name: string): string {
  */
 export function AgentConfigImportView({ id, version, storyId }: AgentConfigImportViewProps) {
   const qc = useQueryClient()
+  const { t } = useLanguage()
   const idParts = useMemo(() => parseGlobalPackId(id), [id])
 
   const { data, isLoading, error } = useQuery<AgentConfigInspectResponse>({
@@ -118,7 +120,7 @@ export function AgentConfigImportView({ id, version, storyId }: AgentConfigImpor
   if (error || !data || data.error) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-destructive">
-        {data?.error ?? (error instanceof Error ? error.message : 'Could not load this configuration.')}
+        {data?.error ?? (error instanceof Error ? error.message : t('erratanet.agentConfig.loadConfigFailed'))}
       </div>
     )
   }
@@ -133,10 +135,10 @@ export function AgentConfigImportView({ id, version, storyId }: AgentConfigImpor
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="font-display text-xl leading-tight">{manifest.title}</h3>
-              <Badge variant="secondary" className="h-4 text-[0.625rem]">agent config</Badge>
+              <Badge variant="secondary" className="h-4 text-[0.625rem]">{t('erratanet.agentConfig.agentConfigBadge')}</Badge>
               {summary.hasScripts && (
                 <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 px-1.5 py-0.5 font-mono text-[0.625rem] lowercase tracking-wide text-amber-600 dark:text-amber-400">
-                  <Code2 className="size-3" /> runs code
+                  <Code2 className="size-3" /> {t('erratanet.agentConfig.runsCode')}
                 </span>
               )}
             </div>
@@ -155,7 +157,7 @@ export function AgentConfigImportView({ id, version, storyId }: AgentConfigImpor
               {/* Choose what to apply — down to individual agents and blocks. */}
               <div>
                 <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">
-                  Choose what to apply
+                  {t('erratanet.agentConfig.chooseWhatToApply')}
                 </span>
                 <div className="mt-2">
                   <AgentConfigSelector preview={preview} value={selection} onChange={setSelection} />
@@ -171,30 +173,30 @@ export function AgentConfigImportView({ id, version, storyId }: AgentConfigImpor
 
               {/* Targets */}
               <div className="space-y-2">
-                <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">Apply</span>
+                <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">{t('erratanet.agentConfig.apply')}</span>
                 {storyId ? (
                   <TargetToggle
                     on={applyToStory}
                     onToggle={() => setApplyToStory((v) => !v)}
-                    title="Apply to this story"
-                    subtitle="Overlay these blocks and model assignments onto the open story."
+                    title={t('erratanet.agentConfig.applyToThisStory')}
+                    subtitle={t('erratanet.agentConfig.applyToThisStoryDescription')}
                   />
                 ) : (
                   <p className="rounded-md border border-border/30 px-3 py-2 text-xs text-muted-foreground">
-                    Open a story to apply a config directly. You can still save it as a preset.
+                    {t('erratanet.agentConfig.openStoryToApply')}
                   </p>
                 )}
                 <TargetToggle
                   on={savePreset}
                   onToggle={() => setSavePreset((v) => !v)}
-                  title="Save as a preset"
-                  subtitle="Keep it to reuse across any story later."
+                  title={t('erratanet.agentConfig.saveAsPreset')}
+                  subtitle={t('erratanet.agentConfig.saveAsPresetDescription')}
                 />
                 {savePreset && (
                   <Input
                     value={presetName}
                     onChange={(e) => setPresetName(e.target.value)}
-                    placeholder={manifest.title || 'Preset name'}
+                    placeholder={manifest.title || t('erratanet.agentConfig.presetName')}
                     className="h-9"
                   />
                 )}
@@ -202,7 +204,7 @@ export function AgentConfigImportView({ id, version, storyId }: AgentConfigImpor
 
               {applyMut.error && (
                 <p className="text-xs text-destructive">
-                  {applyMut.error instanceof Error ? applyMut.error.message : 'Apply failed.'}
+                  {applyMut.error instanceof Error ? applyMut.error.message : t('erratanet.agentConfig.applyFailed')}
                 </p>
               )}
             </>
@@ -214,7 +216,7 @@ export function AgentConfigImportView({ id, version, storyId }: AgentConfigImpor
         <div className="flex items-center justify-end gap-2 border-t border-border/50 px-6 py-4">
           <Button onClick={() => applyMut.mutate()} disabled={!canApply} className="gap-1.5">
             {applyMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-            {applyToStory && savePreset ? 'Apply & save preset' : savePreset ? 'Save preset' : 'Apply to story'}
+            {applyToStory && savePreset ? t('erratanet.agentConfig.applyAndSave') : savePreset ? t('erratanet.agentConfig.savePreset') : t('erratanet.agentConfig.applyToStory')}
           </Button>
         </div>
       )}
@@ -232,16 +234,17 @@ function ScriptConsent({
   consent: boolean
   onConsent: (v: boolean) => void
 }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   return (
     <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
       <p className="flex items-center gap-2 text-[0.8125rem] font-medium text-foreground">
         <Code2 className="size-4 text-amber-500" />
-        This configuration runs code
+        {t('erratanet.agentConfig.configurationRunsCode')}
       </p>
       <p className="mt-1 text-[0.6875rem] leading-snug text-muted-foreground">
-        You&apos;ve selected {scripts.length} executable script {scripts.length === 1 ? 'block' : 'blocks'}.
-        Read the source below before you apply it. Only adopt configs from authors you trust.
+        {t('erratanet.agentConfig.selectedScriptsPrefix')} {scripts.length} {scripts.length === 1 ? t('erratanet.agentConfig.block') : t('erratanet.agentConfig.blocks')}.
+        {t('erratanet.agentConfig.reviewSourceWarning')}
       </p>
 
       <button
@@ -250,7 +253,7 @@ function ScriptConsent({
         className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] text-foreground/80 hover:text-foreground"
       >
         <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-        {open ? 'Hide' : 'Review'} script source
+        {open ? t('erratanet.agentConfig.hide') : t('erratanet.agentConfig.review')} {t('erratanet.agentConfig.scriptSource')}
       </button>
 
       {open && (
@@ -277,7 +280,7 @@ function ScriptConsent({
           className="mt-0.5 size-3.5 accent-primary"
           data-component-id="agent-config-consent"
         />
-        <span>I understand this configuration runs code, and I&apos;ve reviewed it.</span>
+        <span>{t('erratanet.agentConfig.consentText')}</span>
       </label>
     </div>
   )
@@ -315,34 +318,33 @@ function TargetToggle({
 }
 
 function ApplyResultPanel({ result }: { result: { applied?: AgentConfigApplyResult; presetId?: string } }) {
+  const { t } = useLanguage()
   const a = result.applied
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2.5 text-sm text-foreground">
         <Check className="size-4 text-primary" />
-        Done.
+        {t('erratanet.agentConfig.done')}
       </div>
       <ul className="space-y-1.5 text-[0.8125rem] text-muted-foreground">
         {a && a.agentsApplied.length > 0 && (
-          <li>Applied blocks for <span className="text-foreground">{a.agentsApplied.map(humanizeAgent).join(', ')}</span>.</li>
+          <li>{t('erratanet.agentConfig.appliedBlocksFor')} <span className="text-foreground">{a.agentsApplied.map(humanizeAgent).join(', ')}</span>.</li>
         )}
         {a && a.modelRolesApplied.length > 0 && (
-          <li>Set model assignments for <span className="text-foreground">{a.modelRolesApplied.map(humanizeAgent).join(', ')}</span>.</li>
+          <li>{t('erratanet.agentConfig.setModelAssignmentsFor')} <span className="text-foreground">{a.modelRolesApplied.map(humanizeAgent).join(', ')}</span>.</li>
         )}
-        {result.presetId && <li>Saved as a preset you can reuse from any story.</li>}
+        {result.presetId && <li>{t('erratanet.agentConfig.savedReusablePreset')}</li>}
       </ul>
 
       {a && a.modelRolesNeedingProvider.length > 0 && (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[0.6875rem] text-muted-foreground">
-          Some roles ({a.modelRolesNeedingProvider.map(humanizeAgent).join(', ')}) reference a provider you
-          don&apos;t have yet. Add it in Settings → Providers and the model picks up automatically.
+          {t('erratanet.agentConfig.someRolesPrefix')} ({a.modelRolesNeedingProvider.map(humanizeAgent).join(', ')}) {t('erratanet.agentConfig.needProviderSuffix')}
         </p>
       )}
       {a && a.suggestedProviders.length > 0 && (
         <p className="rounded-md border border-border/30 px-3 py-2 text-[0.6875rem] text-muted-foreground">
-          This config was tuned for{' '}
-          {a.suggestedProviders.map((p) => `${p.name} (${p.defaultModel})`).join(', ')}. Add your API key
-          in Settings → Providers to match it.
+          {t('erratanet.agentConfig.tunedFor')}{' '}
+          {a.suggestedProviders.map((p) => `${p.name} (${p.defaultModel})`).join(', ')}. {t('erratanet.agentConfig.addApiKeyToMatch')}
         </p>
       )}
     </div>

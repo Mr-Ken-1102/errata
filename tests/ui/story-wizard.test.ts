@@ -3,6 +3,7 @@ import { renderToString } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import { StoryWizard } from '@/components/wizard/StoryWizard'
+import { withLanguageProvider } from './test-providers'
 import type { StorySetupController } from '@/components/wizard/use-story-setup-controller'
 
 const controller: StorySetupController = {
@@ -28,10 +29,12 @@ describe('StoryWizard', () => {
     })
 
     const html = renderToString(
-      React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        React.createElement(StoryWizard, { controller, onComplete: () => undefined }),
+      withLanguageProvider(
+        React.createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          React.createElement(StoryWizard, { controller, onComplete: () => undefined }),
+        ),
       ),
     )
 

@@ -12,6 +12,7 @@ import {
   STORY_SETUP_CHECKLIST,
   type StorySetupController,
 } from './use-story-setup-controller'
+import { useLanguage } from '@/lib/i18n'
 
 interface StoryWizardProps {
   controller: StorySetupController
@@ -19,13 +20,24 @@ interface StoryWizardProps {
 }
 
 const STARTING_POINTS = [
-  { label: 'A premise', message: 'I have a premise, but it is still rough.' },
-  { label: 'A character', message: 'I want to begin with a character.' },
-  { label: 'A scene', message: 'I have a scene I can picture.' },
-  { label: 'Only a mood', message: 'I only have a mood or feeling so far.' },
+  { label: 'A premise', labelKey: 'storyWizard.start.premise', message: 'I have a premise, but it is still rough.' },
+  { label: 'A character', labelKey: 'storyWizard.start.character', message: 'I want to begin with a character.' },
+  { label: 'A scene', labelKey: 'storyWizard.start.scene', message: 'I have a scene I can picture.' },
+  { label: 'Only a mood', labelKey: 'storyWizard.start.mood', message: 'I only have a mood or feeling so far.' },
 ] as const
 
+const CHECKLIST_LABEL_KEYS = {
+  'starting-point': 'storyWizard.checklist.startingPoint',
+  premise: 'storyWizard.checklist.premise',
+  characters: 'storyWizard.checklist.characters',
+  goal: 'storyWizard.checklist.goal',
+  setting: 'storyWizard.checklist.setting',
+  voice: 'storyWizard.checklist.voice',
+  opening: 'storyWizard.checklist.opening',
+} as const
+
 function AssistantTurn({ content, streaming = false }: { content: string; streaming?: boolean }) {
+  const { t } = useLanguage()
   return (
     <article className="flex items-start gap-3 sm:gap-4" data-component-id="story-setup-assistant-turn">
       <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center text-primary/75" aria-hidden>
@@ -36,7 +48,7 @@ function AssistantTurn({ content, streaming = false }: { content: string; stream
         {content ? (
           <StreamMarkdown content={content} streaming={streaming} variant="prose" />
         ) : (
-          <div className="flex h-7 items-center gap-1.5 text-muted-foreground" aria-label="Errata is thinking">
+          <div className="flex h-7 items-center gap-1.5 text-muted-foreground" aria-label={t('storyWizard.errataThinking')}>
             <span className="size-1 rounded-full bg-current motion-safe:animate-wisp-breathe" />
             <span className="size-1 rounded-full bg-current motion-safe:animate-wisp-breathe [animation-delay:180ms]" />
             <span className="size-1 rounded-full bg-current motion-safe:animate-wisp-breathe [animation-delay:360ms]" />
@@ -48,9 +60,10 @@ function AssistantTurn({ content, streaming = false }: { content: string; stream
 }
 
 function WriterTurn({ content }: { content: string }) {
+  const { t } = useLanguage()
   return (
     <article className="ml-10 sm:ml-11" data-component-id="story-setup-writer-turn">
-      <p className="mb-1.5 text-xs font-medium text-muted-foreground">You</p>
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t('storyWizard.you')}</p>
       <p className="max-w-[68ch] whitespace-pre-wrap rounded-lg bg-muted/45 px-4 py-3 font-prose text-[0.95rem] leading-6 text-foreground sm:text-base">
         {content}
       </p>
@@ -59,21 +72,22 @@ function WriterTurn({ content }: { content: string }) {
 }
 
 function ChecklistStatus({ status }: { status: StorySetupChecklistItem['status'] }) {
+  const { t } = useLanguage()
   if (status === 'covered') {
     return (
-      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground" aria-label="Covered">
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground" aria-label={t('storyWizard.covered')}>
         <Check className="size-2.5" aria-hidden />
       </span>
     )
   }
   if (status === 'partial') {
     return (
-      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary" aria-label="Partly covered">
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary" aria-label={t('storyWizard.partlyCovered')}>
         <Minus className="size-2.5" aria-hidden />
       </span>
     )
   }
-  return <Circle className="size-4 shrink-0 text-muted-foreground/45" aria-label="Not covered yet" />
+  return <Circle className="size-4 shrink-0 text-muted-foreground/45" aria-label={t('storyWizard.notCoveredYet')} />
 }
 
 function StorySetupRail({
@@ -85,6 +99,7 @@ function StorySetupRail({
   draftFragments: StorySetupDraftFragment[]
   updating: boolean
 }) {
+  const { t } = useLanguage()
   const covered = checklist.filter(item => item.status === 'covered').length
   const explored = checklist.filter(item => item.status !== 'missing').length
   const checklistByKey = new Map(checklist.map(item => [item.key, item]))
@@ -93,11 +108,11 @@ function StorySetupRail({
     <aside className="space-y-7 lg:sticky lg:top-8" data-component-id="story-setup-progress">
       <section aria-labelledby="story-checklist-heading">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 id="story-checklist-heading" className="text-sm font-semibold text-foreground">Story checklist</h2>
-          <span className="text-xs tabular-nums text-muted-foreground">{explored} of {STORY_SETUP_CHECKLIST.length} explored</span>
+          <h2 id="story-checklist-heading" className="text-sm font-semibold text-foreground">{t('storyWizard.storyChecklist')}</h2>
+          <span className="text-xs tabular-nums text-muted-foreground">{t('storyWizard.explored').replace('{explored}', String(explored)).replace('{total}', String(STORY_SETUP_CHECKLIST.length))}</span>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {covered} complete. Based on this conversation and existing story material; not a requirement.
+          {t('storyWizard.completeSummary').replace('{covered}', String(covered))}
         </p>
         <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-1">
           {STORY_SETUP_CHECKLIST.map(definition => {
@@ -111,7 +126,7 @@ function StorySetupRail({
                 <span className="mt-0.5"><ChecklistStatus status={item.status} /></span>
                 <div className="min-w-0">
                   <p className={`text-xs leading-5 ${item.status === 'missing' ? 'text-muted-foreground' : 'text-foreground/85'}`}>
-                    {definition.label}
+                    {t(CHECKLIST_LABEL_KEYS[definition.key])}
                   </p>
                   {item.note && <p className="line-clamp-2 text-[0.6875rem] leading-4 text-muted-foreground">{item.note}</p>}
                 </div>
@@ -123,15 +138,15 @@ function StorySetupRail({
 
       <section aria-labelledby="draft-fragments-heading">
         <div className="flex items-center justify-between gap-3">
-          <h2 id="draft-fragments-heading" className="text-sm font-semibold text-foreground">Story fragments</h2>
-          {updating && <span className="text-[0.6875rem] text-muted-foreground">Updating</span>}
+          <h2 id="draft-fragments-heading" className="text-sm font-semibold text-foreground">{t('storyWizard.storyFragments')}</h2>
+          {updating && <span className="text-[0.6875rem] text-muted-foreground">{t('storyWizard.updating')}</span>}
         </div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">Saved as the conversation develops. Open one to read it.</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('storyWizard.fragmentsSavedHint')}</p>
 
         {draftFragments.length === 0 ? (
           <div className="mt-4 flex items-start gap-2.5 text-xs leading-5 text-muted-foreground">
             <FileText className="mt-0.5 size-4 shrink-0 opacity-50" aria-hidden />
-            <p>Fragments will appear here as the idea takes shape.</p>
+            <p>{t('storyWizard.fragmentsAppear')}</p>
           </div>
         ) : (
           <div className="mt-3 divide-y divide-border/30 border-y border-border/30">
@@ -158,6 +173,7 @@ function StorySetupRail({
 }
 
 export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
+  const { t } = useLanguage()
   const {
     messages,
     input,
@@ -211,14 +227,14 @@ export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
           <div className="flex min-w-0 items-center gap-3">
             <ErrataMark size={22} className="shrink-0 text-primary" />
             <div className="min-w-0">
-              <h1 className="truncate font-display text-xl italic leading-tight sm:text-2xl">Shape your story</h1>
-              <p className="hidden text-xs text-muted-foreground sm:block">Talk it through; your story takes shape as you go.</p>
+              <h1 className="truncate font-display text-xl italic leading-tight sm:text-2xl">{t('storyWizard.title')}</h1>
+              <p className="hidden text-xs text-muted-foreground sm:block">{t('storyWizard.subtitle')}</p>
             </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <Button size="sm" onClick={onComplete}>Open story</Button>
-            <Button variant="ghost" size="icon-sm" onClick={onComplete} aria-label="Close story setup">
+            <Button size="sm" onClick={onComplete}>{t('storyWizard.openStory')}</Button>
+            <Button variant="ghost" size="icon-sm" onClick={onComplete} aria-label={t('storyWizard.closeSetup')}>
               <X className="size-4" aria-hidden />
             </Button>
           </div>
@@ -238,7 +254,7 @@ export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
 
                 {userTurnCount === 0 && !isStreaming && messages.some(message => message.role === 'assistant') && (
                   <div className="ml-10 space-y-3 sm:ml-11">
-                    <p className="text-xs text-muted-foreground">You can start anywhere</p>
+                    <p className="text-xs text-muted-foreground">{t('storyWizard.startAnywhere')}</p>
                     <div className="flex flex-wrap gap-2">
                       {STARTING_POINTS.map(point => (
                         <button
@@ -247,7 +263,7 @@ export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
                           onClick={() => send(point.message)}
                           className="rounded-md border border-border/50 px-3 py-2 text-sm text-foreground/75 transition-colors hover:border-foreground/30 hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                         >
-                          {point.label}
+                          {t(point.labelKey)}
                         </button>
                       ))}
                     </div>
@@ -262,7 +278,7 @@ export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
                       onClick={retry}
                       className="mt-2 font-medium underline underline-offset-4 hover:no-underline"
                     >
-                      Try the conversation again
+                      {t('storyWizard.retryConversation')}
                     </button>
                   </div>
                 )}
@@ -291,8 +307,8 @@ export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
                   disabled={isStreaming || !contextReady}
                   rows={1}
                   autoFocus
-                  aria-label="Your story idea"
-                  placeholder="Tell Errata whatever you have..."
+                  aria-label={t('storyWizard.ideaAria')}
+                  placeholder={t('storyWizard.placeholder')}
                   className="max-h-44 min-h-10 flex-1 resize-none border-0 bg-transparent px-2 py-2 font-prose text-base leading-6 shadow-none focus-visible:ring-0 placeholder:text-muted-foreground"
                 />
                 {isStreaming ? (
@@ -301,19 +317,19 @@ export function StoryWizard({ controller, onComplete }: StoryWizardProps) {
                     size="icon-sm"
                     variant="ghost"
                     onClick={stop}
-                    aria-label="Stop Errata"
+                    aria-label={t('storyWizard.stopErrata')}
                   >
                     <Square className="size-3 fill-current" aria-hidden />
                   </Button>
                 ) : (
-                  <Button type="submit" size="icon-sm" disabled={!contextReady || !input.trim()} aria-label="Send message">
+                  <Button type="submit" size="icon-sm" disabled={!contextReady || !input.trim()} aria-label={t('chat.sendMessage')}>
                     <ArrowUp className="size-4" aria-hidden />
                   </Button>
                 )}
               </div>
               <div className="mt-2 flex items-center justify-between gap-4 px-1 text-[0.6875rem] text-muted-foreground">
-                <p>Fragments are saved as the conversation develops.</p>
-                <p className="hidden sm:block">Enter to send, Shift+Enter for a new line</p>
+                <p>{t('storyWizard.fragmentsSavedFooter')}</p>
+                <p className="hidden sm:block">{t('storyWizard.sendHint')}</p>
               </div>
           </form>
         </div>

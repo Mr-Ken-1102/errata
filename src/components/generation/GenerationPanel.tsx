@@ -19,6 +19,7 @@ import { QuestionCard } from './QuestionCard'
 import { PovSelect } from './PovSelect'
 import { Send, Eye, Square, Bug, ArrowLeft } from 'lucide-react'
 import type { ChatEvent, ClarifyQuestion, Clarification, RunStatus } from '@/lib/api/types'
+import { useLanguage } from '@/lib/i18n'
 
 interface GenerationPanelProps {
   storyId: string
@@ -57,6 +58,7 @@ function readStoredContext(key: string): GenerationContext | null {
 }
 
 export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [input, setInput] = useState('')
@@ -180,7 +182,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
     }
 
     if (status === 'error') {
-      setError(message ?? 'Generation failed')
+      setError(message ?? t('generationPanel.failed'))
       persistContext(null)
       return
     }
@@ -199,7 +201,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
       setInput('')
     }
     persistContext(null)
-  }, [persistContext, queryClient, storyId])
+  }, [persistContext, queryClient, storyId, t])
 
   const run = useRunStream({
     storyId,
@@ -251,10 +253,10 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
           : api.generation.stream(storyId, genInput, undefined, opts)
       })
     } catch (runError) {
-      setError(runError instanceof Error ? runError.message : 'Generation failed')
+      setError(runError instanceof Error ? runError.message : t('generationPanel.failed'))
       persistContext(null)
     }
-  }, [branchId, isGenerating, persistContext, run.start, storyId])
+  }, [branchId, isGenerating, persistContext, run.start, storyId, t])
 
   const handleGenerate = useCallback((saveResult: boolean) => {
     if (isGenerating) return
@@ -285,7 +287,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
     <Panel data-component-id="generation-panel-root">
       <PanelHeader>
         <PanelHeaderText>
-          <PanelTitle>Generate</PanelTitle>
+          <PanelTitle>{t('generationPanel.title')}</PanelTitle>
         </PanelHeaderText>
         <PanelActions>
           <Button
@@ -296,12 +298,12 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
             data-component-id="generation-debug-toggle"
           >
             <Bug className="size-3" />
-            Debug
+            {t('generationPanel.debug')}
           </Button>
           {onBack && (
             <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={onBack} data-component-id="generation-back">
               <ArrowLeft className="size-3" />
-              Back
+              {t('generationPanel.back')}
             </Button>
           )}
         </PanelActions>
@@ -327,7 +329,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
 
           {run.isReconnecting && (
             <div className="px-6 py-2 text-xs text-muted-foreground bg-muted/20 border-b border-border/30">
-              Reconnecting — generation is still running on the server.
+              {t('generationPanel.reconnecting')}
             </div>
           )}
 
@@ -350,7 +352,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
             <Textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Describe what should happen next in the story..."
+              placeholder={t('generationPanel.placeholder')}
               className="min-h-[80px] resize-none text-sm bg-transparent placeholder:italic placeholder:text-muted-foreground"
               disabled={isGenerating || branchId === undefined}
               onKeyDown={(event) => {
@@ -370,7 +372,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
                 {isGenerating ? (
                   <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleStop} data-component-id="generation-stop">
                     <Square className="size-3" />
-                    Stop
+                    {t('generationPanel.stop')}
                   </Button>
                 ) : (
                   <>
@@ -382,7 +384,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
                       data-component-id="generation-submit"
                     >
                       <Send className="size-3" />
-                      Generate & Save
+                      {t('generationPanel.generateAndSave')}
                     </Button>
                     <Button
                       size="sm"
@@ -393,7 +395,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
                       data-component-id="generation-preview"
                     >
                       <Eye className="size-3" />
-                      Preview
+                      {t('generationPanel.preview')}
                     </Button>
                     <PovSelect
                       storyId={storyId}
@@ -404,7 +406,7 @@ export function GenerationPanel({ storyId, onBack }: GenerationPanelProps) {
                 )}
               </div>
               <span className="text-[0.625rem] text-muted-foreground">
-                Ctrl+Enter to generate & save
+                {t('generationPanel.shortcutHint')}
               </span>
             </div>
           </div>

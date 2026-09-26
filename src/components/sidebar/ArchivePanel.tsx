@@ -10,6 +10,7 @@ import { Undo2, Trash2, Archive } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { q, useActiveBranchId } from '@/lib/query-keys'
+import { useLanguage } from '@/lib/i18n'
 
 interface ArchivePanelProps {
   storyId: string
@@ -19,6 +20,7 @@ interface ArchivePanelProps {
 export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
   const queryClient = useQueryClient()
   const confirm = useConfirm()
+  const { t } = useLanguage()
   const branchId = useActiveBranchId(storyId)
   const [search, setSearch] = useState('')
 
@@ -50,7 +52,7 @@ export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
     <div className="flex flex-col h-full" data-component-id="archive-panel-root">
       <div className="px-3 py-3">
         <Input
-          placeholder="Search archive..."
+          placeholder={t('archive.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-8 text-xs bg-transparent"
@@ -69,8 +71,8 @@ export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
           {!isLoading && filtered.length === 0 && (
             <EmptyState
               icon={<Archive className="size-5" />}
-              title={search.trim() ? 'No matches' : 'Nothing archived'}
-              hint={search.trim() ? undefined : 'Archived fragments appear here — drag a fragment onto the archive, or send it here from its menu.'}
+              title={search.trim() ? t('archive.noMatches') : t('archive.nothingArchived')}
+              hint={search.trim() ? undefined : t('archive.emptyHint')}
               className="py-10"
             />
           )}
@@ -110,7 +112,7 @@ export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
                     restoreMutation.mutate(fragment.id)
                   }}
                   disabled={restoreMutation.isPending}
-                  title="Restore"
+                  title={t('archive.restore')}
                   data-component-id={componentId('archive', fragment.id, 'restore')}
                 >
                   <Undo2 className="size-3.5" />
@@ -121,12 +123,12 @@ export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
                   className="size-7 text-muted-foreground hover:text-destructive"
                   onClick={async (e) => {
                     e.stopPropagation()
-                    if (await confirm({ title: 'Permanently delete this fragment?', description: 'This cannot be undone.', confirmText: 'Delete', destructive: true })) {
+                    if (await confirm({ title: t('archive.deleteConfirmTitle'), description: t('archive.deleteConfirmDescription'), confirmText: t('archive.delete'), destructive: true })) {
                       deleteMutation.mutate(fragment.id)
                     }
                   }}
                   disabled={deleteMutation.isPending}
-                  title="Delete permanently"
+                  title={t('archive.deletePermanently')}
                   data-component-id={componentId('archive', fragment.id, 'delete')}
                 >
                   <Trash2 className="size-3.5" />

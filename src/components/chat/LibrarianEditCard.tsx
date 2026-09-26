@@ -5,6 +5,7 @@ import { q, useActiveBranchId } from '@/lib/query-keys'
 import { diffRows } from '@/lib/diff'
 import { DiffRowsView } from '@/components/DiffRowsView'
 import { FilePlus2, FilePenLine, Archive, Undo2, Loader2, Check, AlertCircle } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 /** Minimal shape of the operation validations echoed by the apply tool result. */
 interface AppliedOperation {
@@ -89,6 +90,7 @@ const VERB_ICON: Record<Verb, typeof FilePenLine> = {
  * so after a reload per-fragment version history is the fallback.
  */
 export function LibrarianEditCard({ storyId, result }: { storyId: string; result: ApplyResult }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [state, setState] = useState<'idle' | 'undoing' | 'done' | 'error'>('idle')
@@ -121,16 +123,16 @@ export function LibrarianEditCard({ storyId, result }: { storyId: string; result
     <div className="my-1.5 rounded border border-border/40 bg-muted/20 text-[0.625rem]">
       <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/20">
         <span className="text-muted-foreground">
-          {changes.length === 1 ? '1 fragment change' : `${changes.length} fragment changes`}
+          {changes.length === 1 ? `1 ${t('librarianEdit.changeOne')}` : `${changes.length} ${t('librarianEdit.changeMany')}`}
         </span>
         <div className="ml-auto">
           {state === 'done' ? (
             <span className="flex items-center gap-1 text-muted-foreground">
-              <Check className="size-3" /> Undone
+              <Check className="size-3" /> {t('librarianEdit.undone')}
             </span>
           ) : state === 'error' ? (
             <span className="flex items-center gap-1 text-destructive">
-              <AlertCircle className="size-3" /> Undo failed
+              <AlertCircle className="size-3" /> {t('librarianEdit.undoFailed')}
             </span>
           ) : (
             <button
@@ -139,7 +141,7 @@ export function LibrarianEditCard({ storyId, result }: { storyId: string; result
               className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
             >
               {state === 'undoing' ? <Loader2 className="size-3 animate-spin" /> : <Undo2 className="size-3" />}
-              Undo
+              {t('librarianEdit.undo')}
             </button>
           )}
         </div>
@@ -153,7 +155,7 @@ export function LibrarianEditCard({ storyId, result }: { storyId: string; result
             <div key={change.key}>
               <div className="flex items-center gap-1.5">
                 <Icon className="size-3 shrink-0 text-muted-foreground" />
-                <span className="text-muted-foreground capitalize">{change.verb}</span>
+                <span className="text-muted-foreground capitalize">{change.verb === 'created' ? t('librarianEdit.created') : change.verb === 'archived' ? t('librarianEdit.archived') : t('librarianEdit.edited')}</span>
                 <span className="font-medium text-foreground truncate">{name}</span>
               </div>
               {change.diffs.length > 0 && (

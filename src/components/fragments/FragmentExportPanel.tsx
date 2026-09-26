@@ -31,6 +31,7 @@ import {
   BookmarkPlus,
 } from 'lucide-react'
 import { FragmentTypeDisplayIcon, getFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
+import { useLanguage } from '@/lib/i18n'
 
 interface FragmentExportPanelProps {
   storyId: string
@@ -57,6 +58,7 @@ function BubbleSvgShape({ b }: { b: Bubble; i: number }) {
 }
 
 export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExportPanelProps) {
+  const { t } = useLanguage()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
   const [includeConfigs, setIncludeConfigs] = useState(false)
@@ -191,10 +193,10 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
       <PanelHeader>
         <PanelHeaderText className="flex-row items-center gap-2.5">
           <Package className="size-4 text-muted-foreground" />
-          <PanelTitle>Export Fragments</PanelTitle>
+          <PanelTitle>{t('fragmentExport.title')}</PanelTitle>
           {selected.size > 0 && (
             <Badge variant="secondary" className="text-[0.625rem] h-4 tabular-nums">
-              {selected.size} selected
+              {selected.size} {t('fragmentExport.selected')}
             </Badge>
           )}
         </PanelHeaderText>
@@ -211,10 +213,10 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           onClick={allSelected ? deselectAll : selectAll}
           className="text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors"
         >
-          {allSelected ? 'Deselect all' : 'Select all'}
+          {allSelected ? t('fragmentExport.deselectAll') : t('fragmentExport.selectAll')}
         </button>
         <span className="text-[0.625rem] text-muted-foreground">
-          {allExportable.length} fragments available
+          {allExportable.length} {t('fragmentExport.fragmentsAvailable')}
         </span>
       </div>
 
@@ -300,7 +302,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <span className="text-[0.625rem] font-mono text-muted-foreground">{fragment.id}</span>
                             {fragment.sticky && (
-                              <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1">pinned</Badge>
+                              <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1">{t('fragmentExport.pinned')}</Badge>
                             )}
                           </div>
                         </div>
@@ -314,8 +316,8 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
 
         {allExportable.length === 0 && (
           <div className="text-center py-12">
-            <EmptyHint size="sm">No fragments to export</EmptyHint>
-            <Hint className="mt-1">Create some characters, guidelines, or knowledge first</Hint>
+            <EmptyHint size="sm">{t('fragmentExport.empty')}</EmptyHint>
+            <Hint className="mt-1">{t('fragmentExport.emptyHint')}</Hint>
           </div>
         )}
       </PanelBody>
@@ -332,20 +334,20 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           <Checkbox checked={includeConfigs} className="size-3.5" tabIndex={-1} />
           <Settings2 className="size-3.5 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-            Include context configuration
+            {t('fragmentExport.includeContextConfiguration')}
           </span>
         </div>
         {includeConfigs && configSummary && (
           <p className="text-[0.625rem] text-muted-foreground mt-1.5 ml-6">
             {[
-              configSummary.hasBlockConfig && `${configSummary.customBlockCount} custom block${configSummary.customBlockCount !== 1 ? 's' : ''}, ${configSummary.overrideCount} override${configSummary.overrideCount !== 1 ? 's' : ''}`,
-              configSummary.agentCount > 0 && `${configSummary.agentCount} agent config${configSummary.agentCount !== 1 ? 's' : ''}`,
+              configSummary.hasBlockConfig && `${configSummary.customBlockCount} ${configSummary.customBlockCount === 1 ? t('fragmentExport.customBlockOne') : t('fragmentExport.customBlockMany')}, ${configSummary.overrideCount} ${configSummary.overrideCount === 1 ? t('fragmentExport.overrideOne') : t('fragmentExport.overrideMany')}`,
+              configSummary.agentCount > 0 && `${configSummary.agentCount} ${configSummary.agentCount === 1 ? t('fragmentExport.agentConfigOne') : t('fragmentExport.agentConfigMany')}`,
             ].filter(Boolean).join(', ')}
           </p>
         )}
         {includeConfigs && !configSummary && exportedConfigs && (
           <p className="text-[0.625rem] text-muted-foreground mt-1.5 ml-6 italic">
-            No custom configuration to export
+            {t('fragmentExport.noCustomConfiguration')}
           </p>
         )}
       </div>
@@ -358,7 +360,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           onClick={handleDownload}
         >
           <Download className="size-3.5" />
-          Download .json
+          {t('fragmentExport.downloadJson')}
         </Button>
         <Button
           size="sm"
@@ -368,7 +370,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           onClick={handleCopyClipboard}
         >
           {copied ? <Check className="size-3.5 text-primary" /> : <Clipboard className="size-3.5" />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? t('fragmentExport.copied') : t('fragmentExport.copy')}
         </Button>
         <Button
           size="sm"
@@ -378,7 +380,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           onClick={() => setPublishMode('fragments')}
         >
           <UploadCloud className="size-3.5" />
-          Publish pack
+          {t('fragmentExport.publishPack')}
         </Button>
         <Button
           size="sm"
@@ -389,7 +391,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           data-component-id="fragment-export-save-preset"
         >
           <BookmarkPlus className="size-3.5" />
-          Save as preset
+          {t('fragmentExport.saveAsPreset')}
         </Button>
         <Button
           size="sm"
@@ -398,10 +400,10 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
           onClick={() => setPublishMode('story')}
         >
           <UploadCloud className="size-3.5" />
-          Publish story
+          {t('fragmentExport.publishStory')}
         </Button>
         <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
-          Cancel
+          {t('fragmentExport.cancel')}
         </Button>
       </PanelFooter>
 

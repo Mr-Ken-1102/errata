@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/chain-of-thought'
 import { Loader2, Brain, Wrench, CheckCircle2, PenLine, FileText } from 'lucide-react'
 import { type ThoughtStep } from './InlineGenerationInput'
+import { useLanguage } from '@/lib/i18n'
 
 // Streaming text box that follows the bottom while active, unless the user scrolled up
 function StreamingText({ text, active, className }: { text: string; active: boolean; className?: string }) {
@@ -55,6 +56,7 @@ function GenerationThoughtStepList({
   streaming: boolean
   isThinking: boolean
 }) {
+  const { t } = useLanguage()
   const toolResults = useMemo(() => {
     const results = new Map<string, Extract<ThoughtStep, { type: 'tool-result' }>>()
     for (const step of steps) {
@@ -83,7 +85,7 @@ function GenerationThoughtStepList({
             <ChainOfThoughtStep
               key={`prewriter-text-${i}`}
               icon={FileText}
-              label="Writing Brief"
+              label={t('generationThoughts.writingBrief')}
               status={isActive ? 'active' : 'complete'}
             >
               <StreamingText
@@ -99,7 +101,7 @@ function GenerationThoughtStepList({
             <ChainOfThoughtStep
               key={`phase-${i}`}
               icon={step.phase === 'prewriting' ? Brain : PenLine}
-              label={step.phase === 'prewriting' ? 'Planning...' : 'Writing...'}
+              label={step.phase === 'prewriting' ? t('generationThoughts.planning') : t('generationThoughts.writing')}
               status={streaming && i === steps.length - 1 ? 'active' : 'complete'}
             />
           )
@@ -156,6 +158,7 @@ export function GenerationThoughts({
   onBeforeAutoCollapse?: () => void
   onAfterAutoCollapse?: () => void
 }) {
+  const { t } = useLanguage()
   // Determine if reasoning is still actively streaming (no text yet, last step is reasoning)
   const lastStep = steps[steps.length - 1]
   const isThinking = streaming && !hasText && lastStep?.type === 'reasoning'
@@ -201,7 +204,7 @@ export function GenerationThoughts({
   return (
     <div className="mb-4" data-component-id="generation-thoughts-root">
       <ChainOfThought open={open} onOpenChange={setOpen}>
-        <ChainOfThoughtHeader>{isThinking ? 'Thinking' : 'Thoughts'}</ChainOfThoughtHeader>
+        <ChainOfThoughtHeader>{isThinking ? t('generationThoughts.thinking') : t('generationThoughts.thoughts')}</ChainOfThoughtHeader>
         {open && (
           <GenerationThoughtStepList
             steps={steps}

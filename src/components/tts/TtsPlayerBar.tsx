@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Play, Pause, Square, Loader2, AlertCircle, Volume2, Volume1, VolumeX, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useLanguage } from '@/lib/i18n'
 import { useTtsState, useTtsSettings, togglePlayPause, stopTts, setTtsVolume, setTtsPitch } from '@/lib/tts'
 
 function PopSlider({ label, value, min, max, step, onChange, format }: {
@@ -32,6 +33,7 @@ function PopSlider({ label, value, min, max, step, onChange, format }: {
  * playing, loading, or errored.
  */
 export function TtsPlayerBar() {
+  const { t } = useLanguage()
   const { status, title, chunkIndex, chunkCount, engine, error } = useTtsState()
   const [settings, updateSettings] = useTtsSettings()
   const visible = status !== 'idle' || !!error
@@ -84,7 +86,7 @@ export function TtsPlayerBar() {
     <div
       ref={barRef}
       role="region"
-      aria-label="Read-aloud player"
+      aria-label={t('ttsPlayer.region')}
       className={cn(
         'fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-card/95 backdrop-blur-md',
         'shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.18)]',
@@ -101,7 +103,7 @@ export function TtsPlayerBar() {
           aria-valuemin={0}
           aria-valuemax={chunkCount}
           aria-valuenow={loading ? 0 : chunkIndex + 1}
-          aria-label="Reading progress"
+          aria-label={t('ttsPlayer.progress')}
         >
           {loading ? (
             <span className="block h-full w-1/3 animate-[tts-indeterminate_1.4s_ease-in-out_infinite] bg-primary/60 motion-reduce:w-full motion-reduce:animate-none" />
@@ -120,7 +122,7 @@ export function TtsPlayerBar() {
           type="button"
           onClick={togglePlayPause}
           disabled={loading || !!error}
-          aria-label={playing ? 'Pause reading' : 'Resume reading'}
+          aria-label={playing ? t('ttsPlayer.pause') : t('ttsPlayer.resume')}
           className={cn(
             'relative grid size-7 shrink-0 place-items-center rounded-full',
             'bg-primary/12 text-primary transition-colors',
@@ -140,11 +142,11 @@ export function TtsPlayerBar() {
           <p className="min-w-0 flex-1 truncate font-prose text-[0.8125rem] italic leading-tight text-foreground/85">
             {error
               ? <span className="inline-flex items-center gap-1.5 not-italic text-destructive"><AlertCircle className="size-3.5" />{error}</span>
-              : (title || 'Reading passage')}
+              : (title || t('ttsPlayer.readingPassage'))}
           </p>
           {!error && (
             <span className="shrink-0 font-mono text-[0.625rem] tabular-nums text-muted-foreground" aria-hidden>
-              {loading ? 'generating…' : `${chunkIndex + 1} / ${chunkCount}`}
+              {loading ? t('ttsPlayer.generating') : `${chunkIndex + 1} / ${chunkCount}`}
             </span>
           )}
         </div>
@@ -155,7 +157,7 @@ export function TtsPlayerBar() {
             <button
               type="button"
               onClick={toggleMute}
-              aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+              aria-label={volume === 0 ? t('ttsPlayer.unmute') : t('ttsPlayer.mute')}
               data-cuelume-toggle="toggle"
               className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             >
@@ -165,7 +167,7 @@ export function TtsPlayerBar() {
               <button
                 type="button"
                 onClick={() => setTuneOpen((o) => !o)}
-                aria-label="Playback settings"
+                aria-label={t('ttsPlayer.playbackSettings')}
                 aria-expanded={tuneOpen}
                 className={cn(
                   'grid size-6 shrink-0 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
@@ -177,13 +179,13 @@ export function TtsPlayerBar() {
               {tuneOpen && (
                 <div
                   role="dialog"
-                  aria-label="Playback settings"
+                  aria-label={t('ttsPlayer.playbackSettings')}
                   data-cuelume-surface="whisper"
                   className="absolute bottom-full right-0 mb-2 w-52 space-y-3 rounded-lg border border-border/50 bg-card/95 p-3 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.3)] backdrop-blur-md"
                 >
-                  <PopSlider label="Speed" value={settings.rate} min={0.5} max={2} step={0.05} onChange={setSpeed} format={(v) => `${v.toFixed(2)}×`} />
-                  <PopSlider label="Pitch" value={settings.pitch} min={0.5} max={2} step={0.05} onChange={setPitch} format={(v) => `${v.toFixed(2)}×`} />
-                  <PopSlider label="Volume" value={volume} min={0} max={1} step={0.05} onChange={setVolume} format={(v) => `${Math.round(v * 100)}%`} />
+                  <PopSlider label={t('settings.tts.speed')} value={settings.rate} min={0.5} max={2} step={0.05} onChange={setSpeed} format={(v) => `${v.toFixed(2)}×`} />
+                  <PopSlider label={t('settings.tts.pitch')} value={settings.pitch} min={0.5} max={2} step={0.05} onChange={setPitch} format={(v) => `${v.toFixed(2)}×`} />
+                  <PopSlider label={t('settings.tts.volume')} value={volume} min={0} max={1} step={0.05} onChange={setVolume} format={(v) => `${Math.round(v * 100)}%`} />
                 </div>
               )}
             </div>
@@ -193,13 +195,13 @@ export function TtsPlayerBar() {
         {/* Engine hint + stop */}
         {engine && !error && (
           <span className="hidden shrink-0 font-mono text-[0.5625rem] uppercase tracking-[0.14em] text-muted-foreground/70 sm:inline">
-            {engine === 'supertonic' ? 'Supertonic' : 'Browser'}
+            {engine === 'supertonic' ? t('settings.tts.supertonic') : t('settings.tts.browser')}
           </span>
         )}
         <button
           type="button"
           onClick={stopTts}
-          aria-label="Stop reading"
+          aria-label={t('ttsPlayer.stop')}
           className={cn(
             'grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors',
             'hover:bg-accent/60 hover:text-foreground',

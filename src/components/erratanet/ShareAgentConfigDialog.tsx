@@ -36,6 +36,7 @@ import {
   ExternalLink,
   Code2,
 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface ShareAgentConfigDialogProps {
   open: boolean
@@ -75,6 +76,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
  */
 export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName, defaultSlug, defaultIncludes }: ShareAgentConfigDialogProps) {
   const qc = useQueryClient()
+  const { t } = useLanguage()
   const [slug, setSlug] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -191,13 +193,13 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
 
   const publishMut = useMutation({
     mutationFn: async () => {
-      if (!handle) throw new Error('Connect a hub account in Settings first.')
+      if (!handle) throw new Error(t('erratanet.shareConfig.connectAccountFirst'))
       const cleanSlug = slug.trim() || slugify(title)
       const id = `@${handle}/${cleanSlug}`
-      if (!GLOBAL_PACK_ID_REGEX.test(id)) throw new Error('Slug must be lowercase letters, numbers, and dashes.')
-      if (!title.trim()) throw new Error('Enter a title.')
-      if (description.length > 250) throw new Error('Description must be 250 characters or fewer.')
-      if (selectionIsEmpty(selection)) throw new Error('Select at least one part of the configuration.')
+      if (!GLOBAL_PACK_ID_REGEX.test(id)) throw new Error(t('erratanet.shareConfig.invalidSlug'))
+      if (!title.trim()) throw new Error(t('erratanet.shareConfig.enterTitle'))
+      if (description.length > 250) throw new Error(t('erratanet.shareConfig.descriptionTooLong'))
+      if (selectionIsEmpty(selection)) throw new Error(t('erratanet.shareConfig.selectPart'))
 
       // The server derives contentKind, capabilities, the agentConfig summary,
       // fragment fields, and the payload hash from the snapshot.
@@ -229,7 +231,7 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
       qc.invalidateQueries({ queryKey: ['story', storyId] })
       qc.invalidateQueries({ queryKey: ['stories'] })
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Publish failed.'),
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : t('erratanet.shareConfig.publishFailed')),
   })
 
   const descOver = description.length > 250
@@ -243,10 +245,10 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
         <DialogHeader>
           <DialogTitle className="font-display text-lg flex items-center gap-2">
             <UploadCloud className="size-4 text-muted-foreground" />
-            Share agent configuration
+            {t('erratanet.shareConfig.title')}
           </DialogTitle>
           <DialogDescription>
-            Publish how you&apos;ve tuned this story&apos;s agents as a config others can adopt.
+            {t('erratanet.shareConfig.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -256,15 +258,15 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
               <Check className="size-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium">Shared</p>
+              <p className="text-sm font-medium">{t('erratanet.shareConfig.shared')}</p>
               <p className="mt-1 font-mono text-[0.8125rem] text-muted-foreground">{publishedId}</p>
-              <p className="mt-1 text-[0.6875rem] text-muted-foreground">version {publishedVersion}</p>
+              <p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('erratanet.shareConfig.versionLower')} {publishedVersion}</p>
             </div>
             {(() => {
               const url = packPageUrl(config?.hubUrl, publishedId)
               return url ? (
                 <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-border/40 px-3 py-1.5 text-[0.75rem] text-foreground/80 transition-colors hover:border-border hover:text-foreground">
-                  View on ErrataNet
+                  {t('erratanet.shareConfig.viewOnErrataNet')}
                   <ExternalLink className="size-3.5" />
                 </a>
               ) : null
@@ -276,22 +278,21 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
               <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500/80" />
                 <p className="text-[0.6875rem] leading-snug text-amber-600/80 dark:text-amber-400/80">
-                  No hub account connected. Sign in from the ErrataNet panel before sharing.
+                  {t('erratanet.shareConfig.noAccount')}
                 </p>
               </div>
             )}
 
             {/* What to include — down to individual agents and blocks. */}
             <div>
-              <h4 className={sectionLabel}>Include</h4>
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.include')}</h4>
               {loadingSnapshot ? (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" /> Reading this story&apos;s config…
+                  <Loader2 className="size-3.5 animate-spin" /> {t('erratanet.shareConfig.readingConfig')}
                 </p>
               ) : nothingToShare || !snapshot ? (
                 <p className="text-xs text-muted-foreground">
-                  This story has no custom agent configuration yet. Tune some blocks, instructions, or
-                  model assignments first.
+                  {t('erratanet.shareConfig.noCustomConfig')}
                 </p>
               ) : (
                 <AgentConfigSelector preview={snapshot.preview} value={selection} onChange={setSelection} />
@@ -303,24 +304,23 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
               <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
                 <p className="flex items-center gap-2 text-[0.8125rem] font-medium text-foreground">
                   <Code2 className="size-4 text-amber-500" />
-                  This config runs code
+                  {t('erratanet.shareConfig.runsCode')}
                 </p>
                 <p className="mt-1 text-[0.6875rem] leading-snug text-muted-foreground">
-                  It includes executable script blocks. The pack will be flagged &ldquo;runs code&rdquo;, and
-                  importers must review the script source and confirm before it applies.
+                  {t('erratanet.shareConfig.runsCodeDescription')}
                 </p>
               </div>
             )}
 
             {/* Slug + title */}
             <div>
-              <h4 className={sectionLabel}>Slug</h4>
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.slug')}</h4>
               <div className="flex items-center gap-2">
                 <span className="shrink-0 font-mono text-[0.8125rem] text-muted-foreground">@{handle ?? 'handle'}/</span>
                 <Input
                   value={slug}
                   onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  placeholder={slugify(title) || 'cozy-writer'}
+                  placeholder={slugify(title) || t('erratanet.shareConfig.slugPlaceholder')}
                   className="h-9 font-mono"
                   data-component-id="share-config-slug"
                 />
@@ -328,38 +328,38 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
             </div>
 
             <div>
-              <h4 className={sectionLabel}>Title</h4>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Cozy Writer" maxLength={120} className="h-9" />
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.packTitle')}</h4>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('erratanet.shareConfig.titlePlaceholder')} maxLength={120} className="h-9" />
             </div>
 
             <div>
               <div className="flex items-baseline justify-between">
-                <h4 className={sectionLabel}>Description</h4>
+                <h4 className={sectionLabel}>{t('erratanet.shareConfig.packDescription')}</h4>
                 <span className={cn('text-[0.625rem] tabular-nums', descOver ? 'text-destructive' : 'text-muted-foreground')}>{description.length}/250</span>
               </div>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this configuration is good for…" rows={3} className="text-xs resize-y min-h-16 max-h-40" aria-invalid={descOver} />
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('erratanet.shareConfig.descriptionPlaceholder')} rows={3} className="text-xs resize-y min-h-16 max-h-40" aria-invalid={descOver} />
             </div>
 
             <div>
-              <h4 className={sectionLabel}>Information</h4>
-              <Textarea value={readme} onChange={(e) => setReadme(e.target.value.slice(0, 8000))} placeholder="Setup notes, what it pairs well with, credits… Markdown supported." rows={4} className="text-xs resize-y min-h-20 max-h-56" />
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.information')}</h4>
+              <Textarea value={readme} onChange={(e) => setReadme(e.target.value.slice(0, 8000))} placeholder={t('erratanet.shareConfig.informationPlaceholder')} rows={4} className="text-xs resize-y min-h-20 max-h-56" />
             </div>
 
             <div>
-              <h4 className={sectionLabel}>License</h4>
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.license')}</h4>
               <select value={license} onChange={(e) => setLicense(e.target.value)} className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]">
                 {LICENSES.map((l) => (<option key={l.value} value={l.value}>{l.label}</option>))}
               </select>
             </div>
 
             <div>
-              <h4 className={sectionLabel}>Tags</h4>
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.tags')}</h4>
               {tags.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {tags.map((tag) => (
                     <Badge key={tag} variant="secondary" className="gap-1 text-xs">
                       {tag}
-                      <button type="button" onClick={() => setTags((p) => p.filter((t) => t !== tag))} className="text-muted-foreground hover:text-foreground" aria-label={`Remove ${tag}`}>
+                      <button type="button" onClick={() => setTags((p) => p.filter((t) => t !== tag))} className="text-muted-foreground hover:text-foreground" aria-label={`${t('erratanet.shareConfig.removeTag')} ${tag}`}>
                         <X className="size-3" />
                       </button>
                     </Badge>
@@ -371,35 +371,35 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
                 onChange={(e) => setTagDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() } }}
                 onBlur={addTag}
-                placeholder="Add a tag and press Enter"
+                placeholder={t('erratanet.shareConfig.addTagPlaceholder')}
                 className="h-9"
               />
             </div>
 
             <div>
-              <h4 className={sectionLabel}>Visibility</h4>
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.visibility')}</h4>
               <div className="flex w-fit gap-[3px] rounded-lg bg-muted/25 p-[3px]">
                 {(['public', 'unlisted'] as const).map((v) => (
-                  <button key={v} type="button" onClick={() => setVisibility(v)} className={cn('rounded-md px-3 py-[6px] text-[0.6875rem] font-medium capitalize transition-all duration-150', visibility === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{v}</button>
+                  <button key={v} type="button" onClick={() => setVisibility(v)} className={cn('rounded-md px-3 py-[6px] text-[0.6875rem] font-medium capitalize transition-all duration-150', visibility === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{v === 'public' ? t('erratanet.shareConfig.public') : t('erratanet.shareConfig.unlisted')}</button>
                 ))}
               </div>
             </div>
 
             <div>
-              <h4 className={sectionLabel}>Version</h4>
+              <h4 className={sectionLabel}>{t('erratanet.shareConfig.version')}</h4>
               <div className="flex items-center gap-3">
                 <div className="flex rounded-lg bg-muted/25 p-[3px] gap-[3px]">
                   {(['patch', 'minor', 'major'] as const).map((kind) => (
-                    <button key={kind} type="button" onClick={() => setBump(kind)} className={cn('px-3 py-[6px] rounded-md text-[0.6875rem] font-medium capitalize transition-all duration-150', bump === kind ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{kind}</button>
+                    <button key={kind} type="button" onClick={() => setBump(kind)} className={cn('px-3 py-[6px] rounded-md text-[0.6875rem] font-medium capitalize transition-all duration-150', bump === kind ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{kind === 'patch' ? t('erratanet.shareConfig.patch') : kind === 'minor' ? t('erratanet.shareConfig.minor') : t('erratanet.shareConfig.major')}</button>
                   ))}
                 </div>
                 <span className="font-mono text-sm tabular-nums">{nextVersion}</span>
               </div>
-              <p className="mt-1.5 text-[0.625rem] text-muted-foreground">{latestVersion ? `Latest published: ${latestVersion}` : 'New config, starting at 1.0.0'}</p>
+              <p className="mt-1.5 text-[0.625rem] text-muted-foreground">{latestVersion ? `${t('erratanet.shareConfig.latestPublished')} ${latestVersion}` : t('erratanet.shareConfig.newConfigVersion')}</p>
             </div>
 
             <p className="text-[0.625rem] leading-snug text-muted-foreground">
-              API keys are never shared. Provider shape carries only the provider name, base URL, and model.
+              {t('erratanet.shareConfig.apiKeysNote')}
             </p>
 
             {error && <p className="text-[0.6875rem] text-destructive">{error}</p>}
@@ -408,12 +408,12 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
 
         <DialogFooter className="gap-2 pt-3 border-t border-border/30">
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-xs">
-            {publishedId ? 'Done' : 'Cancel'}
+            {publishedId ? t('erratanet.shareConfig.done') : t('erratanet.shareConfig.cancel')}
           </Button>
           {!publishedId && (
             <Button onClick={() => publishMut.mutate()} disabled={!canPublish} className="text-xs gap-1.5" data-component-id="share-config-submit">
               {publishMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <UploadCloud className="size-3.5" />}
-              Share {nextVersion}
+              {t('erratanet.shareConfig.share')} {nextVersion}
             </Button>
           )}
         </DialogFooter>

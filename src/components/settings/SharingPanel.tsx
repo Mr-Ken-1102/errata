@@ -6,10 +6,12 @@ import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/clipboard'
 import { Lock, Wifi, Globe, Loader2, Copy, Check, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { Toggle } from './primitives'
+import { useLanguage } from '@/lib/i18n'
 
 const inputClass = 'h-[28px] w-full rounded-md border border-border/40 bg-background px-2 text-[0.75rem] text-foreground focus:border-foreground/20 focus:outline-none'
 
 function CopyButton({ value }: { value: string }) {
+  const { t } = useLanguage()
   const [copied, setCopied] = useState(false)
   return (
     <button
@@ -19,8 +21,8 @@ function CopyButton({ value }: { value: string }) {
         setTimeout(() => setCopied(false), 1200)
       }}
       className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-      title="Copy"
-      aria-label="Copy link"
+      title={t('settings.remote.copy')}
+      aria-label={t('settings.remote.copyLink')}
     >
       {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
     </button>
@@ -46,6 +48,7 @@ function ConnectionCard({ icon, label, url, qr }: { icon: React.ReactNode; label
 
 export function SharingPanel() {
   const qc = useQueryClient()
+  const { t } = useLanguage()
   const { data: status } = useQuery({
     queryKey: ['sharing-status'],
     queryFn: () => api.sharing.getStatus(),
@@ -60,7 +63,7 @@ export function SharingPanel() {
   const [error, setError] = useState<string | null>(null)
 
   const onSettled = (next: SharingStatusResponse) => { qc.setQueryData(['sharing-status'], next); setError(null) }
-  const onError = (e: unknown) => setError(e instanceof Error ? e.message : 'Request failed')
+  const onError = (e: unknown) => setError(e instanceof Error ? e.message : t('settings.remote.requestFailed'))
 
   const authMut = useMutation({
     mutationFn: (data: { enabled: boolean; username?: string; password?: string }) => api.sharing.setAuth(data),
@@ -76,26 +79,26 @@ export function SharingPanel() {
 
   const tunnelStatusLabel = (() => {
     switch (status?.tunnel.status) {
-      case 'downloading': return 'Downloading cloudflared…'
-      case 'starting': return 'Starting tunnel…'
+      case 'downloading': return t('settings.remote.downloadingCloudflared')
+      case 'starting': return t('settings.remote.startingTunnel')
       case 'running': return null
-      case 'error': return status.tunnel.error || 'Tunnel error'
+      case 'error': return status.tunnel.error || t('settings.remote.tunnelError')
       default: return null
     }
   })()
 
   return (
     <div>
-      <label className="mb-2 block text-[0.625rem] uppercase tracking-wider text-muted-foreground">Remote</label>
+<label className="mb-2 block text-[0.625rem] uppercase tracking-wider text-muted-foreground">{t('settings.remote.heading')}</label>
       <div className="space-y-3 rounded-lg border border-border/30 p-3">
         {/* Authentication */}
         <div className="space-y-2">
           <div className="flex items-start gap-2">
             <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <p className="text-[0.75rem] font-medium text-foreground/80">Require a password</p>
+              <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.remote.requirePassword')}</p>
               <p className="text-[0.625rem] leading-snug text-muted-foreground">
-                Protects the app with Basic Auth. Required before exposing it to the network.
+                {t('settings.remote.requirePasswordDescription')}
               </p>
             </div>
             {authOn && (
@@ -104,7 +107,7 @@ export function SharingPanel() {
                 disabled={busy}
                 className="shrink-0 rounded-md border border-border/40 px-2 py-1 text-[0.625rem] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
               >
-                Disable
+                {t('settings.remote.disable')}
               </button>
             )}
           </div>
@@ -112,19 +115,19 @@ export function SharingPanel() {
           {authOn ? (
             <div className="flex items-center gap-1.5 pl-6 text-[0.6875rem] text-primary">
               <ShieldCheck className="size-3.5" />
-              <span>On — user <span className="font-mono">{status?.username}</span></span>
+              <span>{t('settings.remote.onUser')} <span className="font-mono">{status?.username}</span></span>
             </div>
           ) : (
             <div className="space-y-1.5 pl-6">
-              <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" autoComplete="off" />
-              <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="new-password" />
+              <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} placeholder={t('settings.remote.username')} autoComplete="off" />
+              <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('settings.remote.password')} autoComplete="new-password" />
               <button
-                onClick={() => { if (!password.trim()) { setError('Enter a password.'); return } authMut.mutate({ enabled: true, username: username.trim() || 'errata', password }) }}
+                onClick={() => { if (!password.trim()) { setError(t('settings.remote.enterPassword')); return } authMut.mutate({ enabled: true, username: username.trim() || 'errata', password }) }}
                 disabled={busy || !password.trim()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-2.5 py-1 text-[0.6875rem] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {authMut.isPending ? <Loader2 className="size-3 animate-spin" /> : <Lock className="size-3" />}
-                Enable
+                {t('settings.remote.enable')}
               </button>
             </div>
           )}
@@ -137,10 +140,10 @@ export function SharingPanel() {
           <div className="flex items-center gap-2">
             <Wifi className="size-3.5 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <p className="text-[0.75rem] font-medium text-foreground/80">Local network</p>
-              <p className="text-[0.625rem] leading-snug text-muted-foreground">Reach Errata from other devices on your Wi-Fi.</p>
+              <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.remote.localNetwork')}</p>
+              <p className="text-[0.625rem] leading-snug text-muted-foreground">{t('settings.remote.localNetworkDescription')}</p>
             </div>
-            <Toggle checked={status?.lan.enabled ?? false} disabled={!canExpose || busy} onChange={(next) => lanMut.mutate(next)} label="Toggle local network" />
+            <Toggle checked={status?.lan.enabled ?? false} disabled={!canExpose || busy} onChange={(next) => lanMut.mutate(next)} label={t('settings.remote.toggleLocalNetwork')} />
           </div>
           {status?.lan.enabled && status.lan.url && (
             <ConnectionCard icon={<Wifi className="size-3.5" />} label="LAN" url={status.lan.url} qr={status.lanQr} />
@@ -154,10 +157,10 @@ export function SharingPanel() {
           <div className="flex items-center gap-2">
             <Globe className="size-3.5 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <p className="text-[0.75rem] font-medium text-foreground/80">Internet (Cloudflare Tunnel)</p>
-              <p className="text-[0.625rem] leading-snug text-muted-foreground">A temporary public HTTPS link. cloudflared downloads automatically.</p>
+              <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.remote.internetTunnel')}</p>
+              <p className="text-[0.625rem] leading-snug text-muted-foreground">{t('settings.remote.internetTunnelDescription')}</p>
             </div>
-            <Toggle checked={status?.tunnel.enabled ?? false} disabled={!canExpose || busy} onChange={(next) => tunnelMut.mutate(next)} label="Toggle tunnel" />
+            <Toggle checked={status?.tunnel.enabled ?? false} disabled={!canExpose || busy} onChange={(next) => tunnelMut.mutate(next)} label={t('settings.remote.toggleTunnel')} />
           </div>
           {status?.tunnel.enabled && tunnelStatusLabel && (
             <div className={cn('flex items-center gap-1.5 pl-6 text-[0.6875rem]', status.tunnel.status === 'error' ? 'text-destructive' : 'text-muted-foreground')}>
@@ -171,12 +174,12 @@ export function SharingPanel() {
         </div>
 
         {!canExpose && (
-          <p className="text-[0.625rem] leading-snug text-muted-foreground">Set a password above to enable network sharing.</p>
+          <p className="text-[0.625rem] leading-snug text-muted-foreground">{t('settings.remote.setPasswordToShare')}</p>
         )}
         {canExpose && (status?.lan.enabled) && (
           <p className="flex items-start gap-1.5 text-[0.625rem] leading-snug text-muted-foreground">
             <AlertTriangle className="mt-px size-3 shrink-0 text-amber-500/70" />
-            Local-network access is plain HTTP — the password is sent unencrypted on your LAN. The tunnel is HTTPS.
+            {t('settings.remote.httpWarning')}
           </p>
         )}
         {error && <p className="text-[0.625rem] text-destructive">{error}</p>}
