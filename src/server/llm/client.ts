@@ -14,7 +14,7 @@ import {
 } from 'ai'
 import { createLogger } from '../logging'
 import type { SamplingSettings, StoryMeta } from '../fragments/schema'
-import { isGeminiProvider, normalizeGeminiBaseURL } from '../config/provider-urls'
+import { isGeminiProvider, normalizeGeminiBaseURL, normalizeOpenAICompatibleBaseURL } from '../config/provider-urls'
 
 // Normalize old camelCase modelOverrides keys to dot-separated agent names
 const OVERRIDE_KEY_ALIASES: Record<string, string> = {
@@ -260,11 +260,13 @@ export async function getModel(dataDir: string, storyId?: string, opts: GetModel
     const usingFallback = targetProviderId != null && candidateId !== targetProviderId
     const modelId = (usingFallback ? null : targetModelId) || provider.defaultModel
     const nativeGemini = isGeminiProvider(provider)
-    const baseURL = nativeGemini ? normalizeGeminiBaseURL(provider.baseURL) : provider.baseURL
+    const baseURL = nativeGemini
+      ? normalizeGeminiBaseURL(provider.baseURL)
+      : normalizeOpenAICompatibleBaseURL(provider.baseURL)
     const providerOptionsKey = provider.name.split('.')[0].trim()
     const rawModel = nativeGemini
       ? getCachedGoogleProvider(provider.id, baseURL, provider.apiKey, provider.customHeaders)(modelId)
-      : getCachedProvider(provider.id, provider.baseURL, provider.apiKey, provider.name, provider.customHeaders).chatModel(modelId)
+      : getCachedProvider(provider.id, baseURL, provider.apiKey, provider.name, provider.customHeaders).chatModel(modelId)
     const model = nativeGemini
       ? rawModel
       : wrapLanguageModel({
