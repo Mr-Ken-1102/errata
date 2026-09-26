@@ -1,4 +1,5 @@
 import { HELP_SECTIONS, type HelpSection } from './help-content'
+import { VI_BLOCKS_SECTION } from './help-content.vi-blocks'
 import { Kbd, Mono, P, Tip, ToolCard } from './help-content.vi-primitives'
 
 const VI_GENERATION_SECTION: HelpSection = {
@@ -427,6 +428,8 @@ const VI_GENERATION_SECTION: HelpSection = {
   ],
 }
 
-export const VI_HELP_SECTIONS: HelpSection[] = HELP_SECTIONS.map((section) => (
-  section.id === VI_GENERATION_SECTION.id ? VI_GENERATION_SECTION : section
-))
+export const VI_HELP_SECTIONS: HelpSection[] = HELP_SECTIONS.map((section) => {
+  if (section.id === VI_GENERATION_SECTION.id) return VI_GENERATION_SECTION
+  if (section.id === VI_BLOCKS_SECTION.id) return VI_BLOCKS_SECTION
+  return section
+})
