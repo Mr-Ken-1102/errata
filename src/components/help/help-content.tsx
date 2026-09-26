@@ -453,8 +453,8 @@ export const HELP_SECTIONS: HelpSection[] = [
           <>
             <P>
               While generation is in progress, click the <strong className="text-foreground/75">pause button</strong> to
-              abort it. Any text the model has already produced is saved as a partial prose fragment, so you don't
-              lose what was written before the abort.
+              stop the server-owned run. Stopping discards the unfinished passage instead of saving partial prose,
+              and keeps your author input available so you can revise it or try again.
             </P>
           </>
         ),

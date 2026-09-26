@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useHelp } from '@/hooks/use-help'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { HELP_SECTIONS, findSection, type HelpSection } from './help-content'
+import { HELP_SECTIONS, type HelpSection } from './help-content'
+import { VI_HELP_SECTIONS } from './help-content.vi'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, BookOpen, ChevronRight, ArrowLeft } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
@@ -26,7 +27,7 @@ function scrollToHelpAnchor(container: HTMLElement, anchorId: string): boolean {
 export function HelpPanel() {
   const { state, closeHelp, openHelp } = useHelp()
   const isMobile = useIsMobile()
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const { open, section: sectionId, anchor, seq } = state
 
   const [mounted, setMounted] = useState(false)
@@ -73,7 +74,8 @@ export function HelpPanel() {
 
   if (!mounted) return null
 
-  const activeSection = sectionId ? findSection(sectionId) : null
+  const sections = language === 'vi' ? VI_HELP_SECTIONS : HELP_SECTIONS
+  const activeSection = sectionId ? sections.find((section) => section.id === sectionId) ?? null : null
 
   return (
     <>
@@ -137,7 +139,7 @@ export function HelpPanel() {
               {activeSection ? (
                 <SectionView section={activeSection} scrollAreaRef={scrollAreaRef} />
               ) : (
-                <TopicIndex onSelect={(id) => openHelp(id)} />
+                <TopicIndex sections={sections} onSelect={(id) => openHelp(id)} />
               )}
             </div>
           </ScrollArea>
@@ -158,7 +160,7 @@ export function HelpPanel() {
  * Topic index — shown when no section is selected.
  * Displays all help sections as cards.
  */
-function TopicIndex({ onSelect }: { onSelect: (sectionId: string) => void }) {
+function TopicIndex({ sections, onSelect }: { sections: HelpSection[]; onSelect: (sectionId: string) => void }) {
   const { t } = useLanguage()
 
   return (
@@ -166,7 +168,7 @@ function TopicIndex({ onSelect }: { onSelect: (sectionId: string) => void }) {
       <p className="text-[0.6875rem] text-muted-foreground leading-relaxed mb-4">
         {t('help.selectTopic')}
       </p>
-      {HELP_SECTIONS.map((section, idx) => (
+      {sections.map((section, idx) => (
         <button
           key={section.id}
           onClick={() => onSelect(section.id)}
