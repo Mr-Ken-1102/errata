@@ -1,0 +1,25 @@
+You are continuing recovery of the Errata project after the destructive filesystem incident at 2026-09-27 00:53:04 +07:00.
+
+AUTHORITATIVE GITHUB STATE:
+- master = 230b87878379ec0290b973fc3e747a63cbd3525b
+- master-fix = f3bf53930a28b4c2c9e7c934e8491272fe5c6c88
+- recovery branch = Recovery-2026-09-27-005304
+
+RULES:
+1. Do not write recovered files into D:\AI-Workspace\Errata.
+2. Treat the damaged workspace only as read-only evidence.
+3. Push each recovered artifact directly to the Recovery branch as soon as it is recovered.
+4. Label provenance: EXACT-GITHUB, EXACT-PROJECT-FILE, EXACT-FORENSIC, RECONSTRUCTED-HISTORY, or RERUN-EVIDENCE.
+5. Do not waste forensic effort on tracked source, node_modules, caches, temp, generated build output, or audit clones that can be recreated.
+6. Prioritize local-only handoff/status/audit files and P0/P1.3 historical result artifacts.
+7. Do not merge Recovery into master or master-fix during recovery.
+
+CURRENT RECOVERY STATE:
+- recovery manifest is on GitHub.
+- exact pre-incident project handoff file (465 lines) is preserved.
+- final P1.3 live checkpoint is reconstructed from full write history.
+- exact six Git blobs of the provider /v1 fix from surviving commit 3593192 are preserved on Recovery.
+- provider fix had been validated with real Ollama, Story Setup, Librarian, build, typecheck, architecture, and a 1499/1499 full-suite rerun.
+
+NEXT PRIORITY:
+Recover or reconstruct the deleted root handoff/status/audit files, then enumerate and preserve P0.*-results and P1.3-*-results evidence. Do not claim byte identity unless exact bytes are available.
