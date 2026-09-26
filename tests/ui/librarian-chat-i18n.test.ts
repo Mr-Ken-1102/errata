@@ -12,7 +12,7 @@ describe('LibrarianChat localization', () => {
   })
 
   it('preserves server-owned run identity, replay/cancel semantics, IME guard, and dynamic errors', () => {
-    const source = readFileSync('src/components/librarian/LibrarianChat.tsx', 'utf8')
+    const source = readFileSync('src/components/librarian/LibrarianChat.tsx', 'utf8').replace(/\r\n/g, '\n')
 
     expect(source).toContain("kind: 'librarian.chat'")
     expect(source).toContain('scopeId: conversationId ?? null')

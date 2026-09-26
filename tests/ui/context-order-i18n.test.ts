@@ -11,7 +11,7 @@ describe('ContextOrderPanel localization', () => {
   })
 
   it('preserves placement enums, ordering payload, API identity, and dynamic fragment data', () => {
-    const source = readFileSync('src/components/fragments/ContextOrderPanel.tsx', 'utf8')
+    const source = readFileSync('src/components/fragments/ContextOrderPanel.tsx', 'utf8').replace(/\r\n/g, '\n')
 
     expect(source).toContain('api.fragments.setPlacement(storyId, fragmentId, placement)')
     expect(source).toContain("placement: fragment.placement === 'system' ? 'user' : 'system'")
