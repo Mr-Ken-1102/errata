@@ -1,0 +1,45 @@
+name,type,evidence,forensic_priority,recovery_action
+.audit-p1.3-bc,directory,pre-incident inventory,NONE,recreate later
+.audit-p1.3-d,directory,pre-incident inventory,NONE,recreate later
+.bun-cache,directory,pre-incident inventory,NONE,regenerate
+.p0.1-master-clean,directory,pre-incident inventory,NONE,recreate later
+.p0.3-candidate,directory,pre-incident inventory,NONE,recreate later
+.p0.3-validate,directory,pre-incident inventory,NONE,recreate later
+.p0.3-verify,directory,pre-incident inventory,NONE,recreate later
+.p0.5-candidate,directory,pre-incident inventory,NONE,recreate later
+.p0.5-verify,directory,pre-incident inventory,NONE,recreate later
+.p0.6-combined,directory,pre-incident inventory,NONE,recreate later
+.tmp,directory,pre-incident inventory,NONE,discard
+.tmp-audit-p13,directory,pre-incident inventory,NONE,discard
+.tmp-audit-p13d,directory,pre-incident inventory,NONE,discard
+.tmp-masterfix,directory,pre-incident inventory,NONE,discard
+.tmp-p03,directory,pre-incident inventory,NONE,discard
+.tmp-p03-stress,directory,pre-incident inventory,NONE,discard
+.tmp-p06-checks,directory,pre-incident inventory,NONE,discard
+.tmp-p06-run1,directory,pre-incident inventory,NONE,discard
+.tmp-p06-run2,directory,pre-incident inventory,NONE,discard
+.tools,directory,pre-incident inventory,NONE,reinstall
+ERRATA_HANDOFF_2026-09-26_MASTER_FIX.md,file,pre-incident inventory,A,exact forensic if possible; reconstructed copy also preserved
+ERRATA_HANDOFF_BUNDLE_2026-09-26_MASTER_FIX.zip,file,pre-incident inventory,A,exact forensic
+ERRATA_NEXT_CHAT_PROMPT_2026-09-26_MASTER_FIX.txt,file,pre-incident inventory,A,exact forensic if possible; reconstructed copy also preserved
+ERRATA_STATUS_2026-09-26_MASTER_FIX.json,file,pre-incident inventory,A,exact forensic if possible; reconstructed copy also preserved
+ERRATA_TOPLEVEL_SIZE_AUDIT.csv,file,pre-incident inventory,A,exact forensic
+ERRATA_WORKSPACE_AUDIT_2026-09-26.md,file,pre-incident inventory,A,exact forensic
+MasterFix,directory,pre-incident inventory,NONE,restore from master-fix GitHub
+Official,directory,pre-incident inventory,NONE,recreate from upstream
+P0.1-results,directory,pre-incident inventory,A,recover historical evidence
+P0.2-results,directory,pre-incident inventory,A,recover historical evidence
+P0.3-results,directory,pre-incident inventory,A,recover historical evidence
+P0.5-results,directory,pre-incident inventory,A,recover historical evidence
+P0.6-results,directory,pre-incident inventory,A,recover historical evidence
+P0.7-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-A-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-B-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-BC-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-C-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-D-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-D1-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-D2A-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-D2B-results,directory,pre-incident inventory,A,recover historical evidence
+P1.3-D2C-results,directory,pre-incident inventory,A,recover historical evidence
+Vietnamese,directory,pre-incident inventory,NONE,restore tracked content from GitHub
