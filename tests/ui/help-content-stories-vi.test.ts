@@ -61,8 +61,8 @@ describe('Vietnamese Stories help content', () => {
     }
   })
 
-  it('leaves Settings as the exact English object', () => {
+  it('uses the localized Settings section', () => {
     expect(VI_HELP_SECTIONS.find((section) => section.id === 'settings'))
-      .toBe(HELP_SECTIONS.find((section) => section.id === 'settings'))
+      .not.toBe(HELP_SECTIONS.find((section) => section.id === 'settings'))
   })
 })

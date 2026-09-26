@@ -82,10 +82,8 @@ describe('Vietnamese Generation help content', () => {
     expect(viHtml).toContain('thay vì lưu văn xuôi một phần')
   })
 
-  it('leaves not-yet-localized sections as the exact English objects', () => {
-    for (const id of ['settings']) {
-      expect(VI_HELP_SECTIONS.find((section) => section.id === id))
-        .toBe(HELP_SECTIONS.find((section) => section.id === id))
-    }
+  it('uses the localized Settings section', () => {
+    expect(VI_HELP_SECTIONS.find((section) => section.id === 'settings'))
+      .not.toBe(HELP_SECTIONS.find((section) => section.id === 'settings'))
   })
 })
