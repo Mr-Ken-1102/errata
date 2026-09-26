@@ -1,6 +1,7 @@
 import { HELP_SECTIONS, type HelpSection } from './help-content'
 import { VI_BLOCKS_SECTION } from './help-content.vi-blocks'
 import { VI_FRAGMENTS_SECTION } from './help-content.vi-fragments'
+import { VI_LIBRARIAN_SECTION } from './help-content.vi-librarian'
 import { Kbd, Mono, P, Tip, ToolCard } from './help-content.vi-primitives'
 
 const VI_GENERATION_SECTION: HelpSection = {
@@ -433,5 +434,6 @@ export const VI_HELP_SECTIONS: HelpSection[] = HELP_SECTIONS.map((section) => {
   if (section.id === VI_GENERATION_SECTION.id) return VI_GENERATION_SECTION
   if (section.id === VI_BLOCKS_SECTION.id) return VI_BLOCKS_SECTION
   if (section.id === VI_FRAGMENTS_SECTION.id) return VI_FRAGMENTS_SECTION
+  if (section.id === VI_LIBRARIAN_SECTION.id) return VI_LIBRARIAN_SECTION
   return section
 })
