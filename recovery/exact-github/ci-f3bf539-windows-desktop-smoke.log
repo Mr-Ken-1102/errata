@@ -1,0 +1,869 @@
+﻿2026-09-26T15:33:05.5389612Z Current runner version: '2.337.0'
+2026-09-26T15:33:05.5411171Z ##[group]Runner Image Provisioner
+2026-09-26T15:33:05.5411799Z Hosted Compute Agent
+2026-09-26T15:33:05.5412338Z Version: 20260828.587
+2026-09-26T15:33:05.5412811Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-26T15:33:05.5413367Z Build Date: 2026-08-28T16:44:25Z
+2026-09-26T15:33:05.5413882Z Worker ID: {9006c2f8-49d6-4c0b-97eb-3ad49823016e}
+2026-09-26T15:33:05.5414436Z Azure Region: northcentralus
+2026-09-26T15:33:05.5414919Z ##[endgroup]
+2026-09-26T15:33:05.5415923Z ##[group]Operating System
+2026-09-26T15:33:05.5416399Z Microsoft Windows Server 2025
+2026-09-26T15:33:05.5416870Z 10.0.26100
+2026-09-26T15:33:05.5417254Z Datacenter
+2026-09-26T15:33:05.5417682Z ##[endgroup]
+2026-09-26T15:33:05.5418085Z ##[group]Runner Image
+2026-09-26T15:33:05.5418523Z Image: windows-2025-vs2026
+2026-09-26T15:33:05.5419398Z Version: 20260922.246.2
+2026-09-26T15:33:05.5420593Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20260922.246/images/windows/Windows2025-VS2026-Readme.md
+2026-09-26T15:33:05.5421877Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20260922.246
+2026-09-26T15:33:05.5422661Z ##[endgroup]
+2026-09-26T15:33:05.5423539Z ##[group]GITHUB_TOKEN Permissions
+2026-09-26T15:33:05.5425011Z Contents: read
+2026-09-26T15:33:05.5425448Z Metadata: read
+2026-09-26T15:33:05.5425849Z ##[endgroup]
+2026-09-26T15:33:05.5427482Z Secret source: Actions
+2026-09-26T15:33:05.5428168Z Cache mode: write
+2026-09-26T15:33:05.5428701Z Prepare workflow directory
+2026-09-26T15:33:05.5729748Z Prepare all required actions
+2026-09-26T15:33:05.5786113Z Getting action download info
+2026-09-26T15:33:05.7757441Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-09-26T15:33:05.8786550Z Download action repository 'oven-sh/setup-bun@v2' (SHA:0c5077e51419868618aeaa5fe8019c62421857d6)
+2026-09-26T15:33:06.3071760Z Complete job name: windows-desktop-smoke
+2026-09-26T15:33:06.4437298Z ##[group]Run actions/checkout@v4
+2026-09-26T15:33:06.4438211Z with:
+2026-09-26T15:33:06.4438536Z   repository: Mr-Ken-1102/errata
+2026-09-26T15:33:06.4441722Z   token: ***
+2026-09-26T15:33:06.4442031Z   ssh-strict: true
+2026-09-26T15:33:06.4442343Z   ssh-user: git
+2026-09-26T15:33:06.4442653Z   persist-credentials: true
+2026-09-26T15:33:06.4443003Z   clean: true
+2026-09-26T15:33:06.4443314Z   sparse-checkout-cone-mode: true
+2026-09-26T15:33:06.4443685Z   fetch-depth: 1
+2026-09-26T15:33:06.4443985Z   fetch-tags: false
+2026-09-26T15:33:06.4444299Z   show-progress: true
+2026-09-26T15:33:06.4444615Z   lfs: false
+2026-09-26T15:33:06.4444899Z   submodules: false
+2026-09-26T15:33:06.4445212Z   set-safe-directory: true
+2026-09-26T15:33:06.4445569Z   allow-unsafe-pr-checkout: false
+2026-09-26T15:33:06.4446105Z ##[endgroup]
+2026-09-26T15:33:06.6557554Z Syncing repository: Mr-Ken-1102/errata
+2026-09-26T15:33:06.6558854Z ##[group]Getting Git version info
+2026-09-26T15:33:06.6559371Z Working directory is 'D:\a\errata\errata'
+2026-09-26T15:33:06.8382159Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-26T15:33:07.3413620Z git version 2.55.0.windows.5
+2026-09-26T15:33:07.3457896Z ##[endgroup]
+2026-09-26T15:33:07.3476988Z Temporarily overriding HOME='D:\a\_temp\cb8c1993-8fd6-46c2-9d64-1d9704d3caf4' before making global git config changes
+2026-09-26T15:33:07.3479105Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-26T15:33:07.3487575Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\errata\errata
+2026-09-26T15:33:07.8517548Z Deleting the contents of 'D:\a\errata\errata'
+2026-09-26T15:33:07.8522643Z ##[group]Initializing the repository
+2026-09-26T15:33:07.8532422Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\errata\errata
+2026-09-26T15:33:07.9218878Z Initialized empty Git repository in D:/a/errata/errata/.git/
+2026-09-26T15:33:07.9259538Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/Mr-Ken-1102/errata
+2026-09-26T15:33:07.9744032Z ##[endgroup]
+2026-09-26T15:33:07.9745531Z ##[group]Disabling automatic garbage collection
+2026-09-26T15:33:07.9752317Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-09-26T15:33:07.9987296Z ##[endgroup]
+2026-09-26T15:33:07.9988339Z ##[group]Setting up auth
+2026-09-26T15:33:07.9996593Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-26T15:33:08.0227311Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-26T15:33:09.6269614Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-26T15:33:09.6500160Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-26T15:33:10.0570122Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-26T15:33:10.0814991Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-26T15:33:10.4968980Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-09-26T15:33:10.5218815Z ##[endgroup]
+2026-09-26T15:33:10.5219441Z ##[group]Fetching the repository
+2026-09-26T15:33:10.5229218Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2db397ed1764be80da0ab797ccbaf798edb231dc:refs/remotes/pull/12/merge
+2026-09-26T15:33:11.7026245Z From https://github.com/Mr-Ken-1102/errata
+2026-09-26T15:33:11.7027032Z  * [new ref]         2db397ed1764be80da0ab797ccbaf798edb231dc -> pull/12/merge
+2026-09-26T15:33:11.7068586Z ##[endgroup]
+2026-09-26T15:33:11.7069085Z ##[group]Determining the checkout info
+2026-09-26T15:33:11.7071001Z ##[endgroup]
+2026-09-26T15:33:11.7079200Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-09-26T15:33:11.7431674Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-09-26T15:33:11.7679056Z ##[group]Checking out the ref
+2026-09-26T15:33:11.7679517Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/12/merge
+2026-09-26T15:33:12.1005167Z Note: switching to 'refs/remotes/pull/12/merge'.
+2026-09-26T15:33:12.1005659Z 
+2026-09-26T15:33:12.1005931Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-26T15:33:12.1006539Z changes and commit them, and you can discard any commits you make in this
+2026-09-26T15:33:12.1007054Z state without impacting any branches by switching back to a branch.
+2026-09-26T15:33:12.1007383Z 
+2026-09-26T15:33:12.1007539Z If you want to create a new branch to retain commits you create, you may
+2026-09-26T15:33:12.1007929Z do so (now or later) by using -c with the switch command. Example:
+2026-09-26T15:33:12.1008121Z 
+2026-09-26T15:33:12.1008261Z   git switch -c <new-branch-name>
+2026-09-26T15:33:12.1008415Z 
+2026-09-26T15:33:12.1008509Z Or undo this operation with:
+2026-09-26T15:33:12.1008631Z 
+2026-09-26T15:33:12.1008705Z   git switch -
+2026-09-26T15:33:12.1008809Z 
+2026-09-26T15:33:12.1008976Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-26T15:33:12.1009205Z 
+2026-09-26T15:33:12.1009504Z HEAD is now at 2db397e Merge f3bf53930a28b4c2c9e7c934e8491272fe5c6c88 into 230b87878379ec0290b973fc3e747a63cbd3525b
+2026-09-26T15:33:12.1099587Z ##[endgroup]
+2026-09-26T15:33:12.1421784Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-09-26T15:33:12.1624023Z 2db397ed1764be80da0ab797ccbaf798edb231dc
+2026-09-26T15:33:12.2003319Z ##[group]Run oven-sh/setup-bun@v2
+2026-09-26T15:33:12.2003595Z with:
+2026-09-26T15:33:12.2003759Z   no-cache: false
+2026-09-26T15:33:12.2005847Z   token: ***
+2026-09-26T15:33:12.2005998Z ##[endgroup]
+2026-09-26T15:33:12.6843481Z Downloading a new version of Bun: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip
+2026-09-26T15:33:13.0308424Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command "$ErrorActionPreference = 'Stop' ; try { Add-Type -AssemblyName System.IO.Compression.ZipFile } catch { } ; try { [System.IO.Compression.ZipFile]::ExtractToDirectory('D:\a\_temp\ded85b28-facc-4222-8d7a-9e931995be40.zip', 'D:\a\_temp\8b437739-8b78-4024-afed-114be32a59d3', $true) } catch { if (($_.Exception.GetType().FullName -eq 'System.Management.Automation.MethodException') -or ($_.Exception.GetType().FullName -eq 'System.Management.Automation.RuntimeException') ){ Expand-Archive -LiteralPath 'D:\a\_temp\ded85b28-facc-4222-8d7a-9e931995be40.zip' -DestinationPath 'D:\a\_temp\8b437739-8b78-4024-afed-114be32a59d3' -Force } else { throw $_ } } ;"
+2026-09-26T15:33:13.6258403Z [command]C:\Users\runneradmin\.bun\bin\bun.exe --revision
+2026-09-26T15:33:14.5271098Z 1.4.2+744846f84
+2026-09-26T15:33:14.5675422Z ##[group]Run start.bat check
+2026-09-26T15:33:14.5675759Z [36;1mstart.bat check[0m
+2026-09-26T15:33:14.5705883Z shell: C:\Windows\system32\cmd.EXE /D /E:ON /V:OFF /S /C "CALL "{0}""
+2026-09-26T15:33:14.5706182Z ##[endgroup]
+2026-09-26T15:33:14.5936577Z [Errata] Checking Windows source launcher...
+2026-09-26T15:33:14.5939186Z [Errata] Repository: "D:\a\errata\errata"
+2026-09-26T15:33:15.2839273Z [Errata] Bun: "C:\Users\runneradmin\.bun\bin\bun.exe"
+2026-09-26T15:33:15.2885801Z 1.4.2
+2026-09-26T15:33:15.4160021Z [Errata] Node.js: "C:\Program Files\nodejs\node.exe"
+2026-09-26T15:33:15.9615587Z v22.23.2
+2026-09-26T15:33:15.9680292Z [Errata] PowerShell: available
+2026-09-26T15:33:15.9682806Z [Errata] Source data directory: "D:\a\errata\errata\data"
+2026-09-26T15:33:15.9685264Z [Errata] Dev URL: http://localhost:7739
+2026-09-26T15:33:15.9687861Z [Errata] Launcher check passed.
+2026-09-26T15:33:15.9834194Z ##[group]Run bun install --frozen-lockfile
+2026-09-26T15:33:15.9834503Z [36;1mbun install --frozen-lockfile[0m
+2026-09-26T15:33:15.9888980Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-26T15:33:15.9889247Z ##[endgroup]
+2026-09-26T15:33:16.2306304Z bun install v1.4.2 (744846f84)
+2026-09-26T15:33:16.2367601Z Resolving dependencies
+2026-09-26T15:33:58.4971366Z Resolved, downloaded and extracted [4422]
+2026-09-26T15:34:12.6812374Z 
+2026-09-26T15:34:12.6813008Z + @tanstack/devtools-vite@0.3.12 (v0.8.5 available)
+2026-09-26T15:34:12.6813473Z + @testing-library/dom@10.4.2
+2026-09-26T15:34:12.6813759Z + @testing-library/react@16.3.3
+2026-09-26T15:34:12.6814059Z + @types/bun@1.4.2
+2026-09-26T15:34:12.6815359Z + @types/node@22.20.4 (v26.6.3 available)
+2026-09-26T15:34:12.6815623Z + @types/qrcode@1.5.6
+2026-09-26T15:34:12.6815829Z + @types/react@19.3.0
+2026-09-26T15:34:12.6816052Z + @types/react-dom@19.3.0
+2026-09-26T15:34:12.6816469Z + @vitejs/plugin-react@5.2.0 (v6.1.1 available)
+2026-09-26T15:34:12.6816821Z + electron@42.11.8 (v44.4.5 available)
+2026-09-26T15:34:12.6817126Z + electron-builder@26.15.3
+2026-09-26T15:34:12.6817406Z + jsdom@27.4.0 (v30.1.1 available)
+2026-09-26T15:34:12.6817668Z + qrcode-terminal@0.12.0
+2026-09-26T15:34:12.6818117Z + shadcn@3.8.5 (v4.21.0 available)
+2026-09-26T15:34:12.6818389Z + tw-animate-css@1.4.0
+2026-09-26T15:34:12.6819093Z + typescript@5.9.3 (v7.0.2 available)
+2026-09-26T15:34:12.6819372Z + vite@7.3.6 (v8.3.1 available)
+2026-09-26T15:34:12.6819963Z + vitest@3.2.7 (v5.0.2 available)
+2026-09-26T15:34:12.6820422Z + @ai-sdk/google@3.0.127 (v4.0.82 available)
+2026-09-26T15:34:12.6820814Z + @ai-sdk/openai-compatible@2.0.78 (v3.0.57 available)
+2026-09-26T15:34:12.6821482Z + @ai-sdk/react@3.0.295 (v4.0.119 available)
+2026-09-26T15:34:12.6821789Z + @codemirror/autocomplete@6.20.3
+2026-09-26T15:34:12.6822639Z + @codemirror/commands@6.11.1
+2026-09-26T15:34:12.6822937Z + @codemirror/lang-javascript@6.2.5
+2026-09-26T15:34:12.6823182Z + @codemirror/language@6.12.4
+2026-09-26T15:34:12.6823377Z + @codemirror/state@6.7.6
+2026-09-26T15:34:12.6823550Z + @codemirror/view@6.43.13
+2026-09-26T15:34:12.6823719Z + @elysiajs/eden@1.4.9
+2026-09-26T15:34:12.6823883Z + @elysiajs/openapi@1.4.16
+2026-09-26T15:34:12.6824059Z + @floating-ui/react@0.27.20
+2026-09-26T15:34:12.6824288Z + @huggingface/transformers@4.3.0
+2026-09-26T15:34:12.6824606Z + @sinclair/typebox@0.34.52
+2026-09-26T15:34:12.6825067Z + @tailwindcss/vite@4.3.3
+2026-09-26T15:34:12.6825419Z + @tanstack/react-devtools@0.7.11 (v0.10.13 available)
+2026-09-26T15:34:12.6825718Z + @tanstack/react-query@5.104.0
+2026-09-26T15:34:12.6825966Z + @tanstack/react-router@1.170.39
+2026-09-26T15:34:12.6826271Z + @tanstack/react-router-devtools@1.167.2
+2026-09-26T15:34:12.6826487Z + @tanstack/react-router-ssr-query@1.167.3
+2026-09-26T15:34:12.6826799Z + @tanstack/react-start@1.168.58
+2026-09-26T15:34:12.6827119Z + @tanstack/react-virtual@3.14.13
+2026-09-26T15:34:12.6827396Z + @tanstack/router-plugin@1.168.40
+2026-09-26T15:34:12.6827702Z + @tiptap/extension-bubble-menu@3.31.3
+2026-09-26T15:34:12.6828066Z + @tiptap/pm@3.31.3
+2026-09-26T15:34:12.6828246Z + @tiptap/react@3.31.3
+2026-09-26T15:34:12.6828464Z + @tiptap/starter-kit@3.31.3
+2026-09-26T15:34:12.6828774Z + @uiw/react-codemirror@4.25.12
+2026-09-26T15:34:12.6829031Z + @viscerous/errata-plugin-sdk@packages/errata-plugin-sdk
+2026-09-26T15:34:12.6829379Z + ai@6.0.292 (v7.0.116 available)
+2026-09-26T15:34:12.6829738Z + class-variance-authority@0.7.1
+2026-09-26T15:34:12.6830000Z + clsx@2.1.1
+2026-09-26T15:34:12.6830172Z + cuelume@0.1.2 (v0.2.2 available)
+2026-09-26T15:34:12.6830436Z + electron-updater@6.8.9
+2026-09-26T15:34:12.6830664Z + elysia@1.4.30
+2026-09-26T15:34:12.6830911Z + fflate@0.8.3
+2026-09-26T15:34:12.6831389Z + lucide-react@0.564.0 (v1.48.0 available)
+2026-09-26T15:34:12.6831646Z + nitro@3.0.1-20260926-103210-db7a719c
+2026-09-26T15:34:12.6832026Z + openapi-types@12.1.3
+2026-09-26T15:34:12.6835103Z + qrcode@1.5.4
+2026-09-26T15:34:12.6835415Z + radix-ui@1.6.7
+2026-09-26T15:34:12.6835577Z + react@19.3.0
+2026-09-26T15:34:12.6836019Z + react-dom@19.3.0
+2026-09-26T15:34:12.6836266Z + react-markdown@10.1.0
+2026-09-26T15:34:12.6836715Z + remark-gfm@4.0.1
+2026-09-26T15:34:12.6837130Z + tailwind-merge@3.7.0
+2026-09-26T15:34:12.6837332Z + tailwindcss@4.3.3
+2026-09-26T15:34:12.6837677Z + vite-tsconfig-paths@5.1.4 (v6.1.1 available)
+2026-09-26T15:34:12.6837945Z + zod@4.6.5
+2026-09-26T15:34:12.6838071Z 
+2026-09-26T15:34:12.6838235Z 1103 packages installed [56.45s]
+2026-09-26T15:34:12.6838366Z 
+2026-09-26T15:34:12.6838554Z Blocked 2 postinstalls. Run `bun pm untrusted` for details.
+2026-09-26T15:34:12.7865214Z ##[group]Run bunx tsc -p desktop/tsconfig.json --noEmit
+2026-09-26T15:34:12.7865649Z [36;1mbunx tsc -p desktop/tsconfig.json --noEmit[0m
+2026-09-26T15:34:12.7921819Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-26T15:34:12.7922104Z ##[endgroup]
+2026-09-26T15:34:14.8036577Z ##[group]Run bun run electron:pack
+2026-09-26T15:34:14.8036872Z [36;1mbun run electron:pack[0m
+2026-09-26T15:34:14.8091351Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-26T15:34:14.8091634Z ##[endgroup]
+2026-09-26T15:34:15.0456072Z $ bun install --frozen-lockfile && bun scripts/build-electron.mjs --dir
+2026-09-26T15:34:15.0515651Z bun install v1.4.2 (744846f84)
+2026-09-26T15:34:15.1622264Z Resolving dependencies
+2026-09-26T15:34:15.1632579Z Resolved, downloaded and extracted [0]
+2026-09-26T15:34:15.2327741Z 
+2026-09-26T15:34:15.2328269Z + @viscerous/errata-plugin-sdk@packages/errata-plugin-sdk
+2026-09-26T15:34:15.2328610Z 
+2026-09-26T15:34:15.2328716Z 1 package installed [181.00ms]
+2026-09-26T15:34:15.2590257Z > bun scripts/build-binary.mjs --out-dir=dist/server
+2026-09-26T15:34:15.2764249Z Building Errata v1.0.0 -> dist/server
+2026-09-26T15:34:15.2841292Z $ bun install --frozen-lockfile && vite build
+2026-09-26T15:34:15.2896202Z bun install v1.4.2 (744846f84)
+2026-09-26T15:34:15.3888304Z Resolving dependencies
+2026-09-26T15:34:15.3896794Z Resolved, downloaded and extracted [0]
+2026-09-26T15:34:15.4492433Z 
+2026-09-26T15:34:15.4493221Z + @viscerous/errata-plugin-sdk@packages/errata-plugin-sdk
+2026-09-26T15:34:15.4493581Z 
+2026-09-26T15:34:15.4493705Z 1 package installed [160.00ms]
+2026-09-26T15:34:18.5182091Z [warn] `vite@7.3.6` is installed in `D:/a/errata/errata/` but the `vite` builder requires `^8`. Please update it if you run into issues.
+2026-09-26T15:34:19.0923871Z [36mvite v7.3.6 [32mbuilding client environment for production...[36m[39m
+2026-09-26T15:34:19.1378897Z transforming...
+2026-09-26T15:34:32.9657828Z [33mnode_modules/zod/v4/core/util.js (400:0): A comment
+2026-09-26T15:34:32.9659525Z 
+2026-09-26T15:34:32.9661141Z "// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+2026-09-26T15:34:32.9661986Z 
+2026-09-26T15:34:32.9662910Z in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+2026-09-26T15:34:32.9669486Z [33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+2026-09-26T15:34:32.9669903Z 
+2026-09-26T15:34:32.9670364Z "/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+2026-09-26T15:34:32.9671109Z  * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+2026-09-26T15:34:32.9671813Z  * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+2026-09-26T15:34:32.9672247Z 
+2026-09-26T15:34:32.9673087Z in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+2026-09-26T15:34:38.3296090Z [32m✓[39m 2619 modules transformed.
+2026-09-26T15:34:38.7700892Z rendering chunks...
+2026-09-26T15:34:39.1262315Z computing gzip size...
+2026-09-26T15:34:39.7646833Z [2m.output/public/[22m[32massets/supertonic.worker-BFS2hp2C.js                  [39m[1m[2m   548.94 kB[22m[1m[22m
+2026-09-26T15:34:39.7648446Z [2m.output/public/[22m[32massets/ort-wasm-simd-threaded.asyncify-CxOG5pUO.wasm  [39m[1m[2m26,861.78 kB[22m[1m[22m[2m │ gzip: 6,690.35 kB[22m
+2026-09-26T15:34:39.7649294Z [2m.output/public/[22m[35massets/styles-Z9yvTKk0.css                            [39m[1m[2m   178.30 kB[22m[1m[22m[2m │ gzip:    25.63 kB[22m
+2026-09-26T15:34:39.7650094Z [2m.output/public/[22m[36massets/minus-CWFKNyC4.js                              [39m[1m[2m     0.12 kB[22m[1m[22m[2m │ gzip:     0.13 kB[22m
+2026-09-26T15:34:39.7651564Z [2m.output/public/[22m[36massets/globe-BemhM4Bk.js                              [39m[1m[2m     0.24 kB[22m[1m[22m[2m │ gzip:     0.19 kB[22m
+2026-09-26T15:34:39.7656515Z [2m.output/public/[22m[36massets/settings-2-BKHueZVb.js                         [39m[1m[2m     0.25 kB[22m[1m[22m[2m │ gzip:     0.19 kB[22m
+2026-09-26T15:34:39.7657903Z [2m.output/public/[22m[36massets/external-link-DoxRP68r.js                      [39m[1m[2m     0.25 kB[22m[1m[22m[2m │ gzip:     0.20 kB[22m
+2026-09-26T15:34:39.7659101Z [2m.output/public/[22m[36massets/clipboard-Dd2nckQn.js                          [39m[1m[2m     0.26 kB[22m[1m[22m[2m │ gzip:     0.21 kB[22m
+2026-09-26T15:34:39.7660191Z [2m.output/public/[22m[36massets/link-BlY55oiQ.js                               [39m[1m[2m     0.26 kB[22m[1m[22m[2m │ gzip:     0.20 kB[22m
+2026-09-26T15:34:39.7660847Z [33m
+2026-09-26T15:34:39.7662255Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-09-26T15:34:39.7662710Z - Using dynamic import() to code-split the application
+2026-09-26T15:34:39.7663880Z - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+2026-09-26T15:34:39.7664865Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-09-26T15:34:39.7665841Z [2m.output/public/[22m[36massets/triangle-alert-BgGMIseH.js                     [39m[1m[2m     0.27 kB[22m[1m[22m[2m │ gzip:     0.22 kB[22m
+2026-09-26T15:34:39.7666951Z [2m.output/public/[22m[36massets/package-uV2lgzmm.js                            [39m[1m[2m     0.37 kB[22m[1m[22m[2m │ gzip:     0.26 kB[22m
+2026-09-26T15:34:39.7668048Z [2m.output/public/[22m[36massets/ErratanetIntroPrompt-Cf5wwIxV.js               [39m[1m[2m     1.13 kB[22m[1m[22m[2m │ gzip:     0.60 kB[22m
+2026-09-26T15:34:39.7669119Z [2m.output/public/[22m[36massets/ArchivePanel-B3JL8tbr.js                       [39m[1m[2m     3.31 kB[22m[1m[22m[2m │ gzip:     1.36 kB[22m
+2026-09-26T15:34:39.7670184Z [2m.output/public/[22m[36massets/ContextOrderPanel-DDTxzKU9.js                  [39m[1m[2m     3.94 kB[22m[1m[22m[2m │ gzip:     1.65 kB[22m
+2026-09-26T15:34:39.7671276Z [2m.output/public/[22m[36massets/TimelineManagerPanel-BiJwsNN9.js               [39m[1m[2m     4.34 kB[22m[1m[22m[2m │ gzip:     1.69 kB[22m
+2026-09-26T15:34:39.7672430Z [2m.output/public/[22m[36massets/file-drop-dialog-C-hQupJY.js                   [39m[1m[2m     4.44 kB[22m[1m[22m[2m │ gzip:     1.88 kB[22m
+2026-09-26T15:34:39.7673504Z [2m.output/public/[22m[36massets/checkbox-Bk-wKMmv.js                           [39m[1m[2m     4.60 kB[22m[1m[22m[2m │ gzip:     1.97 kB[22m
+2026-09-26T15:34:39.7674504Z [2m.output/public/[22m[36massets/BlockContentView-D-LC59yq.js                   [39m[1m[2m     4.79 kB[22m[1m[22m[2m │ gzip:     1.67 kB[22m
+2026-09-26T15:34:39.7675596Z [2m.output/public/[22m[36massets/tabs-CcqZncS-.js                               [39m[1m[2m     5.16 kB[22m[1m[22m[2m │ gzip:     1.90 kB[22m
+2026-09-26T15:34:39.7676690Z [2m.output/public/[22m[36massets/model-role-helpers-CCeMImph.js                 [39m[1m[2m     5.21 kB[22m[1m[22m[2m │ gzip:     2.00 kB[22m
+2026-09-26T15:34:39.7677814Z [2m.output/public/[22m[36massets/LorebookImportDialog-C_dyQnRL.js               [39m[1m[2m     6.53 kB[22m[1m[22m[2m │ gzip:     2.53 kB[22m
+2026-09-26T15:34:39.7678947Z [2m.output/public/[22m[36massets/TavernCardImportDialog-XhV4iI2h.js             [39m[1m[2m     6.82 kB[22m[1m[22m[2m │ gzip:     2.75 kB[22m
+2026-09-26T15:34:39.7680100Z [2m.output/public/[22m[36massets/FragmentTypesPanel-CUNqe-aj.js                 [39m[1m[2m     7.91 kB[22m[1m[22m[2m │ gzip:     2.53 kB[22m
+2026-09-26T15:34:39.7681170Z [2m.output/public/[22m[36massets/ChatSendButton-DAPNkc8W.js                     [39m[1m[2m     8.26 kB[22m[1m[22m[2m │ gzip:     2.86 kB[22m
+2026-09-26T15:34:39.7682347Z [2m.output/public/[22m[36massets/CharacterCardImportDialog-Do2BMFyw.js          [39m[1m[2m     9.91 kB[22m[1m[22m[2m │ gzip:     3.37 kB[22m
+2026-09-26T15:34:39.7684559Z [2m.output/public/[22m[36massets/StoryWizard-DbTHNtA0.js                        [39m[1m[2m    11.13 kB[22m[1m[22m[2m │ gzip:     3.36 kB[22m
+2026-09-26T15:34:39.7685769Z [2m.output/public/[22m[36massets/DesktopUpdatesPanel-Ro7t203a.js                [39m[1m[2m    11.71 kB[22m[1m[22m[2m │ gzip:     3.44 kB[22m
+2026-09-26T15:34:39.7686907Z [2m.output/public/[22m[36massets/FragmentExportPanel-BAMHsJp9.js                [39m[1m[2m    12.38 kB[22m[1m[22m[2m │ gzip:     4.20 kB[22m
+2026-09-26T15:34:39.7688022Z [2m.output/public/[22m[36massets/FragmentImportDialog-DieyZffF.js               [39m[1m[2m    14.29 kB[22m[1m[22m[2m │ gzip:     4.31 kB[22m
+2026-09-26T15:34:39.7689359Z [2m.output/public/[22m[36massets/StoryInfoPanel-AH8mFgWn.js                     [39m[1m[2m    15.00 kB[22m[1m[22m[2m │ gzip:     4.20 kB[22m
+2026-09-26T15:34:39.7690530Z [2m.output/public/[22m[36massets/PublishPackDialog-D4u8oDcW.js                  [39m[1m[2m    16.23 kB[22m[1m[22m[2m │ gzip:     5.23 kB[22m
+2026-09-26T15:34:39.7691644Z [2m.output/public/[22m[36massets/DebugPanel-rVx6V-Jr.js                         [39m[1m[2m    16.81 kB[22m[1m[22m[2m │ gzip:     4.12 kB[22m
+2026-09-26T15:34:39.7692738Z [2m.output/public/[22m[36massets/ProviderManager-B0RraK5R.js                    [39m[1m[2m    18.69 kB[22m[1m[22m[2m │ gzip:     5.39 kB[22m
+2026-09-26T15:34:39.7715451Z [2m.output/public/[22m[36massets/CharacterChatView-DYINNyFk.js                  [39m[1m[2m    20.32 kB[22m[1m[22m[2m │ gzip:     6.04 kB[22m
+2026-09-26T15:34:39.7716518Z [2m.output/public/[22m[36massets/FragmentList-OZkNrgYE.js                       [39m[1m[2m    23.40 kB[22m[1m[22m[2m │ gzip:     7.16 kB[22m
+2026-09-26T15:34:39.7717395Z [2m.output/public/[22m[36massets/LibrarianPanel-D4rdwqm3.js                     [39m[1m[2m    49.47 kB[22m[1m[22m[2m │ gzip:    12.96 kB[22m
+2026-09-26T15:34:39.7718091Z [2m.output/public/[22m[36massets/SettingsView-KT_vFntv.js                       [39m[1m[2m    51.20 kB[22m[1m[22m[2m │ gzip:    12.69 kB[22m
+2026-09-26T15:34:39.7718736Z [2m.output/public/[22m[36massets/tavern-card-DkSfTxcc.js                        [39m[1m[2m    53.86 kB[22m[1m[22m[2m │ gzip:    16.11 kB[22m
+2026-09-26T15:34:39.7719388Z [2m.output/public/[22m[36massets/ErratanetPanel-e94FruSC.js                     [39m[1m[2m    59.20 kB[22m[1m[22m[2m │ gzip:    14.01 kB[22m
+2026-09-26T15:34:39.7720021Z [2m.output/public/[22m[36massets/index-IfMyQo1q.js                              [39m[1m[2m    81.25 kB[22m[1m[22m[2m │ gzip:    24.45 kB[22m
+2026-09-26T15:34:39.7720815Z [2m.output/public/[22m[36massets/AgentsPanel-DGYuTg4X.js                        [39m[1m[33m   571.87 kB[39m[22m[2m │ gzip:   188.27 kB[22m
+2026-09-26T15:34:39.7721602Z [2m.output/public/[22m[36massets/index-CUGQgGhm.js                              [39m[1m[33m   865.02 kB[39m[22m[2m │ gzip:   257.12 kB[22m
+2026-09-26T15:34:39.7722252Z [2m.output/public/[22m[36massets/story._storyId-B-tMxKLF.js                     [39m[1m[33m   987.24 kB[39m[22m[2m │ gzip:   298.28 kB[22m
+2026-09-26T15:34:39.7722819Z [32m✓ built in 20.65s[39m
+2026-09-26T15:34:39.7723156Z [36mvite v7.3.6 [32mbuilding ssr environment for production...[36m[39m
+2026-09-26T15:34:39.7725304Z transforming...
+2026-09-26T15:34:45.5275151Z [33m"createRequestHandler", "defineHandlerCallback", "transformPipeableStreamWithRouter" and "transformReadableStreamWithRouter" are imported from external module "@tanstack/router-core/ssr/server" but never used in "node_modules/@tanstack/start-server-core/dist/esm/index.js".[39m
+2026-09-26T15:34:45.5276939Z [33m"RawStream" is imported from external module "@tanstack/router-core" but never used in "node_modules/@tanstack/start-client-core/dist/esm/index.js".[39m
+2026-09-26T15:34:45.5279005Z [33m"defaultSerovalDeserializerPlugins", "hydrate" and "json" are imported from external module "@tanstack/router-core/ssr/client" but never used in "node_modules/@tanstack/start-client-core/dist/esm/index.js".[39m
+2026-09-26T15:34:45.5280118Z [32m✓[39m 404 modules transformed.
+2026-09-26T15:34:45.7154920Z rendering chunks...
+2026-09-26T15:34:46.2774323Z [33m[plugin vite:reporter] 
+2026-09-26T15:34:46.2777108Z (!) D:/a/errata/errata/src/lib/fragment-ids.ts is dynamically imported by D:/a/errata/errata/src/server/fragments/storage.ts but also statically imported by D:/a/errata/errata/src/server/erratanet/pack-install.ts, D:/a/errata/errata/src/server/fragments/branches.ts, D:/a/errata/errata/src/server/fragments/change-operations.ts, D:/a/errata/errata/src/server/fragments/folders.ts, D:/a/errata/errata/src/server/fragments/rename.ts, D:/a/errata/errata/src/server/generation/run-generation.ts, D:/a/errata/errata/src/server/librarian/storage.ts, D:/a/errata/errata/src/server/routes/fragments.ts, D:/a/errata/errata/src/server/routes/prose-chain.ts, D:/a/errata/errata/src/server/story-archive.ts, D:/a/errata/errata/src/server/story-setup/sync.ts, dynamic import will not move module into another chunk.
+2026-09-26T15:34:46.2779840Z [39m
+2026-09-26T15:34:46.2780033Z [33m[plugin vite:reporter] 
+2026-09-26T15:34:46.2781951Z (!) D:/a/errata/errata/src/server/librarian/storage.ts is dynamically imported by D:/a/errata/errata/src/server/routes/librarian.ts but also statically imported by D:/a/errata/errata/src/server/fragments/rename.ts, D:/a/errata/errata/src/server/librarian/agent.ts, D:/a/errata/errata/src/server/librarian/continuity-view.ts, D:/a/errata/errata/src/server/librarian/pipeline.ts, D:/a/errata/errata/src/server/librarian/scheduler.ts, D:/a/errata/errata/src/server/librarian/summary-projection.ts, D:/a/errata/errata/src/server/librarian/summary-rollups.ts, D:/a/errata/errata/src/server/llm/context-builder.ts, D:/a/errata/errata/src/server/routes/librarian.ts, dynamic import will not move module into another chunk.
+2026-09-26T15:34:46.2783874Z [39m
+2026-09-26T15:34:46.2784056Z [33m[plugin vite:reporter] 
+2026-09-26T15:34:46.2785683Z (!) D:/a/errata/errata/src/server/librarian/scheduler.ts is dynamically imported by D:/a/errata/errata/src/server/librarian/summary-rollup-maintenance.ts but also statically imported by D:/a/errata/errata/src/server/agents/create-streaming-runner.ts, D:/a/errata/errata/src/server/generation/run-generation.ts, D:/a/errata/errata/src/server/librarian/chat.ts, D:/a/errata/errata/src/server/llm/tools.ts, D:/a/errata/errata/src/server/routes/branches.ts, D:/a/errata/errata/src/server/routes/fragments.ts, D:/a/errata/errata/src/server/routes/librarian.ts, dynamic import will not move module into another chunk.
+2026-09-26T15:34:46.2787301Z [39m
+2026-09-26T15:34:46.2787460Z [33m[plugin vite:reporter] 
+2026-09-26T15:34:46.2788572Z (!) D:/a/errata/errata/src/server/librarian/summary-rollup-maintenance.ts is dynamically imported by D:/a/errata/errata/src/server/librarian/scheduler.ts but also statically imported by D:/a/errata/errata/src/server/librarian/summary-projection.ts, D:/a/errata/errata/src/server/llm/context-builder.ts, D:/a/errata/errata/src/server/routes/branches.ts, dynamic import will not move module into another chunk.
+2026-09-26T15:34:46.2789707Z [39m
+2026-09-26T15:34:46.3309020Z [2mnode_modules/.nitro/vite/services/ssr/[22m[32massets/supertonic.worker-BFS2hp2C.js                  [39m[1m[2m   548.94 kB[22m[1m[22m
+2026-09-26T15:34:46.3310297Z [2mnode_modules/.nitro/vite/services/ssr/[22m[32massets/ort-wasm-simd-threaded.asyncify-CxOG5pUO.wasm  [39m[1m[2m26,861.78 kB[22m[1m[22m
+2026-09-26T15:34:46.3311477Z [2mnode_modules/.nitro/vite/services/ssr/[22m[35massets/styles-Z9yvTKk0.css                            [39m[1m[2m   178.30 kB[22m[1m[22m
+2026-09-26T15:34:46.3312558Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/start-HYkvq4Ni.js                              [39m[1m[2m     0.06 kB[22m[1m[22m
+2026-09-26T15:34:46.3314628Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/empty-plugin-adapters-BFgPZ6_d.js              [39m[1m[2m     0.13 kB[22m[1m[22m
+2026-09-26T15:34:46.3315840Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/_tanstack-start-manifest_v-DbAppluE.js         [39m[1m[2m     1.12 kB[22m[1m[22m
+2026-09-26T15:34:46.3316658Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/index-DmPWj5BK.js                              [39m[1m[2m     1.26 kB[22m[1m[22m
+2026-09-26T15:34:46.3317545Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/checkbox-Bl3Z-iqg.js                           [39m[1m[2m     1.26 kB[22m[1m[22m
+2026-09-26T15:34:46.3318258Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/ErratanetIntroPrompt-BCi8wFUF.js               [39m[1m[2m     2.88 kB[22m[1m[22m
+2026-09-26T15:34:46.3319136Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/tabs-DgI0PPG1.js                               [39m[1m[2m     3.62 kB[22m[1m[22m
+2026-09-26T15:34:46.3319823Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/ArchivePanel-Clw6B8oC.js                       [39m[1m[2m     6.85 kB[22m[1m[22m
+2026-09-26T15:34:46.3320513Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/BlockContentView-BlZ9mQdQ.js                   [39m[1m[2m     8.02 kB[22m[1m[22m
+2026-09-26T15:34:46.3321213Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/ContextOrderPanel-CRZD6ETb.js                  [39m[1m[2m     8.05 kB[22m[1m[22m
+2026-09-26T15:34:46.3321906Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/file-drop-dialog-IL_fZTy2.js                   [39m[1m[2m     8.93 kB[22m[1m[22m
+2026-09-26T15:34:46.3322593Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/model-role-helpers-CouwVYt5.js                 [39m[1m[2m     9.28 kB[22m[1m[22m
+2026-09-26T15:34:46.3323301Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/TimelineManagerPanel-B-E_yWCo.js               [39m[1m[2m     9.75 kB[22m[1m[22m
+2026-09-26T15:34:46.3324003Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/ChatSendButton-aC1ap_fr.js                     [39m[1m[2m    12.07 kB[22m[1m[22m
+2026-09-26T15:34:46.3324700Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/TavernCardImportDialog-XQCkPT_r.js             [39m[1m[2m    13.10 kB[22m[1m[22m
+2026-09-26T15:34:46.3325429Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/LorebookImportDialog-CbShnf82.js               [39m[1m[2m    13.58 kB[22m[1m[22m
+2026-09-26T15:34:46.3326144Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/FragmentTypesPanel-BTZkfAKf.js                 [39m[1m[2m    16.12 kB[22m[1m[22m
+2026-09-26T15:34:46.3326847Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/StoryWizard-Eu5v3QfX.js                        [39m[1m[2m    17.04 kB[22m[1m[22m
+2026-09-26T15:34:46.3327547Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/DesktopUpdatesPanel-DKE7imzv.js                [39m[1m[2m    17.87 kB[22m[1m[22m
+2026-09-26T15:34:46.3328290Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/CharacterCardImportDialog-DbABzChi.js          [39m[1m[2m    19.47 kB[22m[1m[22m
+2026-09-26T15:34:46.3329020Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/FragmentExportPanel-BGWSP_si.js                [39m[1m[2m    23.82 kB[22m[1m[22m
+2026-09-26T15:34:46.3329712Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/StoryInfoPanel-CUbkHyx6.js                     [39m[1m[2m    24.64 kB[22m[1m[22m
+2026-09-26T15:34:46.3330404Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/PublishPackDialog-BVEHIlfL.js                  [39m[1m[2m    25.17 kB[22m[1m[22m
+2026-09-26T15:34:46.3331157Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/FragmentImportDialog-DyXOZAW9.js               [39m[1m[2m    25.37 kB[22m[1m[22m
+2026-09-26T15:34:46.3332433Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/DebugPanel-Dz2kN-Yj.js                         [39m[1m[2m    28.14 kB[22m[1m[22m
+2026-09-26T15:34:46.3333488Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/ProviderManager-BZP6P46N.js                    [39m[1m[2m    31.17 kB[22m[1m[22m
+2026-09-26T15:34:46.3334200Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/CharacterChatView-CJUYxu2x.js                  [39m[1m[2m    41.06 kB[22m[1m[22m
+2026-09-26T15:34:46.3334891Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/FragmentList-DULHeLGN.js                       [39m[1m[2m    43.84 kB[22m[1m[22m
+2026-09-26T15:34:46.3335525Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36mindex.js                                              [39m[1m[2m    67.00 kB[22m[1m[22m
+2026-09-26T15:34:46.3336721Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/tavern-card-C_bztI_5.js                        [39m[1m[2m    69.21 kB[22m[1m[22m
+2026-09-26T15:34:46.3337404Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/SettingsView-B1K7DGiX.js                       [39m[1m[2m    87.26 kB[22m[1m[22m
+2026-09-26T15:34:46.3338088Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/LibrarianPanel-BBMq43Lt.js                     [39m[1m[2m    90.14 kB[22m[1m[22m
+2026-09-26T15:34:46.3338777Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/ErratanetPanel-Cp5Okuj2.js                     [39m[1m[2m    97.76 kB[22m[1m[22m
+2026-09-26T15:34:46.3339455Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/AgentsPanel-BexpXPqz.js                        [39m[1m[2m   106.56 kB[22m[1m[22m
+2026-09-26T15:34:46.3340112Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/index-Bbz7ZhOp.js                              [39m[1m[2m   119.50 kB[22m[1m[22m
+2026-09-26T15:34:46.3340789Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/story._storyId-KLgINi8c.js                     [39m[1m[2m   476.15 kB[22m[1m[22m
+2026-09-26T15:34:46.3341459Z [2mnode_modules/.nitro/vite/services/ssr/[22m[36massets/router-BGsPOQe-.js                             [39m[1m[33m 1,319.07 kB[39m[22m
+2026-09-26T15:34:46.3341930Z [32m✓ built in 6.57s[39m
+2026-09-26T15:34:46.3342337Z [start] [nitro] Building [[35mNitro[39m] [2m(preset: `node-server`, compatibility: `2026-09-26`)[22m
+2026-09-26T15:34:46.3435811Z [success] [nitro] Generated public [36m.output/public[39m
+2026-09-26T15:34:46.3452419Z [36mvite v7.3.6 [32mbuilding nitro environment for production...[36m[39m
+2026-09-26T15:34:46.3524932Z transforming...
+2026-09-26T15:34:46.8401312Z [33mnode_modules/@tanstack/react-router/dist/esm/index.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/index.js" was ignored.[39m
+2026-09-26T15:34:47.6687931Z [33mnode_modules/@tanstack/react-router/dist/esm/utils.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/utils.js" was ignored.[39m
+2026-09-26T15:34:47.6711944Z [33mnode_modules/@tanstack/react-router/dist/esm/ClientOnly.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/ClientOnly.js" was ignored.[39m
+2026-09-26T15:34:47.6755584Z [33mnode_modules/@tanstack/react-router/dist/esm/useNavigate.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/useNavigate.js" was ignored.[39m
+2026-09-26T15:34:47.6929512Z [33mnode_modules/@tanstack/react-router/dist/esm/RouterProvider.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/RouterProvider.js" was ignored.[39m
+2026-09-26T15:34:47.6971874Z [33mnode_modules/@tanstack/react-router/dist/esm/useBlocker.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/useBlocker.js" was ignored.[39m
+2026-09-26T15:34:47.6985901Z [33mnode_modules/@tanstack/react-router/dist/esm/useRouterState.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/useRouterState.js" was ignored.[39m
+2026-09-26T15:34:47.6997910Z [33mnode_modules/@tanstack/react-router/dist/esm/useLocation.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/useLocation.js" was ignored.[39m
+2026-09-26T15:34:47.7040718Z [33mnode_modules/@tanstack/react-router/dist/esm/HeadContent.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/HeadContent.js" was ignored.[39m
+2026-09-26T15:34:47.8461076Z [33mnode_modules/@tanstack/react-router/dist/esm/useRouter.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/useRouter.js" was ignored.[39m
+2026-09-26T15:34:47.8465676Z [33mnode_modules/@tanstack/react-router/dist/esm/useMatch.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/useMatch.js" was ignored.[39m
+2026-09-26T15:34:47.8474537Z [33mnode_modules/@tanstack/react-router/dist/esm/CatchBoundary.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/CatchBoundary.js" was ignored.[39m
+2026-09-26T15:34:47.8517631Z [33mnode_modules/@tanstack/react-router/dist/esm/Asset.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/Asset.js" was ignored.[39m
+2026-09-26T15:34:47.8855797Z [33mnode_modules/@tanstack/react-router/dist/esm/Matches.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/Matches.js" was ignored.[39m
+2026-09-26T15:34:47.8875395Z [33mnode_modules/@tanstack/react-router/dist/esm/Match.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/Match.js" was ignored.[39m
+2026-09-26T15:34:47.9279029Z [33mnode_modules/@tanstack/react-router/dist/esm/link.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/link.js" was ignored.[39m
+2026-09-26T15:34:49.1266573Z [33mnode_modules/@tanstack/react-router/dist/esm/routerContext.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/routerContext.js" was ignored.[39m
+2026-09-26T15:34:49.4026772Z [33mnode_modules/@tanstack/react-router/dist/esm/matchContext.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/matchContext.js" was ignored.[39m
+2026-09-26T15:34:49.4191074Z [33mnode_modules/@tanstack/react-router/dist/esm/nonRouteComponentContext.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/nonRouteComponentContext.js" was ignored.[39m
+2026-09-26T15:34:49.4215244Z [33mnode_modules/@tanstack/react-query/build/modern/QueryClientProvider.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/QueryClientProvider.js" was ignored.[39m
+2026-09-26T15:34:49.4230004Z [33mnode_modules/@tanstack/react-query/build/modern/HydrationBoundary.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/HydrationBoundary.js" was ignored.[39m
+2026-09-26T15:34:49.4246981Z [33mnode_modules/@tanstack/react-query/build/modern/QueryErrorResetBoundary.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/QueryErrorResetBoundary.js" was ignored.[39m
+2026-09-26T15:34:49.4275756Z [33mnode_modules/@tanstack/react-query/build/modern/useQueries.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useQueries.js" was ignored.[39m
+2026-09-26T15:34:49.4292558Z [33mnode_modules/@tanstack/react-query/build/modern/IsRestoringProvider.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/IsRestoringProvider.js" was ignored.[39m
+2026-09-26T15:34:49.4298356Z [33mnode_modules/@tanstack/react-query/build/modern/useQuery.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useQuery.js" was ignored.[39m
+2026-09-26T15:34:49.4403874Z [33mnode_modules/@tanstack/react-query/build/modern/useIsFetching.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useIsFetching.js" was ignored.[39m
+2026-09-26T15:34:49.4434008Z [33mnode_modules/@tanstack/react-query/build/modern/useMutationState.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useMutationState.js" was ignored.[39m
+2026-09-26T15:34:49.4458415Z [33mnode_modules/@tanstack/react-query/build/modern/useMutation.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useMutation.js" was ignored.[39m
+2026-09-26T15:34:49.4472319Z [33mnode_modules/@tanstack/react-query/build/modern/useInfiniteQuery.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useInfiniteQuery.js" was ignored.[39m
+2026-09-26T15:34:50.5694882Z [33mnode_modules/@tanstack/react-query/build/modern/useSuspenseQueries.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useSuspenseQueries.js" was ignored.[39m
+2026-09-26T15:34:50.5699317Z [33mnode_modules/@tanstack/react-router/dist/esm/Transitioner.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-router/dist/esm/Transitioner.js" was ignored.[39m
+2026-09-26T15:34:50.5708043Z [33mnode_modules/@tanstack/react-query/build/modern/useSuspenseInfiniteQuery.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useSuspenseInfiniteQuery.js" was ignored.[39m
+2026-09-26T15:34:50.5710952Z [33mnode_modules/@tanstack/react-query/build/modern/useSuspenseQuery.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useSuspenseQuery.js" was ignored.[39m
+2026-09-26T15:34:51.1555453Z [33mnode_modules/@radix-ui/react-accordion/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-accordion/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1604914Z [33mnode_modules/@radix-ui/react-alert-dialog/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-alert-dialog/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1714888Z [33mnode_modules/@radix-ui/react-avatar/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-avatar/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1763155Z [33mnode_modules/@radix-ui/react-checkbox/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-checkbox/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1801288Z [33mnode_modules/@radix-ui/react-collapsible/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-collapsible/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1852429Z [33mnode_modules/@radix-ui/react-context-menu/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-context-menu/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1909787Z [33mnode_modules/@radix-ui/react-dialog/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-dialog/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.1946073Z [33mnode_modules/@radix-ui/react-direction/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-direction/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.2066853Z [33mnode_modules/@radix-ui/react-dropdown-menu/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-dropdown-menu/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.2144587Z [33mnode_modules/@radix-ui/react-form/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-form/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.2202995Z [33mnode_modules/@radix-ui/react-hover-card/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-hover-card/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.2232103Z [33mnode_modules/@radix-ui/react-label/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-label/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.2370803Z [33mnode_modules/@radix-ui/react-menubar/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-menubar/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.3200699Z [33mnode_modules/@radix-ui/react-navigation-menu/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-navigation-menu/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.7623044Z [33mnode_modules/@radix-ui/react-one-time-password-field/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-one-time-password-field/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.8054183Z [33mnode_modules/@radix-ui/react-password-toggle-field/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-password-toggle-field/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.8316428Z [33mnode_modules/@radix-ui/react-popover/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-popover/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.8628863Z [33mnode_modules/@radix-ui/react-portal/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-portal/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.8774352Z [33mnode_modules/@radix-ui/react-progress/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-progress/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.8850318Z [33mnode_modules/@radix-ui/react-radio-group/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-radio-group/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.9125628Z [33mnode_modules/@radix-ui/react-scroll-area/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-scroll-area/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.9729833Z [33mnode_modules/@radix-ui/react-select/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-select/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:51.9994696Z [33mnode_modules/@radix-ui/react-slider/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-slider/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0224015Z [33mnode_modules/@radix-ui/react-switch/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-switch/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0284282Z [33mnode_modules/@radix-ui/react-tabs/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-tabs/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0384715Z [33mnode_modules/@radix-ui/react-toast/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-toast/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0433244Z [33mnode_modules/@radix-ui/react-toggle/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-toggle/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0495261Z [33mnode_modules/@radix-ui/react-toggle-group/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-toggle-group/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0752144Z [33mnode_modules/@radix-ui/react-toolbar/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-toolbar/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.0871598Z [33mnode_modules/@radix-ui/react-tooltip/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-tooltip/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:52.9126088Z [33mnode_modules/@tanstack/react-query/build/modern/errorBoundaryUtils.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/errorBoundaryUtils.js" was ignored.[39m
+2026-09-26T15:34:53.1075116Z [33mnode_modules/@tanstack/react-query/build/modern/useBaseQuery.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tanstack/react-query/build/modern/useBaseQuery.js" was ignored.[39m
+2026-09-26T15:34:53.1231209Z [33mnode_modules/@tiptap/react/dist/index.js (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@tiptap/react/dist/index.js" was ignored.[39m
+2026-09-26T15:34:53.2199504Z [33mnode_modules/@radix-ui/react-collection/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-collection/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2327795Z [33mnode_modules/@radix-ui/react-presence/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-presence/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2496226Z [33mnode_modules/@radix-ui/react-menu/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-menu/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2583896Z [33mnode_modules/@radix-ui/react-dismissable-layer/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2648830Z [33mnode_modules/@radix-ui/react-focus-scope/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-focus-scope/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2668477Z [33mnode_modules/@radix-ui/react-focus-guards/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-focus-guards/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2773038Z [33mnode_modules/@radix-ui/react-popper/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-popper/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:53.2820807Z [33mnode_modules/@radix-ui/react-roving-focus/dist/index.mjs (1:0): Module level directives cause errors when bundled, "use client" in "node_modules/@radix-ui/react-roving-focus/dist/index.mjs" was ignored.[39m
+2026-09-26T15:34:54.2220330Z [33mnode_modules/zod/v4/core/regexes.js (74:0): A comment
+2026-09-26T15:34:54.2220675Z 
+2026-09-26T15:34:54.2220984Z "/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+2026-09-26T15:34:54.2221652Z  * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+2026-09-26T15:34:54.2222296Z  * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+2026-09-26T15:34:54.2223447Z 
+2026-09-26T15:34:54.2225044Z in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+2026-09-26T15:34:54.2425427Z [33mnode_modules/zod/v4/core/util.js (400:0): A comment
+2026-09-26T15:34:54.2425664Z 
+2026-09-26T15:34:54.2426089Z "// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+2026-09-26T15:34:54.2426577Z 
+2026-09-26T15:34:54.2427090Z in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.[39m
+2026-09-26T15:35:03.6137466Z [32m✓[39m 3097 modules transformed.
+2026-09-26T15:35:03.7532628Z [info] Tracing dependencies:
+2026-09-26T15:35:03.7532987Z - `tslib` (2.8.1)
+2026-09-26T15:35:03.7567811Z [success] Traced 1 dependencies (4 files) in 63ms.
+2026-09-26T15:35:03.7568701Z [info] Ensure your production environment matches the builder OS and architecture (`win32-x64`) to avoid native module issues.
+2026-09-26T15:35:04.6654211Z rendering chunks...
+2026-09-26T15:35:05.3790346Z [2m.output/server/[22m[36m_libs/crossws.mjs                                                  [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3791387Z [2m.output/server/[22m[36m_libs/croner.mjs                                                   [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3792343Z [2m.output/server/[22m[36m_libs/tanstack__store.mjs                                          [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3793239Z [2m.output/server/[22m[36m_libs/detect-node-es.mjs                                           [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3794175Z [2m.output/server/[22m[36m_libs/radix-ui.mjs                                                 [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3795176Z [2m.output/server/[22m[36m_libs/micromark-util-encode.mjs                                    [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3796152Z [2m.output/server/[22m[36m_libs/zwitch.mjs                                                   [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3797176Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm-tagfilter+[...].mjs                  [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3798185Z [2m.output/server/[22m[36m_libs/tiptap__pm.mjs                                               [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3799081Z [2m.output/server/[22m[36m_libs/tabbable.mjs                                                 [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3799990Z [2m.output/server/[22m[36m_libs/tslib.mjs                                                    [39m[1m[2m    0.00 kB[22m[1m[22m
+2026-09-26T15:35:05.3801017Z [2m.output/server/[22m[36m_libs/radix-ui__react-accordion.mjs                                [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3802377Z [2m.output/server/[22m[36m_libs/radix-ui__react-alert-dialog.mjs                             [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3803476Z [2m.output/server/[22m[36m_libs/radix-ui__react-aspect-ratio.mjs                             [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3804511Z [2m.output/server/[22m[36m_libs/radix-ui__react-avatar.mjs                                   [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3805573Z [2m.output/server/[22m[36m_libs/radix-ui__react-context-menu.mjs                             [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3806615Z [2m.output/server/[22m[36m_libs/radix-ui__react-label.mjs                                    [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3807836Z [2m.output/server/[22m[36m_libs/radix-ui__react-form.mjs                                     [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3809053Z [2m.output/server/[22m[36m_libs/radix-ui__react-menubar.mjs                                  [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3810165Z [2m.output/server/[22m[36m_libs/radix-ui__react-use-previous.mjs                             [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3811202Z [2m.output/server/[22m[36m_libs/radix-ui__react-popover.mjs                                  [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3812220Z [2m.output/server/[22m[36m_libs/radix-ui__react-progress.mjs                                 [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3813254Z [2m.output/server/[22m[36m_libs/radix-ui__react-radio-group.mjs                              [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3814275Z [2m.output/server/[22m[36m_libs/radix-ui__react-slider.mjs                                   [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3815298Z [2m.output/server/[22m[36m_libs/radix-ui__react-switch.mjs                                   [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3816299Z [2m.output/server/[22m[36m_libs/radix-ui__react-toggle.mjs                                   [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3817320Z [2m.output/server/[22m[36m_libs/radix-ui__react-toggle-group.mjs                             [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3818343Z [2m.output/server/[22m[36m_libs/radix-ui__react-toolbar.mjs                                  [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3819392Z [2m.output/server/[22m[36m_libs/@radix-ui/react-accessible-icon+[...].mjs                    [39m[1m[2m    0.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3820430Z [2m.output/server/[22m[36m_libs/radix-ui__react-select.mjs                                   [39m[1m[2m    0.05 kB[22m[1m[22m
+2026-09-26T15:35:05.3821429Z [2m.output/server/[22m[36m_libs/radix-ui__react-toast.mjs                                    [39m[1m[2m    0.05 kB[22m[1m[22m
+2026-09-26T15:35:05.3822501Z [2m.output/server/[22m[36m_libs/@radix-ui/react-navigation-menu+[...].mjs                    [39m[1m[2m    0.05 kB[22m[1m[22m
+2026-09-26T15:35:05.3823609Z [2m.output/server/[22m[36m_libs/@radix-ui/react-one-time-password-field+[...].mjs            [39m[1m[2m    0.05 kB[22m[1m[22m
+2026-09-26T15:35:05.3824760Z [2m.output/server/[22m[36m_libs/@radix-ui/react-password-toggle-field+[...].mjs              [39m[1m[2m    0.05 kB[22m[1m[22m
+2026-09-26T15:35:05.3825799Z [2m.output/server/[22m[36m_ssr/start-HYkvq4Ni.mjs                                            [39m[1m[2m    0.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3826782Z [2m.output/server/[22m[36m_libs/tanstack__react-store.mjs                                    [39m[1m[2m    0.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3827725Z [2m.output/server/[22m[36m_libs/bail.mjs                                                     [39m[1m[2m    0.09 kB[22m[1m[22m
+2026-09-26T15:35:05.3828988Z [2m.output/server/[22m[36m_libs/devlop.mjs                                                   [39m[1m[2m    0.09 kB[22m[1m[22m
+2026-09-26T15:35:05.3829997Z [2m.output/server/[22m[36m_libs/space-separated-tokens.mjs                                   [39m[1m[2m    0.09 kB[22m[1m[22m
+2026-09-26T15:35:05.3831062Z [2m.output/server/[22m[36m_ssr/empty-plugin-adapters-BFgPZ6_d.mjs                            [39m[1m[2m    0.13 kB[22m[1m[22m
+2026-09-26T15:35:05.3832092Z [2m.output/server/[22m[36m_libs/get-nonce.mjs                                                [39m[1m[2m    0.16 kB[22m[1m[22m
+2026-09-26T15:35:05.3833135Z [2m.output/server/[22m[36m_libs/micromark-util-normalize-identifier+[...].mjs                [39m[1m[2m    0.17 kB[22m[1m[22m
+2026-09-26T15:35:05.3834412Z [2m.output/server/[22m[36m_libs/@radix-ui/react-use-layout-effect+[...].mjs                  [39m[1m[2m    0.17 kB[22m[1m[22m
+2026-09-26T15:35:05.3835464Z [2m.output/server/[22m[36m_libs/escape-string-regexp.mjs                                     [39m[1m[2m    0.24 kB[22m[1m[22m
+2026-09-26T15:35:05.3836474Z [2m.output/server/[22m[36m_libs/hast-util-whitespace.mjs                                     [39m[1m[2m    0.26 kB[22m[1m[22m
+2026-09-26T15:35:05.3837462Z [2m.output/server/[22m[36m_libs/radix-ui__number.mjs                                         [39m[1m[2m    0.26 kB[22m[1m[22m
+2026-09-26T15:35:05.3838505Z [2m.output/server/[22m[36m_libs/decode-named-character-reference+[...].mjs                   [39m[1m[2m    0.28 kB[22m[1m[22m
+2026-09-26T15:35:05.3839572Z [2m.output/server/[22m[36m_libs/comma-separated-tokens.mjs                                   [39m[1m[2m    0.29 kB[22m[1m[22m
+2026-09-26T15:35:05.3840607Z [2m.output/server/[22m[36m_libs/tiptap__extension-document.mjs                               [39m[1m[2m    0.29 kB[22m[1m[22m
+2026-09-26T15:35:05.3841620Z [2m.output/server/[22m[36m_libs/tiptap__extension-text.mjs                                   [39m[1m[2m    0.29 kB[22m[1m[22m
+2026-09-26T15:35:05.3842649Z [2m.output/server/[22m[36m_libs/estree-util-is-identifier-name.mjs                           [39m[1m[2m    0.34 kB[22m[1m[22m
+2026-09-26T15:35:05.3843694Z [2m.output/server/[22m[36m_libs/micromark-util-resolve-all.mjs                               [39m[1m[2m    0.36 kB[22m[1m[22m
+2026-09-26T15:35:05.3844652Z [2m.output/server/[22m[36m_libs/micromark-util-classify-character+[...].mjs                  [39m[1m[2m    0.36 kB[22m[1m[22m
+2026-09-26T15:35:05.3845528Z [2m.output/server/[22m[36m_libs/is-plain-obj.mjs                                             [39m[1m[2m    0.37 kB[22m[1m[22m
+2026-09-26T15:35:05.3846270Z [2m.output/server/[22m[36m_libs/ccount.mjs                                                   [39m[1m[2m    0.37 kB[22m[1m[22m
+2026-09-26T15:35:05.3847047Z [2m.output/server/[22m[36m_libs/rou3.mjs                                                     [39m[1m[2m    0.40 kB[22m[1m[22m
+2026-09-26T15:35:05.3847934Z [2m.output/server/[22m[36m_libs/radix-ui__react-direction.mjs                                [39m[1m[2m    0.45 kB[22m[1m[22m
+2026-09-26T15:35:05.3849201Z [2m.output/server/[22m[36m_libs/html-url-attributes.mjs                                      [39m[1m[2m    0.45 kB[22m[1m[22m
+2026-09-26T15:35:05.3850204Z [2m.output/server/[22m[36m_libs/@radix-ui/react-use-callback-ref+[...].mjs                   [39m[1m[2m    0.51 kB[22m[1m[22m
+2026-09-26T15:35:05.3851118Z [2m.output/server/[22m[36m_libs/has-flag.mjs                                                 [39m[1m[2m    0.51 kB[22m[1m[22m
+2026-09-26T15:35:05.3851973Z [2m.output/server/[22m[36m_libs/clsx.mjs                                                     [39m[1m[2m    0.51 kB[22m[1m[22m
+2026-09-26T15:35:05.3852799Z [2m.output/server/[22m[36m_libs/remark-rehype.mjs                                            [39m[1m[2m    0.53 kB[22m[1m[22m
+2026-09-26T15:35:05.3853877Z [2m.output/server/[22m[36m_libs/longest-streak.mjs                                           [39m[1m[2m    0.55 kB[22m[1m[22m
+2026-09-26T15:35:05.3854861Z [2m.output/server/[22m[36m_libs/micromark-factory-space.mjs                                  [39m[1m[2m    0.56 kB[22m[1m[22m
+2026-09-26T15:35:05.3855755Z [2m.output/server/[22m[36m_libs/remark-parse.mjs                                             [39m[1m[2m    0.58 kB[22m[1m[22m
+2026-09-26T15:35:05.3856778Z [2m.output/server/[22m[36m_libs/micromark-factory-whitespace.mjs                             [39m[1m[2m    0.62 kB[22m[1m[22m
+2026-09-26T15:35:05.3857423Z [2m.output/server/[22m[36m_libs/unist-util-stringify-position.mjs                            [39m[1m[2m    0.67 kB[22m[1m[22m
+2026-09-26T15:35:05.3859333Z [2m.output/server/[22m[36m_libs/radix-ui__react-id.mjs                                       [39m[1m[2m    0.69 kB[22m[1m[22m
+2026-09-26T15:35:05.3860288Z [2m.output/server/[22m[36m_libs/mdast-util-phrasing.mjs                                      [39m[1m[2m    0.70 kB[22m[1m[22m
+2026-09-26T15:35:05.3861014Z [2m.output/server/[22m[36m_libs/micromark-util-decode-numeric-character-reference+[...].mjs  [39m[1m[2m    0.71 kB[22m[1m[22m
+2026-09-26T15:35:05.3861676Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm.mjs                                  [39m[1m[2m    0.71 kB[22m[1m[22m
+2026-09-26T15:35:05.3862400Z [2m.output/server/[22m[36m_libs/unist-util-visit.mjs                                         [39m[1m[2m    0.72 kB[22m[1m[22m
+2026-09-26T15:35:05.3863062Z [2m.output/server/[22m[36m_libs/unist-util-position.mjs                                      [39m[1m[2m    0.72 kB[22m[1m[22m
+2026-09-26T15:35:05.3863671Z [2m.output/server/[22m[36m_libs/micromark-util-decode-string.mjs                             [39m[1m[2m    0.78 kB[22m[1m[22m
+2026-09-26T15:35:05.3864240Z [2m.output/server/[22m[36m_libs/remark-gfm.mjs                                               [39m[1m[2m    0.80 kB[22m[1m[22m
+2026-09-26T15:35:05.3865012Z [2m.output/server/[22m[36m_libs/micromark-util-html-tag-name.mjs                             [39m[1m[2m    0.81 kB[22m[1m[22m
+2026-09-26T15:35:05.3865737Z [2m.output/server/[22m[36m_libs/micromark-util-chunked.mjs                                   [39m[1m[2m    0.86 kB[22m[1m[22m
+2026-09-26T15:35:05.3866592Z [2m.output/server/[22m[36m_libs/radix-ui__react-arrow.mjs                                    [39m[1m[2m    0.88 kB[22m[1m[22m
+2026-09-26T15:35:05.3867135Z [2m.output/server/[22m[36m_libs/crelt.mjs                                                    [39m[1m[2m    0.97 kB[22m[1m[22m
+2026-09-26T15:35:05.3867706Z [2m.output/server/[22m[36m_libs/@radix-ui/react-use-is-hydrated+[...].mjs                    [39m[1m[2m    0.99 kB[22m[1m[22m
+2026-09-26T15:35:05.3868302Z [2m.output/server/[22m[36m_libs/radix-ui__react-portal.mjs                                   [39m[1m[2m    0.99 kB[22m[1m[22m
+2026-09-26T15:35:05.3868882Z [2m.output/server/[22m[36m_libs/@radix-ui/react-visually-hidden+[...].mjs                    [39m[1m[2m    1.01 kB[22m[1m[22m
+2026-09-26T15:35:05.3870058Z [2m.output/server/[22m[36m_libs/@radix-ui/react-use-effect-event+[...].mjs                   [39m[1m[2m    1.04 kB[22m[1m[22m
+2026-09-26T15:35:05.3870747Z [2m.output/server/[22m[36m_libs/trim-lines.mjs                                               [39m[1m[2m    1.04 kB[22m[1m[22m
+2026-09-26T15:35:05.3871294Z [2m.output/server/[22m[36m_libs/mdast-util-gfm.mjs                                           [39m[1m[2m    1.11 kB[22m[1m[22m
+2026-09-26T15:35:05.3872074Z [2m.output/server/[22m[36m_tanstack-start-manifest_v-DbAppluE.mjs                            [39m[1m[2m    1.12 kB[22m[1m[22m
+2026-09-26T15:35:05.3872717Z [2m.output/server/[22m[36m_libs/micromark-util-combine-extensions+[...].mjs                  [39m[1m[2m    1.12 kB[22m[1m[22m
+2026-09-26T15:35:05.3873472Z [2m.output/server/[22m[36m_libs/mdast-util-to-string.mjs                                     [39m[1m[2m    1.16 kB[22m[1m[22m
+2026-09-26T15:35:05.3874059Z [2m.output/server/[22m[36m_libs/radix-ui__react-compose-refs.mjs                             [39m[1m[2m    1.17 kB[22m[1m[22m
+2026-09-26T15:35:05.3874659Z [2m.output/server/[22m[36m_libs/style-to-object.mjs                                          [39m[1m[2m    1.18 kB[22m[1m[22m
+2026-09-26T15:35:05.3875189Z [2m.output/server/[22m[36m_libs/hookable.mjs                                                 [39m[1m[2m    1.19 kB[22m[1m[22m
+2026-09-26T15:35:05.3875752Z [2m.output/server/[22m[36m_libs/micromark-util-sanitize-uri.mjs                              [39m[1m[2m    1.19 kB[22m[1m[22m
+2026-09-26T15:35:05.3876446Z [2m.output/server/[22m[36m_chunks/ssr-renderer.mjs                                           [39m[1m[2m    1.23 kB[22m[1m[22m
+2026-09-26T15:35:05.3877321Z [2m.output/server/[22m[36m_libs/mdast-util-gfm-strikethrough.mjs                             [39m[1m[2m    1.23 kB[22m[1m[22m
+2026-09-26T15:35:05.3878229Z [2m.output/server/[22m[36m_libs/radix-ui__react-separator.mjs                                [39m[1m[2m    1.29 kB[22m[1m[22m
+2026-09-26T15:35:05.3879039Z [2m.output/server/[22m[36m_libs/ufo.mjs                                                      [39m[1m[2m    1.31 kB[22m[1m[22m
+2026-09-26T15:35:05.3879897Z [2m.output/server/[22m[36m_libs/micromark-util-character.mjs                                 [39m[1m[2m    1.31 kB[22m[1m[22m
+2026-09-26T15:35:05.3880771Z [2m.output/server/[22m[36m_libs/radix-ui__react-primitive.mjs                                [39m[1m[2m    1.32 kB[22m[1m[22m
+2026-09-26T15:35:05.3881649Z [2m.output/server/[22m[36m_ssr/checkbox-Bl3Z-iqg.mjs                                         [39m[1m[2m    1.38 kB[22m[1m[22m
+2026-09-26T15:35:05.3882574Z [2m.output/server/[22m[36m_libs/radix-ui__react-focus-guards.mjs                             [39m[1m[2m    1.41 kB[22m[1m[22m
+2026-09-26T15:35:05.3883460Z [2m.output/server/[22m[36m_libs/radix-ui__react-use-size.mjs                                 [39m[1m[2m    1.42 kB[22m[1m[22m
+2026-09-26T15:35:05.3884314Z [2m.output/server/[22m[36m_libs/cookie-es.mjs                                                [39m[1m[2m    1.46 kB[22m[1m[22m
+2026-09-26T15:35:05.3885201Z [2m.output/server/[22m[36m_libs/react-style-singleton.mjs                                    [39m[1m[2m    1.67 kB[22m[1m[22m
+2026-09-26T15:35:05.3886156Z [2m.output/server/[22m[36m_libs/tiptap__extension-strike.mjs                                 [39m[1m[2m    1.68 kB[22m[1m[22m
+2026-09-26T15:35:05.3887178Z [2m.output/server/[22m[36m_libs/micromark-factory-title.mjs                                  [39m[1m[2m    1.69 kB[22m[1m[22m
+2026-09-26T15:35:05.3888162Z [2m.output/server/[22m[36m_libs/tiptap__extension-hard-break.mjs                             [39m[1m[2m    1.71 kB[22m[1m[22m
+2026-09-26T15:35:05.3889478Z [2m.output/server/[22m[36m_libs/uint8array-extras.mjs                                        [39m[1m[2m    1.73 kB[22m[1m[22m
+2026-09-26T15:35:05.3891030Z [2m.output/server/[22m[36m_libs/tiptap__extension-underline.mjs                              [39m[1m[2m    1.74 kB[22m[1m[22m
+2026-09-26T15:35:05.3892071Z [2m.output/server/[22m[36m_libs/use-callback-ref.mjs                                         [39m[1m[2m    1.75 kB[22m[1m[22m
+2026-09-26T15:35:05.3892932Z [2m.output/server/[22m[36m_libs/radix-ui__primitive.mjs                                      [39m[1m[2m    1.86 kB[22m[1m[22m
+2026-09-26T15:35:05.3893827Z [2m.output/server/[22m[36m_libs/micromark-factory-label.mjs                                  [39m[1m[2m    1.89 kB[22m[1m[22m
+2026-09-26T15:35:05.3894896Z [2m.output/server/[22m[36m_libs/token-types.mjs                                              [39m[1m[2m    1.97 kB[22m[1m[22m
+2026-09-26T15:35:05.3895743Z [2m.output/server/[22m[36m_libs/babel__runtime.mjs                                           [39m[1m[2m    2.01 kB[22m[1m[22m
+2026-09-26T15:35:05.3896550Z [2m.output/server/[22m[36m_libs/trough.mjs                                                   [39m[1m[2m    2.03 kB[22m[1m[22m
+2026-09-26T15:35:05.3897386Z [2m.output/server/[22m[36m_libs/tanstack__history.mjs                                        [39m[1m[2m    2.04 kB[22m[1m[22m
+2026-09-26T15:35:05.3898290Z [2m.output/server/[22m[36m_libs/tiptap__extension-code.mjs                                   [39m[1m[2m    2.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3899272Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm-task-list-item+[...].mjs             [39m[1m[2m    2.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3900358Z [2m.output/server/[22m[36m_libs/class-variance-authority.mjs                                 [39m[1m[2m    2.14 kB[22m[1m[22m
+2026-09-26T15:35:05.3901251Z [2m.output/server/[22m[36m_libs/tiptap__extension-italic.mjs                                 [39m[1m[2m    2.20 kB[22m[1m[22m
+2026-09-26T15:35:05.3902157Z [2m.output/server/[22m[36m_libs/tiptap__extension-paragraph.mjs                              [39m[1m[2m    2.20 kB[22m[1m[22m
+2026-09-26T15:35:05.3903032Z [2m.output/server/[22m[36m_libs/w3c-keyname.mjs                                              [39m[1m[2m    2.23 kB[22m[1m[22m
+2026-09-26T15:35:05.3903880Z [2m.output/server/[22m[36m_libs/tiptap__extension-heading.mjs                                [39m[1m[2m    2.29 kB[22m[1m[22m
+2026-09-26T15:35:05.3904774Z [2m.output/server/[22m[36m_libs/style-to-js.mjs                                              [39m[1m[2m    2.31 kB[22m[1m[22m
+2026-09-26T15:35:05.3905657Z [2m.output/server/[22m[36m_libs/@tiptap/extension-horizontal-rule+[...].mjs                  [39m[1m[2m    2.32 kB[22m[1m[22m
+2026-09-26T15:35:05.3906641Z [2m.output/server/[22m[36m_libs/tiptap__extension-bold.mjs                                   [39m[1m[2m    2.37 kB[22m[1m[22m
+2026-09-26T15:35:05.3907497Z [2m.output/server/[22m[36m_libs/ieee754.mjs                                                  [39m[1m[2m    2.41 kB[22m[1m[22m
+2026-09-26T15:35:05.3908422Z [2m.output/server/[22m[36m_libs/unist-util-visit-parents.mjs                                 [39m[1m[2m    2.41 kB[22m[1m[22m
+2026-09-26T15:35:05.3909631Z [2m.output/server/[22m[36m_libs/mdast-util-gfm-task-list-item.mjs                            [39m[1m[2m    2.44 kB[22m[1m[22m
+2026-09-26T15:35:05.3910642Z [2m.output/server/[22m[36m_libs/micromark-factory-destination.mjs                            [39m[1m[2m    2.61 kB[22m[1m[22m
+2026-09-26T15:35:05.3911638Z [2m.output/server/[22m[36m_libs/prosemirror-keymap.mjs                                       [39m[1m[2m    2.61 kB[22m[1m[22m
+2026-09-26T15:35:05.3912568Z [2m.output/server/[22m[36m_libs/use-sidecar.mjs                                              [39m[1m[2m    2.65 kB[22m[1m[22m
+2026-09-26T15:35:05.3913428Z [2m.output/server/[22m[36m_libs/ms.mjs                                                       [39m[1m[2m    2.73 kB[22m[1m[22m
+2026-09-26T15:35:05.3914251Z [2m.output/server/[22m[36m_libs/isbot.mjs                                                    [39m[1m[2m    2.83 kB[22m[1m[22m
+2026-09-26T15:35:05.3915170Z [2m.output/server/[22m[36m_libs/seroval-plugins.mjs                                          [39m[1m[2m    2.96 kB[22m[1m[22m
+2026-09-26T15:35:05.3916068Z [2m.output/server/[22m[36m_libs/unist-util-is.mjs                                            [39m[1m[2m    2.96 kB[22m[1m[22m
+2026-09-26T15:35:05.3916922Z [2m.output/server/[22m[36m_libs/extend.mjs                                                   [39m[1m[2m    3.10 kB[22m[1m[22m
+2026-09-26T15:35:05.3917905Z [2m.output/server/[22m[36m_libs/supports-color.mjs                                           [39m[1m[2m    3.17 kB[22m[1m[22m
+2026-09-26T15:35:05.3918882Z [2m.output/server/[22m[36m_libs/mdast-util-find-and-replace.mjs                              [39m[1m[2m    3.17 kB[22m[1m[22m
+2026-09-26T15:35:05.3919832Z [2m.output/server/[22m[36m_libs/dijkstrajs.mjs                                               [39m[1m[2m    3.32 kB[22m[1m[22m
+2026-09-26T15:35:05.3920775Z [2m.output/server/[22m[36m_libs/@uiw/codemirror-extensions-basic-setup+[...].mjs             [39m[1m[2m    3.47 kB[22m[1m[22m
+2026-09-26T15:35:05.3921841Z [2m.output/server/[22m[36m_libs/tiptap__extension-blockquote.mjs                             [39m[1m[2m    3.53 kB[22m[1m[22m
+2026-09-26T15:35:05.3922878Z [2m.output/server/[22m[36m_libs/mdast-util-gfm-footnote.mjs                                  [39m[1m[2m    3.56 kB[22m[1m[22m
+2026-09-26T15:35:05.3923984Z [2m.output/server/[22m[36m_libs/marijn__find-cluster-break.mjs                               [39m[1m[2m    3.60 kB[22m[1m[22m
+2026-09-26T15:35:05.3925018Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm-strikethrough+[...].mjs              [39m[1m[2m    3.75 kB[22m[1m[22m
+2026-09-26T15:35:05.3926137Z [2m.output/server/[22m[36m_libs/@radix-ui/react-use-controllable-state+[...].mjs             [39m[1m[2m    3.76 kB[22m[1m[22m
+2026-09-26T15:35:05.3927149Z [2m.output/server/[22m[36m_ssr/tabs-DgI0PPG1.mjs                                             [39m[1m[2m    3.77 kB[22m[1m[22m
+2026-09-26T15:35:05.3928100Z [2m.output/server/[22m[36m_libs/inline-style-parser.mjs                                      [39m[1m[2m    3.89 kB[22m[1m[22m
+2026-09-26T15:35:05.3929079Z [2m.output/server/[22m[36m_libs/react-remove-scroll-bar.mjs                                  [39m[1m[2m    3.96 kB[22m[1m[22m
+2026-09-26T15:35:05.3930301Z [2m.output/server/[22m[36m_libs/codemirror__theme-one-dark.mjs                               [39m[1m[2m    3.98 kB[22m[1m[22m
+2026-09-26T15:35:05.3931203Z [2m.output/server/[22m[36m_libs/aria-hidden.mjs                                              [39m[1m[2m    4.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3932125Z [2m.output/server/[22m[36m_libs/orderedmap.mjs                                               [39m[1m[2m    4.08 kB[22m[1m[22m
+2026-09-26T15:35:05.3933056Z [2m.output/server/[22m[36m_libs/tiptap__starter-kit.mjs                                      [39m[1m[2m    4.12 kB[22m[1m[22m
+2026-09-26T15:35:05.3934032Z [2m.output/server/[22m[36m_libs/radix-ui__react-context.mjs                                  [39m[1m[2m    4.30 kB[22m[1m[22m
+2026-09-26T15:35:05.3934982Z [2m.output/server/[22m[36m_libs/markdown-table.mjs                                           [39m[1m[2m    4.57 kB[22m[1m[22m
+2026-09-26T15:35:05.3936010Z [2m.output/server/[22m[36m_libs/mdast-util-gfm-autolink-literal+[...].mjs                    [39m[1m[2m    4.68 kB[22m[1m[22m
+2026-09-26T15:35:05.3937033Z [2m.output/server/[22m[36m_libs/vfile-message.mjs                                            [39m[1m[2m    4.70 kB[22m[1m[22m
+2026-09-26T15:35:05.3937982Z [2m.output/server/[22m[36m_libs/mdast-util-gfm-table.mjs                                     [39m[1m[2m    4.73 kB[22m[1m[22m
+2026-09-26T15:35:05.3938966Z [2m.output/server/[22m[36m_libs/tanstack__react-virtual.mjs                                  [39m[1m[2m    4.75 kB[22m[1m[22m
+2026-09-26T15:35:05.3939920Z [2m.output/server/[22m[36m_libs/style-mod.mjs                                                [39m[1m[2m    5.28 kB[22m[1m[22m
+2026-09-26T15:35:05.3940876Z [2m.output/server/[22m[36m_libs/fast-decode-uri-component.mjs                                [39m[1m[2m    5.29 kB[22m[1m[22m
+2026-09-26T15:35:05.3941884Z [2m.output/server/[22m[36m_libs/use-sync-external-store.mjs                                  [39m[1m[2m    5.48 kB[22m[1m[22m
+2026-09-26T15:35:05.3943390Z [2m.output/server/[22m[36m_libs/prosemirror-dropcursor.mjs                                   [39m[1m[2m    5.61 kB[22m[1m[22m
+2026-09-26T15:35:05.3944420Z [2m.output/server/[22m[36m_libs/prosemirror-schema-list.mjs                                  [39m[1m[2m    5.77 kB[22m[1m[22m
+2026-09-26T15:35:05.3945372Z [2m.output/server/[22m[36m_libs/react-markdown.mjs                                           [39m[1m[2m    5.86 kB[22m[1m[22m
+2026-09-26T15:35:05.3946358Z [2m.output/server/[22m[36m_ssr/ErratanetIntroPrompt-BCi8wFUF.mjs                             [39m[1m[2m    5.89 kB[22m[1m[22m
+2026-09-26T15:35:05.3947366Z [2m.output/server/[22m[36m_libs/borewit__text-codec.mjs                                      [39m[1m[2m    6.02 kB[22m[1m[22m
+2026-09-26T15:35:05.3948444Z [2m.output/server/[22m[36m_libs/radix-ui__react-collapsible.mjs                              [39m[1m[2m    6.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3949384Z [2m.output/server/[22m[36m_libs/radix-ui__react-slot.mjs                                     [39m[1m[2m    6.23 kB[22m[1m[22m
+2026-09-26T15:35:05.3950584Z [2m.output/server/[22m[36m_libs/rope-sequence.mjs                                            [39m[1m[2m    6.31 kB[22m[1m[22m
+2026-09-26T15:35:05.3951551Z [2m.output/server/[22m[36m_libs/radix-ui__react-presence.mjs                                 [39m[1m[2m    6.56 kB[22m[1m[22m
+2026-09-26T15:35:05.3952494Z [2m.output/server/[22m[36m_libs/prosemirror-gapcursor.mjs                                    [39m[1m[2m    6.84 kB[22m[1m[22m
+2026-09-26T15:35:05.3953405Z [2m.output/server/[22m[36m_libs/radix-ui__react-tabs.mjs                                     [39m[1m[2m    7.06 kB[22m[1m[22m
+2026-09-26T15:35:05.3954360Z [2m.output/server/[22m[36m_libs/ungap__structured-clone.mjs                                  [39m[1m[2m    7.09 kB[22m[1m[22m
+2026-09-26T15:35:05.3955287Z [2m.output/server/[22m[36m_libs/floating-ui__react.mjs                                       [39m[1m[2m    7.10 kB[22m[1m[22m
+2026-09-26T15:35:05.3956156Z [2m.output/server/[22m[36m_libs/cookie.mjs                                                   [39m[1m[2m    8.07 kB[22m[1m[22m
+2026-09-26T15:35:05.3957020Z [2m.output/server/[22m[36m_libs/floating-ui__react-dom.mjs                                   [39m[1m[2m    8.42 kB[22m[1m[22m
+2026-09-26T15:35:05.3957952Z [2m.output/server/[22m[36m_libs/eventsource-parser.mjs                                       [39m[1m[2m    8.44 kB[22m[1m[22m
+2026-09-26T15:35:05.3958849Z [2m.output/server/[22m[36m_libs/memoirist.mjs                                                [39m[1m[2m    8.57 kB[22m[1m[22m
+2026-09-26T15:35:05.3959769Z [2m.output/server/[22m[36m_ssr/BlockContentView-BlZ9mQdQ.mjs                                 [39m[1m[2m    8.60 kB[22m[1m[22m
+2026-09-26T15:35:05.3960831Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm-footnote+[...].mjs                   [39m[1m[2m    8.68 kB[22m[1m[22m
+2026-09-26T15:35:05.3961831Z [2m.output/server/[22m[36m_libs/tanstack__react-query.mjs                                    [39m[1m[2m    8.73 kB[22m[1m[22m
+2026-09-26T15:35:05.3962875Z [2m.output/server/[22m[36m_libs/radix-ui__react-dropdown-menu.mjs                            [39m[1m[2m    8.76 kB[22m[1m[22m
+2026-09-26T15:35:05.3963865Z [2m.output/server/[22m[36m_libs/ai-sdk__provider.mjs                                         [39m[1m[2m    9.21 kB[22m[1m[22m
+2026-09-26T15:35:05.3964820Z [2m.output/server/[22m[36m_libs/radix-ui__react-focus-scope.mjs                              [39m[1m[2m    9.27 kB[22m[1m[22m
+2026-09-26T15:35:05.3965813Z [2m.output/server/[22m[36m_ssr/file-drop-dialog-IL_fZTy2.mjs                                 [39m[1m[2m    9.53 kB[22m[1m[22m
+2026-09-26T15:35:05.3966841Z [2m.output/server/[22m[36m_ssr/model-role-helpers-CouwVYt5.mjs                               [39m[1m[2m    9.65 kB[22m[1m[22m
+2026-09-26T15:35:05.3967942Z [2m.output/server/[22m[36m_libs/floating-ui__utils.mjs                                       [39m[1m[2m    9.73 kB[22m[1m[22m
+2026-09-26T15:35:05.3969003Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm-autolink-literal+[...].mjs           [39m[1m[2m    9.95 kB[22m[1m[22m
+2026-09-26T15:35:05.3970186Z [2m.output/server/[22m[36m_libs/h3-v2.mjs                                                    [39m[1m[2m    9.98 kB[22m[1m[22m
+2026-09-26T15:35:05.3971130Z [2m.output/server/[22m[36m_libs/tiptap__extension-code-block.mjs                             [39m[1m[2m   10.08 kB[22m[1m[22m
+2026-09-26T15:35:05.3972167Z [2m.output/server/[22m[36m_libs/radix-ui__react-checkbox.mjs                                 [39m[1m[2m   10.17 kB[22m[1m[22m
+2026-09-26T15:35:05.3973291Z [2m.output/server/[22m[36m_libs/radix-ui__react-hover-card.mjs                               [39m[1m[2m   10.31 kB[22m[1m[22m
+2026-09-26T15:35:05.3974321Z [2m.output/server/[22m[36m_libs/micromark-util-subtokenize.mjs                               [39m[1m[2m   10.33 kB[22m[1m[22m
+2026-09-26T15:35:05.3975386Z [2m.output/server/[22m[36m_libs/radix-ui__react-roving-focus.mjs                             [39m[1m[2m   10.56 kB[22m[1m[22m
+2026-09-26T15:35:05.3976382Z [2m.output/server/[22m[36m_libs/tokenizer__inflate.mjs                                       [39m[1m[2m   10.82 kB[22m[1m[22m
+2026-09-26T15:35:05.3977357Z [2m.output/server/[22m[36m_libs/codemirror__lang-javascript.mjs                              [39m[1m[2m   12.35 kB[22m[1m[22m
+2026-09-26T15:35:05.3978360Z [2m.output/server/[22m[36m_libs/exact-mirror.mjs                                             [39m[1m[2m   12.38 kB[22m[1m[22m
+2026-09-26T15:35:05.3979319Z [2m.output/server/[22m[36m_libs/hast-util-to-jsx-runtime.mjs                                 [39m[1m[2m   12.71 kB[22m[1m[22m
+2026-09-26T15:35:05.3980257Z [2m.output/server/[22m[36m_libs/cuelume.mjs                                                  [39m[1m[2m   13.07 kB[22m[1m[22m
+2026-09-26T15:35:05.3981209Z [2m.output/server/[22m[36m_libs/prosemirror-history.mjs                                      [39m[1m[2m   13.20 kB[22m[1m[22m
+2026-09-26T15:35:05.3982190Z [2m.output/server/[22m[36m_libs/radix-ui__react-dialog.mjs                                   [39m[1m[2m   13.26 kB[22m[1m[22m
+2026-09-26T15:35:05.3983135Z [2m.output/server/[22m[36m_libs/react-remove-scroll.mjs                                      [39m[1m[2m   13.37 kB[22m[1m[22m
+2026-09-26T15:35:05.3984139Z [2m.output/server/[22m[36m_ssr/ChatSendButton-aC1ap_fr.mjs                                   [39m[1m[2m   13.38 kB[22m[1m[22m
+2026-09-26T15:35:05.3985100Z [2m.output/server/[22m[36m_libs/radix-ui__react-popper.mjs                                   [39m[1m[2m   13.91 kB[22m[1m[22m
+2026-09-26T15:35:05.3985997Z [2m.output/server/[22m[36m_libs/vfile.mjs                                                    [39m[1m[2m   13.92 kB[22m[1m[22m
+2026-09-26T15:35:05.3986980Z [2m.output/server/[22m[36m_libs/@radix-ui/react-dismissable-layer+[...].mjs                  [39m[1m[2m   14.28 kB[22m[1m[22m
+2026-09-26T15:35:05.3988003Z [2m.output/server/[22m[36m_libs/uiw__react-codemirror.mjs                                    [39m[1m[2m   14.42 kB[22m[1m[22m
+2026-09-26T15:35:05.3988914Z [2m.output/server/[22m[36m_libs/fast-equals.mjs                                              [39m[1m[2m   15.16 kB[22m[1m[22m
+2026-09-26T15:35:05.3990199Z [2m.output/server/[22m[36m_libs/micromark-extension-gfm-table.mjs                            [39m[1m[2m   15.30 kB[22m[1m[22m
+2026-09-26T15:35:05.3991224Z [2m.output/server/[22m[36m_ssr/ArchivePanel-Clw6B8oC.mjs                                     [39m[1m[2m   15.32 kB[22m[1m[22m
+2026-09-26T15:35:05.3992163Z [2m.output/server/[22m[36m_libs/strtok3.mjs                                                  [39m[1m[2m   15.56 kB[22m[1m[22m
+2026-09-26T15:35:05.3993155Z [2m.output/server/[22m[36m_libs/debug.mjs                                                    [39m[1m[2m   15.64 kB[22m[1m[22m
+2026-09-26T15:35:05.3994115Z [2m.output/server/[22m[36m_ssr/ContextOrderPanel-CRZD6ETb.mjs                                [39m[1m[2m   16.58 kB[22m[1m[22m
+2026-09-26T15:35:05.3995156Z [2m.output/server/[22m[36m_ssr/TavernCardImportDialog-XQCkPT_r.mjs                           [39m[1m[2m   16.73 kB[22m[1m[22m
+2026-09-26T15:35:05.3996209Z [2m.output/server/[22m[36m_ssr/TimelineManagerPanel-B-E_yWCo.mjs                             [39m[1m[2m   18.39 kB[22m[1m[22m
+2026-09-26T15:35:05.3997234Z [2m.output/server/[22m[36m_libs/radix-ui__react-collection.mjs                               [39m[1m[2m   18.81 kB[22m[1m[22m
+2026-09-26T15:35:05.3998314Z [2m.output/server/[22m[36m_libs/tiptap__extensions.mjs                                       [39m[1m[2m   18.85 kB[22m[1m[22m
+2026-09-26T15:35:05.3999303Z [2m.output/server/[22m[36m_libs/prosemirror-commands.mjs                                     [39m[1m[2m   19.06 kB[22m[1m[22m
+2026-09-26T15:35:05.4000259Z [2m.output/server/[22m[36m_libs/tiptap__extension-link.mjs                                   [39m[1m[2m   19.06 kB[22m[1m[22m
+2026-09-26T15:35:05.4001247Z [2m.output/server/[22m[36m_ssr/DesktopUpdatesPanel-DKE7imzv.mjs                              [39m[1m[2m   19.27 kB[22m[1m[22m
+2026-09-26T15:35:05.4002241Z [2m.output/server/[22m[36m_libs/tiptap__react.mjs                                            [39m[1m[2m   19.77 kB[22m[1m[22m
+2026-09-26T15:35:05.4003180Z [2m.output/server/[22m[36m_libs/lezer__highlight.mjs                                         [39m[1m[2m   19.82 kB[22m[1m[22m
+2026-09-26T15:35:05.4004155Z [2m.output/server/[22m[36m_libs/floating-ui__dom.mjs                                         [39m[1m[2m   20.85 kB[22m[1m[22m
+2026-09-26T15:35:05.4005114Z [2m.output/server/[22m[36m_libs/codemirror__lint.mjs                                         [39m[1m[2m   20.92 kB[22m[1m[22m
+2026-09-26T15:35:05.4006052Z [2m.output/server/[22m[36m_libs/radix-ui__react-tooltip.mjs                                  [39m[1m[2m   20.98 kB[22m[1m[22m
+2026-09-26T15:35:05.4007046Z [2m.output/server/[22m[36m_libs/react.mjs                                                    [39m[1m[2m   21.02 kB[22m[1m[22m
+2026-09-26T15:35:05.4007964Z [2m.output/server/[22m[36m_libs/mdast-util-to-hast.mjs                                       [39m[1m[2m   21.50 kB[22m[1m[22m
+2026-09-26T15:35:05.4008949Z [2m.output/server/[22m[36m_libs/mdast-util-from-markdown.mjs                                 [39m[1m[2m   21.55 kB[22m[1m[22m
+2026-09-26T15:35:05.4009901Z [2m.output/server/[22m[36m_libs/unified.mjs                                                  [39m[1m[2m   21.84 kB[22m[1m[22m
+2026-09-26T15:35:05.4011135Z [2m.output/server/[22m[36m_ssr/LorebookImportDialog-CbShnf82.mjs                             [39m[1m[2m   22.65 kB[22m[1m[22m
+2026-09-26T15:35:05.4012120Z [2m.output/server/[22m[36m_libs/floating-ui__core.mjs                                        [39m[1m[2m   23.42 kB[22m[1m[22m
+2026-09-26T15:35:05.4013001Z [2m.output/server/[22m[36mindex.mjs                                                          [39m[1m[2m   23.46 kB[22m[1m[22m
+2026-09-26T15:35:05.4013915Z [2m.output/server/[22m[36m_libs/mdast-util-to-markdown.mjs                                   [39m[1m[2m   24.41 kB[22m[1m[22m
+2026-09-26T15:35:05.4014844Z [2m.output/server/[22m[36m_libs/fflate.mjs                                                   [39m[1m[2m   25.28 kB[22m[1m[22m
+2026-09-26T15:35:05.4015764Z [2m.output/server/[22m[36m_ssr/FragmentTypesPanel-BTZkfAKf.mjs                               [39m[1m[2m   25.31 kB[22m[1m[22m
+2026-09-26T15:35:05.4016722Z [2m.output/server/[22m[36m_libs/micromark.mjs                                                [39m[1m[2m   25.33 kB[22m[1m[22m
+2026-09-26T15:35:05.4017733Z [2m.output/server/[22m[36m_ssr/StoryWizard-Eu5v3QfX.mjs                                      [39m[1m[2m   26.79 kB[22m[1m[22m
+2026-09-26T15:35:05.4018699Z [2m.output/server/[22m[36m_ssr/PublishPackDialog-BVEHIlfL.mjs                                [39m[1m[2m   27.13 kB[22m[1m[22m
+2026-09-26T15:35:05.4019590Z [2m.output/server/[22m[36m_libs/radix-ui__react-menu.mjs                                     [39m[1m[2m   27.46 kB[22m[1m[22m
+2026-09-26T15:35:05.4020546Z [2m.output/server/[22m[36m_libs/prosemirror-state.mjs                                        [39m[1m[2m   28.85 kB[22m[1m[22m
+2026-09-26T15:35:05.4021587Z [2m.output/server/[22m[36m_ssr/CharacterCardImportDialog-DbABzChi.mjs                        [39m[1m[2m   29.12 kB[22m[1m[22m
+2026-09-26T15:35:05.4022700Z [2m.output/server/[22m[36m_ssr/FragmentImportDialog-DyXOZAW9.mjs                             [39m[1m[2m   30.06 kB[22m[1m[22m
+2026-09-26T15:35:05.4023655Z [2m.output/server/[22m[36m_libs/h3.mjs                                                       [39m[1m[2m   30.34 kB[22m[1m[22m
+2026-09-26T15:35:05.4024472Z [2m.output/server/[22m[36m_libs/@vercel/oidc.mjs                                             [39m[1m[2m   30.41 kB[22m[1m[22m
+2026-09-26T15:35:05.4025412Z [2m.output/server/[22m[36m_libs/property-information.mjs                                     [39m[1m[2m   30.66 kB[22m[1m[22m
+2026-09-26T15:35:05.4026356Z [2m.output/server/[22m[36m_libs/radix-ui__react-scroll-area.mjs                              [39m[1m[2m   33.27 kB[22m[1m[22m
+2026-09-26T15:35:05.4027339Z [2m.output/server/[22m[36m_ssr/FragmentExportPanel-BGWSP_si.mjs                              [39m[1m[2m   33.76 kB[22m[1m[22m
+2026-09-26T15:35:05.4028632Z [2m.output/server/[22m[36m_ssr/StoryInfoPanel-CUbkHyx6.mjs                                   [39m[1m[2m   34.88 kB[22m[1m[22m
+2026-09-26T15:35:05.4029639Z [2m.output/server/[22m[36m_libs/tanstack__react-router.mjs                                   [39m[1m[2m   36.35 kB[22m[1m[22m
+2026-09-26T15:35:05.4030637Z [2m.output/server/[22m[36m_ssr/ProviderManager-BZP6P46N.mjs                                  [39m[1m[2m   36.52 kB[22m[1m[22m
+2026-09-26T15:35:05.4031605Z [2m.output/server/[22m[36m_libs/character-entities.mjs                                       [39m[1m[2m   37.29 kB[22m[1m[22m
+2026-09-26T15:35:05.4032527Z [2m.output/server/[22m[36m_ssr/DebugPanel-Dz2kN-Yj.mjs                                       [39m[1m[2m   38.72 kB[22m[1m[22m
+2026-09-26T15:35:05.4033465Z [2m.output/server/[22m[36m_libs/codemirror__search.mjs                                       [39m[1m[2m   39.38 kB[22m[1m[22m
+2026-09-26T15:35:05.4034069Z [2m.output/server/[22m[36m_libs/linkifyjs.mjs                                                [39m[1m[2m   39.98 kB[22m[1m[22m
+2026-09-26T15:35:05.4034616Z [2m.output/server/[22m[36m_libs/tiptap__extension-list.mjs                                   [39m[1m[2m   44.21 kB[22m[1m[22m
+2026-09-26T15:35:05.4035173Z [2m.output/server/[22m[36m_libs/codemirror__commands.mjs                                     [39m[1m[2m   48.33 kB[22m[1m[22m
+2026-09-26T15:35:05.4035728Z [2m.output/server/[22m[36m_libs/tanstack__virtual-core.mjs                                   [39m[1m[2m   49.75 kB[22m[1m[22m
+2026-09-26T15:35:05.4036268Z [2m.output/server/[22m[36m_libs/lucide-react.mjs                                             [39m[1m[2m   49.79 kB[22m[1m[22m
+2026-09-26T15:35:05.4036792Z [2m.output/server/[22m[36m_libs/lezer__common.mjs                                            [39m[1m[2m   50.96 kB[22m[1m[22m
+2026-09-26T15:35:05.4037302Z [2m.output/server/[22m[36m_libs/srvx.mjs                                                     [39m[1m[2m   51.35 kB[22m[1m[22m
+2026-09-26T15:35:05.4037974Z [2m.output/server/[22m[36m_ssr/CharacterChatView-CJUYxu2x.mjs                                [39m[1m[2m   52.05 kB[22m[1m[22m
+2026-09-26T15:35:05.4038559Z [2m.output/server/[22m[36m_libs/codemirror__language.mjs                                     [39m[1m[2m   53.60 kB[22m[1m[22m
+2026-09-26T15:35:05.4039089Z [2m.output/server/[22m[36m_libs/lezer__lr.mjs                                                [39m[1m[2m   54.87 kB[22m[1m[22m
+2026-09-26T15:35:05.4039632Z [2m.output/server/[22m[36m_ssr/FragmentList-DULHeLGN.mjs                                     [39m[1m[2m   54.89 kB[22m[1m[22m
+2026-09-26T15:35:05.4040210Z [2m.output/server/[22m[36m_libs/ai-sdk__openai-compatible.mjs                                [39m[1m[2m   59.97 kB[22m[1m[22m
+2026-09-26T15:35:05.4040783Z [2m.output/server/[22m[36m_libs/opentelemetry__api.mjs                                       [39m[1m[2m   63.33 kB[22m[1m[22m
+2026-09-26T15:35:05.4041445Z [2m.output/server/[22m[36m_libs/pngjs.mjs                                                    [39m[1m[2m   65.02 kB[22m[1m[22m
+2026-09-26T15:35:05.4042036Z [2m.output/server/[22m[36m_libs/micromark-core-commonmark.mjs                                [39m[1m[2m   66.18 kB[22m[1m[22m
+2026-09-26T15:35:05.4042588Z [2m.output/server/[22m[36m_ssr/index.mjs                                                     [39m[1m[2m   66.70 kB[22m[1m[22m
+2026-09-26T15:35:05.4043130Z [2m.output/server/[22m[36m_libs/prosemirror-transform.mjs                                    [39m[1m[2m   67.22 kB[22m[1m[22m
+2026-09-26T15:35:05.4043709Z [2m.output/server/[22m[36m_libs/codemirror__autocomplete.mjs                                 [39m[1m[2m   67.89 kB[22m[1m[22m
+2026-09-26T15:35:05.4044276Z [2m.output/server/[22m[36m_ssr/tavern-card-C_bztI_5.mjs                                      [39m[1m[2m   69.53 kB[22m[1m[22m
+2026-09-26T15:35:05.4044824Z [2m.output/server/[22m[36m_libs/qrcode.mjs                                                   [39m[1m[2m   71.20 kB[22m[1m[22m
+2026-09-26T15:35:05.4045373Z [2m.output/server/[22m[36m_libs/ai-sdk__provider-utils.mjs                                   [39m[1m[2m   79.00 kB[22m[1m[22m
+2026-09-26T15:35:05.4045919Z [2m.output/server/[22m[36m_libs/file-type.mjs                                                [39m[1m[2m   79.50 kB[22m[1m[22m
+2026-09-26T15:35:05.4046449Z [2m.output/server/[22m[36m_libs/lezer__javascript.mjs                                        [39m[1m[2m   80.65 kB[22m[1m[22m
+2026-09-26T15:35:05.4046983Z [2m.output/server/[22m[36m_libs/ai-sdk__gateway.mjs                                          [39m[1m[2m   83.58 kB[22m[1m[22m
+2026-09-26T15:35:05.4047943Z [2m.output/server/[22m[36m_libs/seroval.mjs                                                  [39m[1m[2m   94.94 kB[22m[1m[22m
+2026-09-26T15:35:05.4048523Z [2m.output/server/[22m[36m_libs/tailwind-merge.mjs                                           [39m[1m[2m   99.74 kB[22m[1m[22m
+2026-09-26T15:35:05.4049096Z [2m.output/server/[22m[36m_ssr/SettingsView-B1K7DGiX.mjs                                     [39m[1m[2m  102.18 kB[22m[1m[22m
+2026-09-26T15:35:05.4049667Z [2m.output/server/[22m[36m_libs/prosemirror-model.mjs                                        [39m[1m[2m  103.38 kB[22m[1m[22m
+2026-09-26T15:35:05.4050237Z [2m.output/server/[22m[36m_ssr/LibrarianPanel-BBMq43Lt.mjs                                   [39m[1m[2m  104.88 kB[22m[1m[22m
+2026-09-26T15:35:05.4050802Z [2m.output/server/[22m[36m_libs/codemirror__state.mjs                                        [39m[1m[2m  113.52 kB[22m[1m[22m
+2026-09-26T15:35:05.4051368Z [2m.output/server/[22m[36m_ssr/ErratanetPanel-Cp5Okuj2.mjs                                   [39m[1m[2m  114.83 kB[22m[1m[22m
+2026-09-26T15:35:05.4051942Z [2m.output/server/[22m[36m_libs/tanstack__query-core.mjs                                     [39m[1m[2m  116.04 kB[22m[1m[22m
+2026-09-26T15:35:05.4052609Z [2m.output/server/[22m[36m_ssr/AgentsPanel-BexpXPqz.mjs                                      [39m[1m[2m  123.17 kB[22m[1m[22m
+2026-09-26T15:35:05.4053181Z [2m.output/server/[22m[36m_ssr/index-Bbz7ZhOp.mjs                                            [39m[1m[2m  131.07 kB[22m[1m[22m
+2026-09-26T15:35:05.4053744Z [2m.output/server/[22m[36m_libs/tanstack__router-core.mjs                                    [39m[1m[2m  179.79 kB[22m[1m[22m
+2026-09-26T15:35:05.4054302Z [2m.output/server/[22m[36m_libs/elysiajs__openapi.mjs                                        [39m[1m[2m  179.80 kB[22m[1m[22m
+2026-09-26T15:35:05.4054838Z [2m.output/server/[22m[36m_libs/tiptap__core.mjs                                             [39m[1m[2m  182.48 kB[22m[1m[22m
+2026-09-26T15:35:05.4055382Z [2m.output/server/[22m[36m_libs/prosemirror-view.mjs                                         [39m[1m[2m  195.53 kB[22m[1m[22m
+2026-09-26T15:35:05.4055985Z [2m.output/server/[22m[36m_libs/zod.mjs                                                      [39m[1m[2m  202.98 kB[22m[1m[22m
+2026-09-26T15:35:05.4056506Z [2m.output/server/[22m[36m_libs/sinclair__typebox.mjs                                        [39m[1m[2m  219.27 kB[22m[1m[22m
+2026-09-26T15:35:05.4057045Z [2m.output/server/[22m[36m_libs/ai-sdk__google.mjs                                           [39m[1m[2m  239.30 kB[22m[1m[22m
+2026-09-26T15:35:05.4057550Z [2m.output/server/[22m[36m_libs/ai.mjs                                                       [39m[1m[2m  285.35 kB[22m[1m[22m
+2026-09-26T15:35:05.4058046Z [2m.output/server/[22m[36m_libs/elysia.mjs                                                   [39m[1m[2m  341.24 kB[22m[1m[22m
+2026-09-26T15:35:05.4058586Z [2m.output/server/[22m[36m_libs/codemirror__view.mjs                                         [39m[1m[2m  383.87 kB[22m[1m[22m
+2026-09-26T15:35:05.4059192Z [2m.output/server/[22m[36m_ssr/story._storyId-KLgINi8c.mjs                                   [39m[1m[33m  513.60 kB[39m[22m
+2026-09-26T15:35:05.4059749Z [2m.output/server/[22m[36m_libs/react-dom.mjs                                                [39m[1m[33m  553.29 kB[39m[22m
+2026-09-26T15:35:05.4060282Z [2m.output/server/[22m[36m_ssr/router-BGsPOQe-.mjs                                           [39m[1m[33m1,345.08 kB[39m[22m
+2026-09-26T15:35:05.4060719Z [32m✓ built in 19.04s[39m
+2026-09-26T15:35:05.4060972Z [info] Generated [36m.output/nitro.json[39m
+2026-09-26T15:35:05.4061267Z [success] [nitro] You can preview this build using `npx vite preview`
+2026-09-26T15:35:06.1301724Z  [158ms]  bundle  268 modules
+2026-09-26T15:35:06.5703218Z  [440ms] compile  dist\server\errata.exe
+2026-09-26T15:35:06.5783417Z Binary build complete: dist\server\errata.exe + dist\server\public
+2026-09-26T15:35:06.5846991Z > bun build desktop/main.ts --target=node --format=cjs --external=electron --outfile dist-electron/main.cjs
+2026-09-26T15:35:06.6246591Z Bundled 164 modules in 33ms
+2026-09-26T15:35:06.6247055Z 
+2026-09-26T15:35:06.6249825Z   main.cjs  0.55 MB  (entry point)
+2026-09-26T15:35:06.6250067Z 
+2026-09-26T15:35:06.6307761Z > bun build desktop/preload.ts --target=node --format=cjs --external=electron --outfile dist-electron/preload.cjs
+2026-09-26T15:35:06.6421169Z Bundled 1 module in 5ms
+2026-09-26T15:35:06.6421421Z 
+2026-09-26T15:35:06.6422181Z   preload.cjs  2.1 KB  (entry point)
+2026-09-26T15:35:06.6422454Z 
+2026-09-26T15:35:06.6515292Z > bunx electron-builder --config electron-builder.yml --dir
+2026-09-26T15:35:07.2700120Z   • electron-builder  version=26.15.3 os=10.0.26100
+2026-09-26T15:35:07.2704327Z   • publishing will be skipped  reason=current build is a part of pull request solution=set env PUBLISH_FOR_PULL_REQUEST to true to force code signing
+2026-09-26T15:35:07.2705206Z There are serious security concerns with PUBLISH_FOR_PULL_REQUEST=true (see the  CircleCI documentation (https://circleci.com/docs/1.0/fork-pr-builds/) for details)
+2026-09-26T15:35:07.2706344Z If you have SSH keys, sensitive env vars or AWS credentials stored in your project settings and untrusted forks can make pull requests against your repo, then this option isn't for you.
+2026-09-26T15:35:07.2786895Z   • loaded configuration  file=D:\a\errata\errata\electron-builder.yml
+2026-09-26T15:35:07.8701664Z   • packageManager not detected by file, falling back to environment detection  resolvedPackageManager=bun detected=D:\a\errata\errata
+2026-09-26T15:35:07.8930725Z   • executing @electron/rebuild  electronVersion=42.11.8 arch=x64 buildFromSource=false workspaceRoot=D:\a\errata\errata projectDir=./ appDir=dist-electron
+2026-09-26T15:35:07.8931941Z   • installing native dependencies  arch=x64
+2026-09-26T15:35:08.2399274Z   • completed installing native dependencies
+2026-09-26T15:35:08.2472140Z   • packaging       platform=win32 arch=x64 electron=42.11.8 appOutDir=release\win-unpacked
+2026-09-26T15:35:08.4232144Z   • downloaded      label=electron progress=100%
+2026-09-26T15:35:13.9411025Z   • downloaded electron zip extracted successfully  output=D:\a\errata\errata\release\win-unpacked
+2026-09-26T15:35:13.9509681Z   • searching for node modules  pm=bun searchDir=D:\a\errata\errata\dist-electron
+2026-09-26T15:35:13.9513197Z   • note: bun does not support any CLI for dependency tree extraction, utilizing file traversal collector instead
+2026-09-26T15:35:13.9513771Z   • using manual traversal of node_modules to build dependency tree
+2026-09-26T15:35:14.2630498Z   • updating asar integrity executable resource  executablePath=release\win-unpacked\Errata.exe
+2026-09-26T15:35:14.2914753Z   • signing with signtool.exe  path=release\win-unpacked\resources\server\errata.exe
+2026-09-26T15:35:14.3548499Z   • downloaded      label=icons-bundle.tar.gz progress=100%
+2026-09-26T15:35:16.8416465Z   • signing with signtool.exe  path=release\win-unpacked\Errata.exe
+2026-09-26T15:35:16.8837515Z 
+2026-09-26T15:35:16.8838065Z Electron build complete (v1.0.0). Output in ./release
+2026-09-26T15:35:16.9930185Z ##[group]Run $app = 'release\win-unpacked\Errata.exe'
+2026-09-26T15:35:16.9930728Z [36;1m$app = 'release\win-unpacked\Errata.exe'[0m
+2026-09-26T15:35:16.9931402Z [36;1m$sidecar = 'release\win-unpacked\resources\server\errata.exe'[0m
+2026-09-26T15:35:16.9931937Z [36;1m$public = 'release\win-unpacked\resources\server\public'[0m
+2026-09-26T15:35:16.9932531Z [36;1mif (-not (Test-Path $app)) { throw "Packaged Electron executable missing: $app" }[0m
+2026-09-26T15:35:16.9933240Z [36;1mif (-not (Test-Path $sidecar)) { throw "Bundled Errata sidecar missing: $sidecar" }[0m
+2026-09-26T15:35:16.9934116Z [36;1mif (-not (Test-Path $public -PathType Container)) { throw "Bundled public assets missing: $public" }[0m
+2026-09-26T15:35:17.0017140Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-26T15:35:17.0017748Z ##[endgroup]
+2026-09-26T15:35:17.3447569Z ##[group]Run $sidecar = (Resolve-Path 'release\win-unpacked\resources\server\errata.exe').Path
+2026-09-26T15:35:17.3448179Z [36;1m$sidecar = (Resolve-Path 'release\win-unpacked\resources\server\errata.exe').Path[0m
+2026-09-26T15:35:17.3448521Z [36;1m$serverDir = Split-Path $sidecar[0m
+2026-09-26T15:35:17.3448814Z [36;1m$dataDir = Join-Path $env:RUNNER_TEMP 'errata-sidecar-smoke-data'[0m
+2026-09-26T15:35:17.3449174Z [36;1mNew-Item -ItemType Directory -Force -Path $dataDir | Out-Null[0m
+2026-09-26T15:35:17.3449432Z [36;1m[0m
+2026-09-26T15:35:17.3449709Z [36;1m$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)[0m
+2026-09-26T15:35:17.3450053Z [36;1m$listener.Start()[0m
+2026-09-26T15:35:17.3450256Z [36;1m$port = ($listener.LocalEndpoint).Port[0m
+2026-09-26T15:35:17.3450474Z [36;1m$listener.Stop()[0m
+2026-09-26T15:35:17.3450631Z [36;1m[0m
+2026-09-26T15:35:17.3450786Z [36;1m$env:PORT = [string]$port[0m
+2026-09-26T15:35:17.3451013Z [36;1m$env:NITRO_PORT = [string]$port[0m
+2026-09-26T15:35:17.3451207Z [36;1m$env:HOST = '127.0.0.1'[0m
+2026-09-26T15:35:17.3451383Z [36;1m$env:NITRO_HOST = '127.0.0.1'[0m
+2026-09-26T15:35:17.3451572Z [36;1m$env:DATA_DIR = $dataDir[0m
+2026-09-26T15:35:17.3451741Z [36;1m[0m
+2026-09-26T15:35:17.3452054Z [36;1m$proc = Start-Process -FilePath $sidecar -WorkingDirectory $serverDir -PassThru -WindowStyle Hidden[0m
+2026-09-26T15:35:17.3452404Z [36;1mtry {[0m
+2026-09-26T15:35:17.3452547Z [36;1m  $healthy = $false[0m
+2026-09-26T15:35:17.3452755Z [36;1m  for ($attempt = 0; $attempt -lt 80; $attempt++) {[0m
+2026-09-26T15:35:17.3453006Z [36;1m    Start-Sleep -Milliseconds 250[0m
+2026-09-26T15:35:17.3453211Z [36;1m    if ($proc.HasExited) {[0m
+2026-09-26T15:35:17.3453520Z [36;1m      throw "Bundled sidecar exited before becoming healthy (code $($proc.ExitCode))."[0m
+2026-09-26T15:35:17.3453825Z [36;1m    }[0m
+2026-09-26T15:35:17.3454149Z [36;1m    try {[0m
+2026-09-26T15:35:17.3454499Z [36;1m      $response = Invoke-WebRequest "http://127.0.0.1:$port/api/health" -UseBasicParsing -TimeoutSec 2[0m
+2026-09-26T15:35:17.3454875Z [36;1m      if ($response.StatusCode -eq 200) {[0m
+2026-09-26T15:35:17.3455087Z [36;1m        $healthy = $true[0m
+2026-09-26T15:35:17.3455267Z [36;1m        break[0m
+2026-09-26T15:35:17.3455414Z [36;1m      }[0m
+2026-09-26T15:35:17.3455549Z [36;1m    } catch {[0m
+2026-09-26T15:35:17.3455712Z [36;1m      # Server is still starting.[0m
+2026-09-26T15:35:17.3455899Z [36;1m    }[0m
+2026-09-26T15:35:17.3456033Z [36;1m  }[0m
+2026-09-26T15:35:17.3456177Z [36;1m  if (-not $healthy) {[0m
+2026-09-26T15:35:17.3456423Z [36;1m    throw "Bundled sidecar did not become healthy on port $port."[0m
+2026-09-26T15:35:17.3456678Z [36;1m  }[0m
+2026-09-26T15:35:17.3456809Z [36;1m} finally {[0m
+2026-09-26T15:35:17.3456979Z [36;1m  if (-not $proc.HasExited) {[0m
+2026-09-26T15:35:17.3457198Z [36;1m    Stop-Process -Id $proc.Id -Force[0m
+2026-09-26T15:35:17.3457410Z [36;1m    $proc.WaitForExit()[0m
+2026-09-26T15:35:17.3457580Z [36;1m  }[0m
+2026-09-26T15:35:17.3457705Z [36;1m}[0m
+2026-09-26T15:35:17.3520509Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-26T15:35:17.3520792Z ##[endgroup]
+2026-09-26T15:35:18.7864618Z Post job cleanup.
+2026-09-26T15:35:18.9736487Z Post job cleanup.
+2026-09-26T15:35:19.1212012Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-26T15:35:19.1461560Z git version 2.55.0.windows.5
+2026-09-26T15:35:19.1529352Z Temporarily overriding HOME='D:\a\_temp\e834b6f9-9a07-4b77-bbca-3c83c722e7ed' before making global git config changes
+2026-09-26T15:35:19.1530933Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-26T15:35:19.1540643Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\errata\errata
+2026-09-26T15:35:19.1828624Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-26T15:35:19.2183882Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-26T15:35:19.6698941Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-26T15:35:19.6901211Z http.https://github.com/.extraheader
+2026-09-26T15:35:19.6938097Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2026-09-26T15:35:19.7176110Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-26T15:35:20.1839702Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-26T15:35:20.2085830Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-26T15:35:20.6723000Z Cleaning up orphan processes
+2026-09-26T15:35:20.7104175Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
