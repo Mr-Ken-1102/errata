@@ -714,12 +714,23 @@ function ProviderSetupStep({
     },
   })
 
+  const handleBaseURLChange = (nextBaseURL: string) => {
+    setBaseURL(nextBaseURL)
+    setFetchedModels([])
+    setFetchError(null)
+    setTestResult(null)
+    setUseCustomModel(preset === 'custom')
+  }
+
   const handleFetchModels = async () => {
     setFetchingModels(true)
     setFetchError(null)
+    setFetchedModels([])
+    setTestResult(null)
     try {
       const result = await api.config.testModels({ baseURL, apiKey, preset, customHeaders: cardHeaders })
       if (result.error) {
+        setUseCustomModel(preset === 'custom')
         setFetchError(result.error)
       } else {
         setFetchedModels(result.models)
@@ -862,7 +873,7 @@ function ProviderSetupStep({
           <label className={labelClass}>{t('providers.baseUrl')}</label>
           <input
             value={baseURL}
-            onChange={(e) => setBaseURL(e.target.value)}
+            onChange={(e) => handleBaseURLChange(e.target.value)}
             className={inputClass}
             placeholder="https://api.example.com/v1"
           />
