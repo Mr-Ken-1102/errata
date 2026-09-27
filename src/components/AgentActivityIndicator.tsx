@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { ActiveAgent } from '@/lib/api/agents'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { getAgentMeta } from '@/components/agents/agent-meta'
+import { getLocalizedAgentMeta } from '@/components/agents/agent-meta'
 import { useLanguage } from '@/lib/i18n'
 
 // ── Wisp state management ───────────────────────────────
@@ -120,7 +120,8 @@ function Wisp({
   index: number
   onAnimationEnd: (id: string, phase: 'entering' | 'exiting') => void
 }) {
-  const meta = getAgentMeta(wisp.agent.agentName)
+  const { t } = useLanguage()
+  const meta = getLocalizedAgentMeta(wisp.agent.agentName, t)
   const Icon = meta.icon
 
   // Each wisp rotates through its vocabulary at a slightly randomized cadence,
@@ -143,7 +144,7 @@ function Wisp({
     wisp.phase === 'exiting' ? 'animate-wisp-exit' :
     ''
 
-  const accessibleName = `${meta.label}, ${currentAction.toLowerCase()}`
+  const accessibleName = `${meta.label}, ${currentAction}`
 
   return (
     <Tooltip>
@@ -190,7 +191,7 @@ function Wisp({
             key={currentAction}
             className="font-display italic text-sm leading-snug animate-onboarding-fade-in"
           >
-            The {meta.label.toLowerCase()} <span className="text-foreground/40">—</span> {currentAction.toLowerCase()}
+            {meta.label} <span className="text-foreground/40">—</span> {currentAction}
           </span>
           <Elapsed startedAt={wisp.agent.startedAt} />
         </div>
