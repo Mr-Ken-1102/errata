@@ -39,7 +39,27 @@ function makeStory(): StoryMeta {
 }
 
 async function* fullStream(text: string) {
+  yield {
+    type: 'tool-call',
+    toolCallId: 'setup-1',
+    toolName: 'updateStorySetup',
+    input: {},
+  }
+  yield {
+    type: 'tool-result',
+    toolCallId: 'setup-1',
+    toolName: 'updateStorySetup',
+    output: { saved: true },
+  }
+  yield { type: 'finish-step', finishReason: 'tool-calls' }
   yield { type: 'text-delta', text }
+  yield { type: 'finish-step', finishReason: 'stop' }
+  yield { type: 'finish', finishReason: 'stop' }
+}
+
+async function* noToolStream(text: string) {
+  yield { type: 'text-delta', text }
+  yield { type: 'finish-step', finishReason: 'stop' }
   yield { type: 'finish', finishReason: 'stop' }
 }
 
@@ -61,6 +81,8 @@ describe('story setup routes', () => {
   let app: ReturnType<typeof createApp>
 
   beforeEach(async () => {
+    mockAgentCtor.mockClear()
+    mockAgentStream.mockReset()
     const tmp = await createTempDir()
     dataDir = tmp.path
     cleanup = tmp.cleanup
@@ -98,6 +120,105 @@ describe('story setup routes', () => {
     }))
   })
 
+  it('forces updateStorySetup before allowing conversational text', async () => {
+    mockChatResponse('What are you starting with?')
+
+    const response = await app.fetch(new Request(
+      'http://localhost/api/stories/story-setup-test/setup/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [] }),
+      },
+    ))
+
+    expect(response.status).toBe(200)
+    await response.text()
+
+    const config = mockAgentCtor.mock.calls.at(-1)?.[0] as {
+      prepareStep?: (args: { stepNumber: number }) => unknown
+      providerOptions?: unknown
+    }
+    expect(config.providerOptions).toEqual({
+      openaiCompatible: { reasoningEffort: 'none' },
+    })
+    expect(config.prepareStep).toBeTypeOf('function')
+    expect(config.prepareStep?.({ stepNumber: 0 })).toEqual({
+      toolChoice: { type: 'tool', toolName: 'updateStorySetup' },
+    })
+    expect(config.prepareStep?.({ stepNumber: 1 })).toEqual({
+      toolChoice: 'none',
+    })
+  })
+
+  it('retries a tool-less attempt without exposing its discarded text', async () => {
+    const first = {
+      fullStream: noToolStream('Discarded first-attempt answer'),
+      text: Promise.resolve('Discarded first-attempt answer'),
+      reasoning: Promise.resolve(''),
+      toolCalls: Promise.resolve([]),
+      finishReason: Promise.resolve('stop'),
+      steps: Promise.resolve([]),
+      totalUsage: Promise.resolve(undefined),
+    }
+    const second = {
+      fullStream: fullStream('Recovered question after snapshot'),
+      text: Promise.resolve('Recovered question after snapshot'),
+      reasoning: Promise.resolve(''),
+      toolCalls: Promise.resolve([]),
+      finishReason: Promise.resolve('stop'),
+      steps: Promise.resolve([]),
+      totalUsage: Promise.resolve(undefined),
+    }
+    mockAgentStream
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+
+    const response = await app.fetch(new Request(
+      'http://localhost/api/stories/story-setup-test/setup/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'A lighthouse keeper hears tomorrow\'s distress calls.' }],
+        }),
+      },
+    ))
+
+    expect(response.status).toBe(200)
+    const body = await response.text()
+    expect(body).toContain('Recovered question after snapshot')
+    expect(body).not.toContain('Discarded first-attempt answer')
+    expect(mockAgentStream).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops after two tool-less attempts instead of retrying indefinitely', async () => {
+    mockAgentStream.mockImplementation(async () => ({
+      fullStream: noToolStream('No snapshot'),
+      text: Promise.resolve('No snapshot'),
+      reasoning: Promise.resolve(''),
+      toolCalls: Promise.resolve([]),
+      finishReason: Promise.resolve('stop'),
+      steps: Promise.resolve([]),
+      totalUsage: Promise.resolve(undefined),
+    }))
+
+    const response = await app.fetch(new Request(
+      'http://localhost/api/stories/story-setup-test/setup/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'A story seed.' }],
+        }),
+      },
+    ))
+
+    expect(response.status).toBe(200)
+    await expect(response.text()).rejects.toThrow(/after 2 attempts/)
+    expect(mockAgentStream).toHaveBeenCalledTimes(2)
+  })
+
   it('includes existing setup fragments when the writer returns to refine the story', async () => {
     await syncStorySetupSnapshot(dataDir, 'story-setup-test', {
       story: { name: 'The Memory Courier', description: 'A courier carries a stolen memory.' },
@@ -121,6 +242,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     expect(mockAgentCtor).toHaveBeenCalledWith(expect.objectContaining({
       instructions: expect.stringMatching(/Existing story setup fragments[\s\S]*Mara[\s\S]*altered her childhood/),
     }))
@@ -139,6 +261,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     const config = mockAgentCtor.mock.calls.at(-1)?.[0] as {
       tools: {
         updateStorySetup: {
@@ -190,6 +313,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     expect(mockAgentCtor).toHaveBeenCalledWith(expect.objectContaining({
       instructions: expect.stringMatching(/writer-owned context blocks[\s\S]*read-only/),
     }))
@@ -293,6 +417,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     expect(mockAgentStream).toHaveBeenCalledWith(expect.objectContaining({ messages }))
   })
 

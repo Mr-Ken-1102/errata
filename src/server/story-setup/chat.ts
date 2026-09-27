@@ -1,6 +1,11 @@
 import { createStreamingRunner, type StreamingRunOptions } from '../agents/create-streaming-runner'
+import type { AgentStreamCompletion, AgentStreamResult } from '../agents/stream-types'
 import { tool } from 'ai'
-import { StorySetupAssessmentSchema, StorySetupSnapshotSchema } from './schema'
+import {
+  normalizeStorySetupSnapshotInput,
+  StorySetupAssessmentSchema,
+  StorySetupSnapshotInputSchema,
+} from './schema'
 import { listStorySetupFragments, syncStorySetupSnapshot } from './sync'
 
 export interface StorySetupChatOptions {
@@ -23,7 +28,7 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
       storySetupReadOnly: resolveStorySetupMode(opts) === 'assess',
     }
   },
-  tools: ({ dataDir, storyId, opts }) => {
+  tools: ({ dataDir, storyId, opts, story: currentStory }) => {
     const mode = resolveStorySetupMode(opts)
     if (mode === 'assess') {
       return {
@@ -59,9 +64,10 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
     return {
       updateStorySetup: tool({
         description: 'Save the working story details and complete setup-fragment snapshot, and replace the visible checklist before asking the writer the next question.',
-        inputSchema: StorySetupSnapshotSchema,
-        execute: async ({ story, checklist, fragments }) => {
+        inputSchema: StorySetupSnapshotInputSchema,
+        execute: async (input) => {
           try {
+            const { story, checklist, fragments } = normalizeStorySetupSnapshotInput(input, currentStory)
             const saved = await syncStorySetupSnapshot(dataDir, storyId, { story: story ?? null, fragments })
             return {
               saved: true,
@@ -79,6 +85,12 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
     }
   },
   toolChoice: 'auto',
+  forceDisableThinking: true,
+  prepareStep: ({ stepNumber }) => ({
+    toolChoice: stepNumber === 0
+      ? { type: 'tool', toolName: 'updateStorySetup' }
+      : 'none',
+  }),
   maxSteps: 3,
   messages: ({ compiled, opts }) => {
     const mode = resolveStorySetupMode(opts)
@@ -106,23 +118,116 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
   },
 })
 
+const STORY_SETUP_MAX_ATTEMPTS = 2
+
+function hasValidStorySetupUpdate(completion: AgentStreamCompletion): boolean {
+  return completion.toolCalls.some(call => call.toolName === 'updateStorySetup')
+}
+
+async function drainBufferedAttempt(
+  result: AgentStreamResult,
+  onReader: (reader: ReadableStreamDefaultReader<string> | null) => void,
+): Promise<{ chunks: string[]; completion: AgentStreamCompletion }> {
+  const reader = result.eventStream.getReader()
+  onReader(reader)
+  const chunks: string[] = []
+
+  const readToEnd = (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) return
+        chunks.push(value)
+      }
+    } finally {
+      reader.releaseLock()
+      onReader(null)
+    }
+  })()
+
+  try {
+    const [completion] = await Promise.all([result.completion, readToEnd])
+    return { chunks, completion }
+  } catch (error) {
+    try {
+      await reader.cancel(error)
+    } catch {
+      // The stream may already be errored or closed.
+    }
+    throw error
+  }
+}
+
 export async function storySetupChat(
   dataDir: string,
   storyId: string,
   opts: StorySetupChatOptions,
   execution?: StreamingRunOptions,
-) {
-  const result = await runStorySetupChat(dataDir, storyId, opts, execution)
-  return {
-    ...result,
-    completion: result.completion.then((completion) => {
-      if (!completion.toolCalls.some(call => call.toolName === 'updateStorySetup')) {
-        throw new Error('Story setup ended without a valid updateStorySetup result')
+): Promise<AgentStreamResult> {
+  let activeReader: ReadableStreamDefaultReader<string> | null = null
+  let cancelled = false
+  let completionResolve!: (completion: AgentStreamCompletion) => void
+  let completionReject!: (error: unknown) => void
+
+  const completion = new Promise<AgentStreamCompletion>((resolve, reject) => {
+    completionResolve = resolve
+    completionReject = reject
+  })
+
+  const eventStream = new ReadableStream<string>({
+    start(controller) {
+      void (async () => {
+        try {
+          for (let attempt = 1; attempt <= STORY_SETUP_MAX_ATTEMPTS; attempt++) {
+            if (execution?.abortSignal?.aborted) {
+              const error = new Error('Story setup aborted')
+              error.name = 'AbortError'
+              throw error
+            }
+
+            const result = await runStorySetupChat(dataDir, storyId, opts, execution)
+            const buffered = await drainBufferedAttempt(result, reader => {
+              activeReader = reader
+            })
+
+            if (!hasValidStorySetupUpdate(buffered.completion)) {
+              if (buffered.completion.toolErrors.length > 0) {
+                throw new Error(`Story setup update failed: ${buffered.completion.toolErrors[0].error}`)
+              }
+              if (attempt < STORY_SETUP_MAX_ATTEMPTS) continue
+              throw new Error(
+                `Story setup ended without a valid updateStorySetup result after ${STORY_SETUP_MAX_ATTEMPTS} attempts`,
+              )
+            }
+
+            if (!buffered.completion.text.trim()) {
+              throw new Error('Story setup updated its snapshot but ended before asking the next question')
+            }
+
+            if (cancelled) {
+              const error = new Error('Story setup aborted')
+              error.name = 'AbortError'
+              throw error
+            }
+
+            for (const chunk of buffered.chunks) controller.enqueue(chunk)
+            controller.close()
+            completionResolve(buffered.completion)
+            return
+          }
+        } catch (error) {
+          if (!cancelled) controller.error(error)
+          completionReject(error)
+        }
+      })()
+    },
+    cancel(reason) {
+      cancelled = true
+      if (activeReader) {
+        void activeReader.cancel(reason).catch(() => {})
       }
-      if (!completion.text.trim()) {
-        throw new Error('Story setup updated its snapshot but ended before asking the next question')
-      }
-      return completion
-    }),
-  }
+    },
+  })
+
+  return { eventStream, completion }
 }
