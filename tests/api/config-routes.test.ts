@@ -132,6 +132,31 @@ describe('config routes', () => {
     expect(body.models.find((m) => m.id === 'paid/model')?.isFree).toBe(false)
   })
 
+  it('uses an unversioned custom API root as-is when discovering models', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: [] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await app.fetch(new Request('http://localhost/api/config/test-models', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        baseURL: 'http://localhost:11434/',
+        apiKey: 'not-needed',
+        preset: 'custom',
+      }),
+    }))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ models: [] })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:11434/models',
+      expect.any(Object),
+    )
+  })
+
   describe('test-connection credential handling', () => {
     const post = (path: string, body: unknown) => app.fetch(new Request(`http://localhost/api${path}`, {
       method: 'POST',
@@ -221,6 +246,19 @@ describe('config routes', () => {
 
       expect(await res.json()).toEqual({ ok: true, reply: 'hi' })
       expect(fetchMock.mock.calls[0][0]).toBe('https://inline.example/v1/chat/completions')
+    })
+
+    it('does not invent /v1 when testing an unversioned API root', async () => {
+      const fetchMock = stubChatFetch()
+
+      const res = await post('/config/test-connection', {
+        baseURL: 'http://localhost:11434/',
+        apiKey: 'not-needed',
+        model: 'm',
+      })
+
+      expect(await res.json()).toEqual({ ok: true, reply: 'hi' })
+      expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:11434/chat/completions')
     })
   })
 
