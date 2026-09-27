@@ -98,6 +98,33 @@ describe('story setup routes', () => {
     }))
   })
 
+  it('forces updateStorySetup before allowing conversational text', async () => {
+    mockChatResponse('What are you starting with?')
+
+    const response = await app.fetch(new Request(
+      'http://localhost/api/stories/story-setup-test/setup/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [] }),
+      },
+    ))
+
+    expect(response.status).toBe(200)
+    await response.text()
+
+    const config = mockAgentCtor.mock.calls.at(-1)?.[0] as {
+      prepareStep?: (args: { stepNumber: number }) => unknown
+    }
+    expect(config.prepareStep).toBeTypeOf('function')
+    expect(config.prepareStep?.({ stepNumber: 0 })).toEqual({
+      toolChoice: { type: 'tool', toolName: 'updateStorySetup' },
+    })
+    expect(config.prepareStep?.({ stepNumber: 1 })).toEqual({
+      toolChoice: 'none',
+    })
+  })
+
   it('includes existing setup fragments when the writer returns to refine the story', async () => {
     await syncStorySetupSnapshot(dataDir, 'story-setup-test', {
       story: { name: 'The Memory Courier', description: 'A courier carries a stolen memory.' },

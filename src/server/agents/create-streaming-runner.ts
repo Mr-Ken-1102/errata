@@ -5,7 +5,7 @@
  * that all streaming agents share. Only the agent-specific "knobs" vary.
  */
 
-import { ToolLoopAgent, stepCountIs, type ToolSet } from 'ai'
+import { ToolLoopAgent, stepCountIs, type PrepareStepFunction, type ToolSet } from 'ai'
 import type { StoryMeta } from '../fragments/schema'
 import type { ContextBuildState } from '../llm/context-builder'
 import { type AgentBlockContext, baseBlockContext } from './agent-block-context'
@@ -34,6 +34,9 @@ export interface StreamingRunnerConfig<TOpts, TValidated = Record<string, unknow
 
   /** Tool choice passed to the agent. Default: 'auto' */
   toolChoice?: 'auto' | 'none'
+
+  /** Optional per-step control for agents that require a deterministic tool phase. */
+  prepareStep?: PrepareStepFunction<ToolSet>
 
   /**
    * Whether to call buildContextState. Default: true.
@@ -189,6 +192,7 @@ export function createStreamingRunner<TOpts extends object, TValidated = Record<
         instructions: systemMessage?.content || MISSING_SYSTEM_PROMPT_FALLBACK,
         tools: compiled.tools,
         toolChoice: config.toolChoice ?? 'auto',
+        ...(config.prepareStep ? { prepareStep: config.prepareStep } : {}),
         stopWhen: stepCountIs(maxSteps ?? defaultMaxSteps),
         ...samplingCallSettings(runtime),
         providerOptions,

@@ -79,6 +79,11 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
     }
   },
   toolChoice: 'auto',
+  prepareStep: ({ stepNumber }) => ({
+    toolChoice: stepNumber === 0
+      ? { type: 'tool', toolName: 'updateStorySetup' }
+      : 'none',
+  }),
   maxSteps: 3,
   messages: ({ compiled, opts }) => {
     const mode = resolveStorySetupMode(opts)
