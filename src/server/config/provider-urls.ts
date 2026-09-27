@@ -17,3 +17,11 @@ export function isGeminiProvider(provider: { preset?: string; baseURL: string })
 export function normalizeGeminiBaseURL(baseURL: string): string {
   return baseURL.replace(/\/+$/, '').replace(/\/openai$/, '')
 }
+
+/**
+ * Treat an OpenAI-compatible Base URL as an API root supplied by the user.
+ * Normalize syntax only; never invent an API version such as `/v1`.
+ */
+export function normalizeOpenAICompatibleBaseURL(baseURL: string): string {
+  return baseURL.trim().replace(/\/+$/, '')
+}
