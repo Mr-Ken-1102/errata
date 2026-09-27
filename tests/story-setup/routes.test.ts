@@ -242,6 +242,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     expect(mockAgentCtor).toHaveBeenCalledWith(expect.objectContaining({
       instructions: expect.stringMatching(/Existing story setup fragments[\s\S]*Mara[\s\S]*altered her childhood/),
     }))
@@ -260,6 +261,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     const config = mockAgentCtor.mock.calls.at(-1)?.[0] as {
       tools: {
         updateStorySetup: {
@@ -311,6 +313,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     expect(mockAgentCtor).toHaveBeenCalledWith(expect.objectContaining({
       instructions: expect.stringMatching(/writer-owned context blocks[\s\S]*read-only/),
     }))
@@ -414,6 +417,7 @@ describe('story setup routes', () => {
     ))
 
     expect(response.status).toBe(200)
+    await response.text()
     expect(mockAgentStream).toHaveBeenCalledWith(expect.objectContaining({ messages }))
   })
 
