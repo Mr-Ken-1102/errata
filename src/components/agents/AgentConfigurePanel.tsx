@@ -43,6 +43,7 @@ import {
   resolveInheritedSamplingValue,
 } from '@/lib/model-role-helpers'
 import { cn } from '@/lib/utils'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface AgentConfigurePanelProps {
   storyId: string
@@ -108,12 +109,25 @@ const CONTENT_MODES = [
 ]
 
 /** Hierarchical agent groups in display order */
-const AGENT_GROUPS: { label: string; prefix: string }[] = [
-  { label: 'Generation', prefix: 'generation.' },
-  { label: 'Directions', prefix: 'directions.' },
-  { label: 'Librarian', prefix: 'librarian.' },
-  { label: 'Character', prefix: 'character-chat.' },
+const AGENT_GROUPS: { labelKey: TranslationKey; prefix: string }[] = [
+  { labelKey: 'agentsPanel.group.generation', prefix: 'generation.' },
+  { labelKey: 'agentsPanel.group.directions', prefix: 'directions.' },
+  { labelKey: 'agentsPanel.group.librarian', prefix: 'librarian.' },
+  { labelKey: 'agentsPanel.group.character', prefix: 'character-chat.' },
 ]
+
+const AGENT_DISPLAY_KEYS: Record<string, { name: TranslationKey; description: TranslationKey }> = {
+  'generation.writer': { name: 'agentsPanel.agent.writer.name', description: 'agentsPanel.agent.writer.description' },
+  'generation.prewriter': { name: 'agentsPanel.agent.prewriter.name', description: 'agentsPanel.agent.prewriter.description' },
+  'directions.suggest': { name: 'agentsPanel.agent.directions.name', description: 'agentsPanel.agent.directions.description' },
+  'librarian.analyze': { name: 'agentsPanel.agent.librarianAnalyze.name', description: 'agentsPanel.agent.librarianAnalyze.description' },
+  'librarian.chat': { name: 'agentsPanel.agent.librarianChat.name', description: 'agentsPanel.agent.librarianChat.description' },
+  'librarian.refine': { name: 'agentsPanel.agent.librarianRefine.name', description: 'agentsPanel.agent.librarianRefine.description' },
+  'librarian.optimize-character': { name: 'agentsPanel.agent.optimizeCharacter.name', description: 'agentsPanel.agent.optimizeCharacter.description' },
+  'librarian.prose-transform': { name: 'agentsPanel.agent.proseTransform.name', description: 'agentsPanel.agent.proseTransform.description' },
+  'character-chat.chat': { name: 'agentsPanel.agent.characterChat.name', description: 'agentsPanel.agent.characterChat.description' },
+  'story-setup.chat': { name: 'agentsPanel.agent.storySetup.name', description: 'agentsPanel.agent.storySetup.description' },
+}
 
 /** Order within each group — agents not listed here sort to the end */
 const AGENT_ORDER: string[] = [
@@ -132,10 +146,10 @@ const AGENT_ORDER: string[] = [
   'character-chat.chat',
 ]
 
-function groupAgents(agents: AgentBlockInfo[]): { label: string; agents: AgentBlockInfo[] }[] {
+function groupAgents(agents: AgentBlockInfo[]): { labelKey: TranslationKey; agents: AgentBlockInfo[] }[] {
   const agentMap = new Map(agents.map(a => [a.agentName, a]))
   const placed = new Set<string>()
-  const groups: { label: string; agents: AgentBlockInfo[] }[] = []
+  const groups: { labelKey: TranslationKey; agents: AgentBlockInfo[] }[] = []
 
   for (const group of AGENT_GROUPS) {
     // Get agents for this group in the defined order, then append any unordered ones
@@ -149,19 +163,30 @@ function groupAgents(agents: AgentBlockInfo[]): { label: string; agents: AgentBl
     const all = [...ordered, ...unordered]
     if (all.length === 0) continue
     for (const a of all) placed.add(a.agentName)
-    groups.push({ label: group.label, agents: all })
+    groups.push({ labelKey: group.labelKey, agents: all })
   }
 
   // Catch-all for agents that don't match any group
   const remaining = agents.filter(a => !placed.has(a.agentName))
   if (remaining.length > 0) {
-    groups.push({ label: 'Other', agents: remaining })
+    groups.push({ labelKey: 'agentsPanel.group.other', agents: remaining })
   }
 
   return groups
 }
 
+function getAgentDisplay(
+  agent: AgentBlockInfo,
+  t: (key: TranslationKey) => string,
+): { name: string; description: string } {
+  const keys = AGENT_DISPLAY_KEYS[agent.agentName]
+  return keys
+    ? { name: t(keys.name), description: t(keys.description) }
+    : { name: agent.displayName, description: agent.description }
+}
+
 export function AgentConfigurePanel({ storyId }: AgentConfigurePanelProps) {
+  const { t } = useLanguage()
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
 
   const { data: agents, isLoading } = useQuery({
@@ -185,7 +210,7 @@ export function AgentConfigurePanel({ storyId }: AgentConfigurePanelProps) {
   if (!agents || agents.length === 0) {
     return (
       <div className="flex items-center justify-center py-24">
-        <EmptyState title="No agents registered" />
+        <EmptyState title={t('agentsPanel.noAgents')} />
       </div>
     )
   }
@@ -211,18 +236,18 @@ export function AgentConfigurePanel({ storyId }: AgentConfigurePanelProps) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="px-4 py-3 border-b border-border/30">
         <p className="text-[0.6875rem] text-muted-foreground leading-snug">
-          Customize the context blocks, tools, and model for each agent.
+          {t('agentsPanel.description')}
         </p>
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="px-2 py-3 space-y-4">
           {groups.map((group) => (
-            <div key={group.label}>
+            <div key={group.labelKey}>
               <div className="flex items-center gap-2 px-1 mb-1.5">
                 <div className="size-1 rounded-full bg-muted-foreground/50" />
                 <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                  {group.label}
+                  {t(group.labelKey)}
                 </span>
                 <div className="flex-1 h-px bg-border/20" />
               </div>
@@ -236,9 +261,9 @@ export function AgentConfigurePanel({ storyId }: AgentConfigurePanelProps) {
                     <div className="flex items-center gap-2.5">
                       <Bot className="size-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[0.75rem] font-medium truncate leading-tight">{agent.displayName}</p>
+                        <p className="text-[0.75rem] font-medium truncate leading-tight">{getAgentDisplay(agent, t).name}</p>
                         <p className="text-[0.625rem] text-muted-foreground truncate mt-0.5 leading-snug">
-                          {agent.description}
+                          {getAgentDisplay(agent, t).description}
                         </p>
                       </div>
                       <ChevronDown className="size-3.5 text-muted-foreground shrink-0 -rotate-90 group-hover:translate-x-0.5 transition-transform" />
@@ -264,6 +289,7 @@ interface AgentBlockEditorProps {
 }
 
 function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEditorProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -278,6 +304,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const agent = agents.find(a => a.agentName === agentName)
+  const agentDisplay = agent ? getAgentDisplay(agent, t) : null
 
   const { data, isLoading } = useQuery({
     queryKey: ['agent-blocks', storyId, agentName],
@@ -572,8 +599,8 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
           <ChevronLeft className="size-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-[0.75rem] font-medium truncate">{agent?.displayName ?? agentName}</p>
-          <p className="text-[0.625rem] text-muted-foreground truncate">{agent?.description}</p>
+          <p className="text-[0.75rem] font-medium truncate">{agentDisplay?.name ?? agentName}</p>
+          <p className="text-[0.625rem] text-muted-foreground truncate">{agentDisplay?.description}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Button

@@ -8,7 +8,7 @@ import {
 } from '@/lib/api'
 import type { ActiveAgent } from '@/lib/api/agents'
 import { qk, useActiveBranchId } from '@/lib/query-keys'
-import { getAgentMeta } from '@/components/agents/agent-meta'
+import { getLocalizedAgentMeta } from '@/components/agents/agent-meta'
 import { useLanguage } from '@/lib/i18n'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -92,7 +92,7 @@ function StatusStrip({ status, runStatus, active }: StatusStripProps) {
         : 'bg-emerald-500/50'
 
   const label = leadName
-    ? getAgentMeta(leadName).status
+    ? getLocalizedAgentMeta(leadName, t).status
     : scheduled
       ? t('agentActivity.queued')
       : isError
