@@ -1,6 +1,10 @@
 import { createStreamingRunner, type StreamingRunOptions } from '../agents/create-streaming-runner'
 import { tool } from 'ai'
-import { StorySetupAssessmentSchema, StorySetupSnapshotSchema } from './schema'
+import {
+  normalizeStorySetupSnapshotInput,
+  StorySetupAssessmentSchema,
+  StorySetupSnapshotInputSchema,
+} from './schema'
 import { listStorySetupFragments, syncStorySetupSnapshot } from './sync'
 
 export interface StorySetupChatOptions {
@@ -59,9 +63,10 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
     return {
       updateStorySetup: tool({
         description: 'Save the working story details and complete setup-fragment snapshot, and replace the visible checklist before asking the writer the next question.',
-        inputSchema: StorySetupSnapshotSchema,
-        execute: async ({ story, checklist, fragments }) => {
+        inputSchema: StorySetupSnapshotInputSchema,
+        execute: async (input) => {
           try {
+            const { story, checklist, fragments } = normalizeStorySetupSnapshotInput(input)
             const saved = await syncStorySetupSnapshot(dataDir, storyId, { story: story ?? null, fragments })
             return {
               saved: true,
@@ -79,6 +84,7 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
     }
   },
   toolChoice: 'auto',
+  forceDisableThinking: true,
   prepareStep: ({ stepNumber }) => ({
     toolChoice: stepNumber === 0
       ? { type: 'tool', toolName: 'updateStorySetup' }

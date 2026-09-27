@@ -115,7 +115,11 @@ describe('story setup routes', () => {
 
     const config = mockAgentCtor.mock.calls.at(-1)?.[0] as {
       prepareStep?: (args: { stepNumber: number }) => unknown
+      providerOptions?: unknown
     }
+    expect(config.providerOptions).toEqual({
+      openaiCompatible: { reasoningEffort: 'none' },
+    })
     expect(config.prepareStep).toBeTypeOf('function')
     expect(config.prepareStep?.({ stepNumber: 0 })).toEqual({
       toolChoice: { type: 'tool', toolName: 'updateStorySetup' },

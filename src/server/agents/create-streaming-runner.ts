@@ -10,7 +10,7 @@ import type { StoryMeta } from '../fragments/schema'
 import type { ContextBuildState } from '../llm/context-builder'
 import { type AgentBlockContext, baseBlockContext } from './agent-block-context'
 import type { AgentStreamResult } from './stream-types'
-import { resolveAgentRuntime, samplingCallSettings, samplingDiagnostics } from '../llm/client'
+import { buildProviderOptions, resolveAgentRuntime, samplingCallSettings, samplingDiagnostics } from '../llm/client'
 import { MISSING_SYSTEM_PROMPT_FALLBACK } from '../instructions'
 import { getStory } from '../fragments/storage'
 import { buildContextState } from '../llm/context-builder'
@@ -37,6 +37,9 @@ export interface StreamingRunnerConfig<TOpts, TValidated = Record<string, unknow
 
   /** Optional per-step control for agents that require a deterministic tool phase. */
   prepareStep?: PrepareStepFunction<ToolSet>
+
+  /** Force provider reasoning off for structured agents where it hurts reliability. */
+  forceDisableThinking?: boolean
 
   /**
    * Whether to call buildContextState. Default: true.
@@ -195,7 +198,7 @@ export function createStreamingRunner<TOpts extends object, TValidated = Record<
         ...(config.prepareStep ? { prepareStep: config.prepareStep } : {}),
         stopWhen: stepCountIs(maxSteps ?? defaultMaxSteps),
         ...samplingCallSettings(runtime),
-        providerOptions,
+        providerOptions: config.forceDisableThinking ? buildProviderOptions(true) : providerOptions,
         maxOutputTokens: guards.maxOutputTokens,
       })
 

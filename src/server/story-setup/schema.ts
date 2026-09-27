@@ -26,6 +26,25 @@ export const StorySetupDraftFragmentSchema = z.object({
   content: z.string().trim().min(1),
 })
 
+// Model-facing input accepts the two semantic labels local models have
+// repeatedly used for knowledge fragments. Persisted fragments remain canonical.
+const STORY_SETUP_INPUT_FRAGMENT_TYPES = [
+  'guideline',
+  'knowledge',
+  'character',
+  'prose',
+  'premise',
+  'setting',
+] as const
+
+const StorySetupDraftFragmentInputSchema = z.object({
+  key: z.string().min(1).max(50).regex(/^[a-z0-9][a-z0-9-]*$/),
+  type: z.enum(STORY_SETUP_INPUT_FRAGMENT_TYPES),
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().min(1).max(250).optional(),
+  content: z.string().trim().min(1),
+})
+
 const StorySetupChecklistSchema = z.array(StorySetupChecklistItemSchema).length(7).superRefine((items, ctx) => {
   items.forEach((item, index) => {
     const expected = STORY_SETUP_CHECKLIST_KEYS[index]
@@ -63,5 +82,48 @@ export const StorySetupSnapshotSchema = z.object({
     })
   }),
 })
+
+export const StorySetupSnapshotInputSchema = z.object({
+  story: z.object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500),
+  }).optional(),
+  checklist: StorySetupChecklistSchema,
+  fragments: z.array(StorySetupDraftFragmentInputSchema).max(12).superRefine((fragments, ctx) => {
+    const seen = new Set<string>()
+    fragments.forEach((fragment, index) => {
+      if (seen.has(fragment.key)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index, 'key'],
+          message: `Duplicate story setup key ${fragment.key}`,
+        })
+      }
+      seen.add(fragment.key)
+    })
+  }),
+})
+
+type StorySetupInputFragmentType = typeof STORY_SETUP_INPUT_FRAGMENT_TYPES[number]
+
+function normalizeStorySetupFragmentType(
+  type: StorySetupInputFragmentType,
+): z.infer<typeof StorySetupDraftFragmentSchema>['type'] {
+  if (type === 'premise' || type === 'setting') return 'knowledge'
+  return type
+}
+
+export function normalizeStorySetupSnapshotInput(
+  input: z.infer<typeof StorySetupSnapshotInputSchema>,
+): z.infer<typeof StorySetupSnapshotSchema> {
+  return StorySetupSnapshotSchema.parse({
+    ...input,
+    fragments: input.fragments.map(fragment => ({
+      ...fragment,
+      type: normalizeStorySetupFragmentType(fragment.type),
+      description: fragment.description?.trim() || fragment.name.trim(),
+    })),
+  })
+}
 
 export type StorySetupDraftFragment = z.infer<typeof StorySetupDraftFragmentSchema>
