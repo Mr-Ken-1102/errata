@@ -12,10 +12,11 @@ describe('AgentActivityPanel localization', () => {
     expect(translate('vi', 'agentActivity.liveTrace')).toBe('Dấu vết trực tiếp')
   })
 
-  it('preserves agent metadata, technical statuses, errors, ids, and live-stream semantics', () => {
+  it('localizes agent metadata while preserving technical statuses, errors, ids, and live-stream semantics', () => {
     const source = readFileSync('src/components/agents/AgentActivityPanel.tsx', 'utf8')
 
-    expect(source).toContain('getAgentMeta(leadName).status')
+    expect(translate('vi', 'agentMeta.status.analyzing')).toBe('Đang phân tích')
+    expect(source).toContain('getLocalizedAgentMeta(leadName, t).status')
     expect(source).toContain('{run.status}')
     expect(source).toContain('{node.status}')
     expect(source).toContain('{status.lastError}')
