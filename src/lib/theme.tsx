@@ -394,6 +394,7 @@ export function useProseFontSize(): [ProseFontSize, (v: ProseFontSize) => void] 
 // --- Font preferences ---
 
 export type FontRole = 'display' | 'prose' | 'sans' | 'mono'
+export type FontLanguage = 'en' | 'vi'
 
 export interface FontOption {
   name: string
@@ -406,6 +407,7 @@ export const FONT_CATALOGUE: Record<FontRole, FontOption[]> = {
     { name: 'Instrument Serif', fallback: 'Georgia, serif' },
     { name: 'Playfair Display', fallback: 'Georgia, serif' },
     { name: 'Cormorant Garamond', fallback: 'Georgia, serif' },
+    { name: 'Comfortaa', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
     { name: 'Lexend', fallback: '-apple-system, BlinkMacSystemFont, sans-serif', tag: 'high-visibility' },
     { name: 'Atkinson Hyperlegible Next', fallback: '-apple-system, BlinkMacSystemFont, sans-serif', tag: 'high-visibility' },
   ],
@@ -421,6 +423,8 @@ export const FONT_CATALOGUE: Record<FontRole, FontOption[]> = {
     { name: 'Outfit', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
     { name: 'DM Sans', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
     { name: 'Plus Jakarta Sans', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
+    { name: 'Inter', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
+    { name: 'Comfortaa', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
     { name: 'Lexend', fallback: '-apple-system, BlinkMacSystemFont, sans-serif', tag: 'high-visibility' },
     { name: 'Atkinson Hyperlegible Next', fallback: '-apple-system, BlinkMacSystemFont, sans-serif', tag: 'high-visibility' },
   ],
@@ -439,6 +443,17 @@ export const DEFAULT_FONTS: Record<FontRole, string> = {
   mono: 'JetBrains Mono',
 }
 
+export const VIETNAMESE_DEFAULT_FONTS: Record<FontRole, string> = {
+  display: 'Newsreader',
+  prose: 'Newsreader',
+  sans: 'Inter',
+  mono: 'JetBrains Mono',
+}
+
+export function getDefaultFontForLanguage(role: FontRole, language: FontLanguage): string {
+  return language === 'vi' ? VIETNAMESE_DEFAULT_FONTS[role] : DEFAULT_FONTS[role]
+}
+
 export type FontPreferences = Partial<Record<FontRole, string>>
 
 const FONT_SPECS: Record<string, string> = {
@@ -452,6 +467,8 @@ const FONT_SPECS: Record<string, string> = {
   'Outfit': 'wght@300..700',
   'DM Sans': 'wght@300..700',
   'Plus Jakarta Sans': 'wght@300..700',
+  'Inter': 'wght@300..700',
+  'Comfortaa': 'wght@300..700',
   'Lexend': 'wght@300..700',
   'Atkinson Hyperlegible Next': 'ital,wght@0,400..700;1,400..700',
   'Atkinson Hyperlegible Mono': 'ital,wght@0,400..700;1,400..700',
@@ -463,7 +480,7 @@ const FONT_SPECS: Record<string, string> = {
 let fullCatalogueLoaded = false
 
 /**
- * Load the full Google Fonts catalogue (all 13 families).
+ * Load the full configured Google Fonts catalogue.
  * Skips fonts already loaded at startup. Safe to call multiple times.
  */
 export function loadFullFontCatalogue() {
@@ -494,11 +511,11 @@ function getFontCssValue(role: FontRole, name: string): string {
   return `"${option.name}", ${option.fallback}`
 }
 
-function applyFontPreferences(prefs: FontPreferences) {
+function applyFontPreferences(prefs: FontPreferences, language: FontLanguage) {
   const style = document.documentElement.style
   for (const role of ['display', 'prose', 'sans', 'mono'] as FontRole[]) {
     const name = prefs[role]
-    if (name && name !== DEFAULT_FONTS[role]) {
+    if (name && name !== getDefaultFontForLanguage(role, language)) {
       style.setProperty(`--font-${role}`, getFontCssValue(role, name))
     } else {
       style.removeProperty(`--font-${role}`)
@@ -516,17 +533,19 @@ function getInitialFontPreferences(): FontPreferences {
   }
 }
 
-export function useFontPreferences(): [FontPreferences, (role: FontRole, name: string) => void, () => void] {
+export function useFontPreferences(
+  language: FontLanguage = 'en',
+): [FontPreferences, (role: FontRole, name: string) => void, () => void] {
   const [prefs, setPrefs] = useState<FontPreferences>(getInitialFontPreferences)
 
   useEffect(() => {
-    applyFontPreferences(prefs)
-  }, [prefs])
+    applyFontPreferences(prefs, language)
+  }, [prefs, language])
 
   const setFont = useCallback((role: FontRole, name: string) => {
     setPrefs(prev => {
       const next = { ...prev }
-      if (name === DEFAULT_FONTS[role]) {
+      if (name === getDefaultFontForLanguage(role, language)) {
         delete next[role]
       } else {
         next[role] = name
@@ -534,19 +553,23 @@ export function useFontPreferences(): [FontPreferences, (role: FontRole, name: s
       localStorage.setItem(FONTS_KEY, JSON.stringify(next))
       return next
     })
-  }, [])
+  }, [language])
 
   const resetFonts = useCallback(() => {
     setPrefs({})
     localStorage.removeItem(FONTS_KEY)
-    applyFontPreferences({})
-  }, [])
+    applyFontPreferences({}, language)
+  }, [language])
 
   return [prefs, setFont, resetFonts]
 }
 
-export function getActiveFont(role: FontRole, prefs: FontPreferences): string {
-  return prefs[role] ?? DEFAULT_FONTS[role]
+export function getActiveFont(
+  role: FontRole,
+  prefs: FontPreferences,
+  language: FontLanguage = 'en',
+): string {
+  return prefs[role] ?? getDefaultFontForLanguage(role, language)
 }
 
 // --- Custom CSS preference ---

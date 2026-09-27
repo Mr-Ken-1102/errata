@@ -50,7 +50,10 @@ const languageScript = `(function(){try{var l=localStorage.getItem('errata-langu
 const fontScript = `(function(){var f=localStorage.getItem('errata-fonts');if(!f)return;try{var p=JSON.parse(f),s=document.documentElement.style,fb={display:', Georgia, serif',prose:', Georgia, serif',sans:', -apple-system, BlinkMacSystemFont, sans-serif',mono:', "Fira Code", Menlo, monospace'};for(var k in p){if(p[k]&&fb[k])s.setProperty('--font-'+k,'"'+p[k]+'"'+fb[k])}}catch(e){}})()`;
 
 const fontLoaderScript = `(function(){
-var defaults={display:'Instrument Serif',prose:'Newsreader',sans:'Outfit',mono:'JetBrains Mono'};
+var language=document.documentElement.lang==='vi'?'vi':'en';
+var defaults=language==='vi'
+?{display:'Newsreader',prose:'Newsreader',sans:'Inter',mono:'JetBrains Mono'}
+:{display:'Instrument Serif',prose:'Newsreader',sans:'Outfit',mono:'JetBrains Mono'};
 var specs={
 'Instrument Serif':'ital@0;1',
 'Playfair Display':'ital,wght@0,400..900;1,400..900',
@@ -62,6 +65,8 @@ var specs={
 'Outfit':'wght@300..700',
 'DM Sans':'wght@300..700',
 'Plus Jakarta Sans':'wght@300..700',
+'Inter':'wght@300..700',
+'Comfortaa':'wght@300..700',
 'Lexend':'wght@300..700',
 'Atkinson Hyperlegible Next':'ital,wght@0,400..700;1,400..700',
 'Atkinson Hyperlegible Mono':'ital,wght@0,400..700;1,400..700',
