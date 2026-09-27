@@ -231,7 +231,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             </div>
           </Wizard.Step>
           <Wizard.Step stepKey="typography" transition="fade">
-            <div className="flex items-center justify-center min-h-full">
+            <div className="flex items-start justify-center min-h-full py-8 sm:py-10">
               <TypographyStep
                 onNext={() => setStep('welcome')}
                 onBack={() => setStep('theme')}
@@ -379,7 +379,7 @@ function TypographyStep({
   }, [activeProse, activeDisplay])
 
   return (
-    <div className="max-w-xl mx-auto px-6">
+    <div className="w-full max-w-xl mx-auto px-6">
       <div className="text-center mb-10 animate-onboarding-fade-up">
         <h2 className="font-display text-3xl italic mb-2">{t('onboarding.chooseTypeface')}</h2>
         <Caption size="sm">
@@ -529,7 +529,7 @@ function WelcomeStep({
         {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
       </button>
 
-      <div className="animate-onboarding-fade-up">
+      <div>
         <h1 className="font-display text-5xl italic tracking-tight mb-3">Errata</h1>
         <p className="font-prose text-lg text-muted-foreground">
           {t('onboarding.tagline')}
@@ -538,10 +538,7 @@ function WelcomeStep({
 
       {/* Hero features: Librarian & Timelines */}
       <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div
-          className="text-left p-5 rounded-xl border border-primary/15 bg-primary/[0.03] animate-onboarding-fade-up"
-          style={{ animationDelay: '200ms' }}
-        >
+        <div className="text-left p-5 rounded-xl border border-primary/15 bg-primary/[0.03]">
           <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
             <BookOpen className="size-5 text-primary" />
           </div>
@@ -550,10 +547,7 @@ function WelcomeStep({
             {t('onboarding.librarianDescription')}
           </Hint>
         </div>
-        <div
-          className="text-left p-5 rounded-xl border border-primary/15 bg-primary/[0.03] animate-onboarding-fade-up"
-          style={{ animationDelay: '320ms' }}
-        >
+        <div className="text-left p-5 rounded-xl border border-primary/15 bg-primary/[0.03]">
           <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
             <GitBranch className="size-5 text-primary" />
           </div>
@@ -566,11 +560,10 @@ function WelcomeStep({
 
       {/* Supporting features */}
       <div className="mt-4 space-y-3">
-        {SUPPORTING_FEATURES.map((f, i) => (
+        {SUPPORTING_FEATURES.map((f) => (
           <div
             key={f.titleKey}
-            className="flex items-start gap-4 text-left p-4 rounded-lg border border-border/20 bg-card/30 animate-onboarding-fade-up"
-            style={{ animationDelay: `${450 + i * 100}ms` }}
+            className="flex items-start gap-4 text-left p-4 rounded-lg border border-border/20 bg-card/30"
           >
             <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
               <f.icon className="size-4 text-primary" />
@@ -583,10 +576,7 @@ function WelcomeStep({
         ))}
       </div>
 
-      <div
-        className="mt-10 animate-onboarding-fade-up"
-        style={{ animationDelay: '800ms' }}
-      >
+      <div className="mt-10">
         <Button onClick={onNext} className="px-8" data-component-id="onboarding-welcome-start">
           {t('onboarding.getStarted')}
         </Button>
@@ -609,7 +599,7 @@ function ProviderSelectStep({
 
   return (
     <div className="max-w-2xl mx-auto px-6">
-      <div className="text-center mb-8 animate-onboarding-fade-up">
+      <div className="text-center mb-8">
         <h2 className="font-display text-3xl italic mb-2">{t('onboarding.chooseProvider')}</h2>
         <Caption size="sm">
           {t('onboarding.chooseProviderDescription')}
@@ -617,14 +607,13 @@ function ProviderSelectStep({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {cards.map(([key, card], i) => {
+        {cards.map(([key, card]) => {
           const accent = ACCENT_COLORS[card.accent]
           return (
             <button
               key={key}
               onClick={() => onSelect(key)}
-              className={`relative text-left p-5 rounded-xl border border-border/30 bg-card/30 hover:border-border/60 hover:bg-card/80 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer animate-onboarding-fade-up group`}
-              style={{ animationDelay: `${100 + i * 80}ms` }}
+              className={`relative text-left p-5 rounded-xl border border-border/30 bg-card/30 hover:border-border/60 hover:bg-card/80 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer group`}
             >
               {/* Accent strip */}
               <div className={`absolute top-0 left-4 right-4 h-0.5 rounded-b ${accent.bg}`} />
@@ -654,10 +643,7 @@ function ProviderSelectStep({
         })}
       </div>
 
-      <div
-        className="flex items-center justify-center mt-8 animate-onboarding-fade-up"
-        style={{ animationDelay: '500ms' }}
-      >
+      <div className="flex items-center justify-center mt-8">
         <Wizard.BackButton tone="link" onBack={onBack}>{t('onboarding.back')}</Wizard.BackButton>
       </div>
     </div>
