@@ -368,11 +368,11 @@ function TypographyStep({
   onNext: () => void
   onBack: () => void
 }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   useEffect(() => { loadFullFontCatalogue() }, [])
-  const [fontPrefs, setFont] = useFontPreferences()
-  const activeProse = getActiveFont('prose', fontPrefs)
-  const activeDisplay = getActiveFont('display', fontPrefs)
+  const [fontPrefs, setFont] = useFontPreferences(language)
+  const activeProse = getActiveFont('prose', fontPrefs, language)
+  const activeDisplay = getActiveFont('display', fontPrefs, language)
 
   return (
     <div className="max-w-xl mx-auto px-6">

@@ -441,7 +441,7 @@ export function SettingsPanel({
   pluginSidebarVisibility,
 }: SettingsPanelProps) {
   const queryClient = useQueryClient()
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
 
   const { data: plugins } = useQuery({
     queryKey: ['plugins'],
@@ -482,7 +482,7 @@ export function SettingsPanel({
   const [proseWidth, setProseWidth] = useProseWidth()
   const [uiFontSize, setUiFontSize] = useUiFontSize()
   const [proseFontSize, setProseFontSize] = useProseFontSize()
-  const [fontPrefs, setFont, resetFonts] = useFontPreferences()
+  const [fontPrefs, setFont, resetFonts] = useFontPreferences(language)
   const hasCustomFonts = Object.keys(fontPrefs).length > 0
   const [, customCssEnabled, , setCustomCssEnabled] = useCustomCss()
   const [hasDesktopBridge, setHasDesktopBridge] = useState(() => getDesktopBridge() !== null)
@@ -605,28 +605,28 @@ export function SettingsPanel({
             role="display"
             label={t('settings.typography.display')}
             description={t('settings.typography.displayDescription')}
-            activeFont={getActiveFont('display', fontPrefs)}
+            activeFont={getActiveFont('display', fontPrefs, language)}
             onSelect={(name) => setFont('display', name)}
           />
           <FontPicker
             role="prose"
             label={t('settings.typography.prose')}
             description={t('settings.typography.proseDescription')}
-            activeFont={getActiveFont('prose', fontPrefs)}
+            activeFont={getActiveFont('prose', fontPrefs, language)}
             onSelect={(name) => setFont('prose', name)}
           />
           <FontPicker
             role="sans"
             label={t('settings.typography.interface')}
             description={t('settings.typography.interfaceDescription')}
-            activeFont={getActiveFont('sans', fontPrefs)}
+            activeFont={getActiveFont('sans', fontPrefs, language)}
             onSelect={(name) => setFont('sans', name)}
           />
           <FontPicker
             role="mono"
             label={t('settings.typography.code')}
             description={t('settings.typography.codeDescription')}
-            activeFont={getActiveFont('mono', fontPrefs)}
+            activeFont={getActiveFont('mono', fontPrefs, language)}
             onSelect={(name) => setFont('mono', name)}
           />
         </SettingsCard>
