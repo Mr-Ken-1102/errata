@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { useTheme, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue } from '@/lib/theme'
+import { useTheme, useFontPreferences, getActiveFont, getRecommendedFontWeight, FONT_CATALOGUE, ensureFontLoaded } from '@/lib/theme'
 import { Button } from '@/components/ui/button'
 import {
   Sun,
@@ -369,10 +369,14 @@ function TypographyStep({
   onBack: () => void
 }) {
   const { t, language } = useLanguage()
-  useEffect(() => { loadFullFontCatalogue() }, [])
   const [fontPrefs, setFont] = useFontPreferences(language)
   const activeProse = getActiveFont('prose', fontPrefs, language)
   const activeDisplay = getActiveFont('display', fontPrefs, language)
+
+  useEffect(() => {
+    ensureFontLoaded(activeProse)
+    ensureFontLoaded(activeDisplay)
+  }, [activeProse, activeDisplay])
 
   return (
     <div className="max-w-xl mx-auto px-6">
@@ -392,18 +396,22 @@ function TypographyStep({
           {t('onboarding.prose')}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {FONT_CATALOGUE.prose.map((opt, i) => {
+          {FONT_CATALOGUE.prose.map((opt) => {
             const isActive = opt.name === activeProse
             return (
               <button
                 key={opt.name}
-                onClick={() => setFont('prose', opt.name)}
-                className={`group relative text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer animate-onboarding-fade-up ${
+                onPointerEnter={() => ensureFontLoaded(opt.name)}
+                onFocus={() => ensureFontLoaded(opt.name)}
+                onClick={() => {
+                  ensureFontLoaded(opt.name)
+                  setFont('prose', opt.name)
+                }}
+                className={`group relative min-h-[9rem] text-left p-4 rounded-xl border transition-all duration-150 cursor-pointer ${
                   isActive
                     ? 'border-primary/40 bg-primary/5 shadow-sm'
                     : 'border-border/30 hover:border-border/60 hover:bg-card/50'
                 }`}
-                style={{ animationDelay: `${150 + i * 80}ms` }}
               >
                 <p className="text-[0.6875rem] font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
                   {opt.name}
@@ -414,8 +422,11 @@ function TypographyStep({
                   )}
                 </p>
                 <p
-                  className="text-[0.9375rem] leading-relaxed text-foreground/80"
-                  style={{ fontFamily: `"${opt.name}", ${opt.fallback}` }}
+                  className="min-h-[5.5rem] text-[0.9375rem] leading-relaxed text-foreground/80"
+                  style={{
+                    fontFamily: `"${opt.name}", ${opt.fallback}`,
+                    fontWeight: getRecommendedFontWeight('prose', opt.name),
+                  }}
                 >
                   {t('onboarding.proseSample')}
                 </p>
@@ -433,22 +444,25 @@ function TypographyStep({
       {/* Display fonts — secondary */}
       <div className="mb-10">
         <p
-          className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-3 animate-onboarding-fade-up"
-          style={{ animationDelay: '500ms' }}
+          className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-3"
         >
           {t('onboarding.headings')}
         </p>
         <div
-          className="grid grid-cols-2 sm:grid-cols-3 gap-3 animate-onboarding-fade-up"
-          style={{ animationDelay: '550ms' }}
+          className="grid grid-cols-2 sm:grid-cols-3 gap-3"
         >
           {FONT_CATALOGUE.display.map((opt) => {
             const isActive = opt.name === activeDisplay
             return (
               <button
                 key={opt.name}
-                onClick={() => setFont('display', opt.name)}
-                className={`relative text-center p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
+                onPointerEnter={() => ensureFontLoaded(opt.name)}
+                onFocus={() => ensureFontLoaded(opt.name)}
+                onClick={() => {
+                  ensureFontLoaded(opt.name)
+                  setFont('display', opt.name)
+                }}
+                className={`relative min-h-[7rem] text-center p-4 rounded-xl border transition-all duration-150 cursor-pointer ${
                   isActive
                     ? 'border-primary/40 bg-primary/5 shadow-sm'
                     : 'border-border/30 hover:border-border/60 hover:bg-card/50'
@@ -456,7 +470,10 @@ function TypographyStep({
               >
                 <p
                   className="text-xl italic mb-1 text-foreground/85"
-                  style={{ fontFamily: `"${opt.name}", ${opt.fallback}` }}
+                  style={{
+                    fontFamily: `"${opt.name}", ${opt.fallback}`,
+                    fontWeight: getRecommendedFontWeight('display', opt.name),
+                  }}
                 >
                   {t('onboarding.chapterOne')}
                 </p>
@@ -479,10 +496,7 @@ function TypographyStep({
         </div>
       </div>
 
-      <div
-        className="text-center animate-onboarding-fade-up"
-        style={{ animationDelay: '650ms' }}
-      >
+      <div className="text-center">
         <Button onClick={onNext} className="px-8">
           {t('onboarding.continue')}
         </Button>

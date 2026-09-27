@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type StoryMeta, type GlobalConfigSafe } from '@/lib/api'
-import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useWritingTransforms, useTransformContext, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
+import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, getRecommendedFontWeight, FONT_CATALOGUE, ensureFontLoaded, useCustomCss, useWritingTransforms, useTransformContext, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
 import { Settings2, ChevronRight, ExternalLink, Eye, EyeOff, Puzzle, RotateCcw, CircleHelp, Code } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { CustomCssPanel } from '@/components/settings/CustomCssPanel'
@@ -65,9 +65,12 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
   activeFont: string
   onSelect: (name: string) => void
 }) {
-  useEffect(() => { loadFullFontCatalogue() }, [])
   const { t } = useLanguage()
   const options = FONT_CATALOGUE[role]
+
+  useEffect(() => {
+    ensureFontLoaded(activeFont)
+  }, [activeFont])
   return (
     <div className="px-3 py-2.5">
       <p className="text-[0.75rem] font-medium text-foreground/80 mb-0.5">{label}</p>
@@ -78,8 +81,16 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
           return (
             <button
               key={opt.name}
-              onClick={() => onSelect(opt.name)}
-              style={{ fontFamily: `"${opt.name}", ${opt.fallback}` }}
+              onPointerEnter={() => ensureFontLoaded(opt.name)}
+              onFocus={() => ensureFontLoaded(opt.name)}
+              onClick={() => {
+                ensureFontLoaded(opt.name)
+                onSelect(opt.name)
+              }}
+              style={{
+                fontFamily: `"${opt.name}", ${opt.fallback}`,
+                fontWeight: getRecommendedFontWeight(role, opt.name),
+              }}
               className={`px-2.5 py-1 rounded-md text-[0.75rem] border transition-all duration-150 inline-flex items-center gap-1.5 ${isActive
                   ? 'border-foreground/25 bg-foreground/5 text-foreground shadow-[0_0_0_1px_var(--foreground)/5]'
                   : 'border-transparent text-muted-foreground hover:text-foreground/70 hover:bg-accent/30'

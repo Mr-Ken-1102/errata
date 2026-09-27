@@ -413,6 +413,7 @@ export const FONT_CATALOGUE: Record<FontRole, FontOption[]> = {
   ],
   prose: [
     { name: 'Newsreader', fallback: 'Georgia, serif' },
+    { name: 'Comfortaa', fallback: '-apple-system, BlinkMacSystemFont, sans-serif' },
     { name: 'Literata', fallback: 'Georgia, serif' },
     { name: 'Lora', fallback: 'Georgia, serif' },
     { name: 'EB Garamond', fallback: 'Georgia, serif' },
@@ -437,21 +438,28 @@ export const FONT_CATALOGUE: Record<FontRole, FontOption[]> = {
 }
 
 export const DEFAULT_FONTS: Record<FontRole, string> = {
-  display: 'Instrument Serif',
+  display: 'Comfortaa',
   prose: 'Newsreader',
-  sans: 'Outfit',
+  sans: 'Comfortaa',
   mono: 'JetBrains Mono',
 }
 
 export const VIETNAMESE_DEFAULT_FONTS: Record<FontRole, string> = {
-  display: 'Newsreader',
+  display: 'Comfortaa',
   prose: 'Newsreader',
-  sans: 'Inter',
+  sans: 'Comfortaa',
   mono: 'JetBrains Mono',
 }
 
 export function getDefaultFontForLanguage(role: FontRole, language: FontLanguage): string {
   return language === 'vi' ? VIETNAMESE_DEFAULT_FONTS[role] : DEFAULT_FONTS[role]
+}
+
+export function getRecommendedFontWeight(role: FontRole, name: string): number {
+  if (name !== 'Comfortaa') return 400
+  if (role === 'display') return 600
+  if (role === 'sans' || role === 'prose') return 500
+  return 400
 }
 
 export type FontPreferences = Partial<Record<FontRole, string>>
@@ -477,29 +485,44 @@ const FONT_SPECS: Record<string, string> = {
   'Source Code Pro': 'wght@400;500',
 }
 
-let fullCatalogueLoaded = false
+type FontLoaderWindow = Window & {
+  __errata_loaded_fonts?: Set<string>
+  __errata_loading_fonts?: Set<string>
+}
 
 /**
- * Load the full configured Google Fonts catalogue.
- * Skips fonts already loaded at startup. Safe to call multiple times.
+ * Load one Google Font family on demand.
+ * Startup already loads the active defaults/preferences; pickers call this
+ * only for the font the user is previewing, which avoids a large font burst
+ * and layout reflow when Typography/Settings first opens.
  */
-export function loadFullFontCatalogue() {
-  if (fullCatalogueLoaded) return
-  fullCatalogueLoaded = true
+export function ensureFontLoaded(name: string) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
 
-  const alreadyLoaded: Set<string> =
-    (window as unknown as { __errata_loaded_fonts?: Set<string> }).__errata_loaded_fonts ?? new Set()
+  const spec = FONT_SPECS[name]
+  if (!spec) return
 
-  const missing = Object.keys(FONT_SPECS).filter(name => !alreadyLoaded.has(name))
-  if (missing.length === 0) return
+  const fontWindow = window as FontLoaderWindow
+  const loaded = fontWindow.__errata_loaded_fonts ?? new Set<string>()
+  const loading = fontWindow.__errata_loading_fonts ?? new Set<string>()
+  fontWindow.__errata_loaded_fonts = loaded
+  fontWindow.__errata_loading_fonts = loading
 
-  const families = missing.map(
-    name => `family=${name.replace(/ /g, '+')}:${FONT_SPECS[name]}`
-  )
-  const url = `https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`
+  if (loaded.has(name) || loading.has(name)) return
+  loading.add(name)
+
+  const url = `https://fonts.googleapis.com/css2?family=${name.replace(/ /g, '+')}:${spec}&display=swap`
   const link = document.createElement('link')
   link.rel = 'stylesheet'
   link.href = url
+  link.dataset.errataFont = name
+  link.onload = () => {
+    loading.delete(name)
+    loaded.add(name)
+  }
+  link.onerror = () => {
+    loading.delete(name)
+  }
   document.head.appendChild(link)
 }
 
@@ -515,11 +538,15 @@ function applyFontPreferences(prefs: FontPreferences, language: FontLanguage) {
   const style = document.documentElement.style
   for (const role of ['display', 'prose', 'sans', 'mono'] as FontRole[]) {
     const name = prefs[role]
+    const activeName = name ?? getDefaultFontForLanguage(role, language)
+    ensureFontLoaded(activeName)
+
     if (name && name !== getDefaultFontForLanguage(role, language)) {
       style.setProperty(`--font-${role}`, getFontCssValue(role, name))
     } else {
       style.removeProperty(`--font-${role}`)
     }
+    style.setProperty(`--font-${role}-weight`, String(getRecommendedFontWeight(role, activeName)))
   }
 }
 
@@ -543,6 +570,7 @@ export function useFontPreferences(
   }, [prefs, language])
 
   const setFont = useCallback((role: FontRole, name: string) => {
+    ensureFontLoaded(name)
     setPrefs(prev => {
       const next = { ...prev }
       if (name === getDefaultFontForLanguage(role, language)) {
