@@ -28,7 +28,7 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
       storySetupReadOnly: resolveStorySetupMode(opts) === 'assess',
     }
   },
-  tools: ({ dataDir, storyId, opts }) => {
+  tools: ({ dataDir, storyId, opts, story: currentStory }) => {
     const mode = resolveStorySetupMode(opts)
     if (mode === 'assess') {
       return {
@@ -67,7 +67,7 @@ const runStorySetupChat = createStreamingRunner<StorySetupChatOptions>({
         inputSchema: StorySetupSnapshotInputSchema,
         execute: async (input) => {
           try {
-            const { story, checklist, fragments } = normalizeStorySetupSnapshotInput(input)
+            const { story, checklist, fragments } = normalizeStorySetupSnapshotInput(input, currentStory)
             const saved = await syncStorySetupSnapshot(dataDir, storyId, { story: story ?? null, fragments })
             return {
               saved: true,

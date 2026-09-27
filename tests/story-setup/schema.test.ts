@@ -68,7 +68,10 @@ describe('story setup tool schemas', () => {
 
     expect(StorySetupSnapshotSchema.safeParse(input).success).toBe(false)
 
-    const normalized = normalizeStorySetupSnapshotInput(input)
+    const normalized = normalizeStorySetupSnapshotInput(input, {
+      name: 'Existing Story',
+      description: 'Existing description',
+    })
     expect(normalized.fragments).toEqual([
       expect.objectContaining({
         key: 'core-premise',
@@ -82,6 +85,45 @@ describe('story setup tool schemas', () => {
       }),
     ])
     expect(StorySetupSnapshotSchema.safeParse(normalized).success).toBe(true)
+  })
+
+  it('preserves current story fields when the model sends a partial story update', () => {
+    const checklist = [
+      'starting-point',
+      'premise',
+      'characters',
+      'goal',
+      'setting',
+      'voice',
+      'opening',
+    ].map(key => ({ key, status: 'partial' as const, note: 'Known so far.' }))
+
+    const currentStory = {
+      name: 'Current Name',
+      description: 'Current description stays unless explicitly replaced.',
+    }
+
+    const nameOnly = StorySetupSnapshotInputSchema.parse({
+      story: { name: 'New Working Title' },
+      checklist,
+      fragments: [],
+    })
+    expect(StorySetupSnapshotSchema.safeParse(nameOnly).success).toBe(false)
+    expect(normalizeStorySetupSnapshotInput(nameOnly, currentStory).story).toEqual({
+      name: 'New Working Title',
+      description: currentStory.description,
+    })
+
+    const descriptionOnly = StorySetupSnapshotInputSchema.parse({
+      story: { description: 'A sharper description.' },
+      checklist,
+      fragments: [],
+    })
+    expect(StorySetupSnapshotSchema.safeParse(descriptionOnly).success).toBe(false)
+    expect(normalizeStorySetupSnapshotInput(descriptionOnly, currentStory).story).toEqual({
+      name: currentStory.name,
+      description: 'A sharper description.',
+    })
   })
 
   it('requires the canonical checklist order and unique setup fragment keys', () => {

@@ -85,8 +85,8 @@ export const StorySetupSnapshotSchema = z.object({
 
 export const StorySetupSnapshotInputSchema = z.object({
   story: z.object({
-    name: z.string().trim().min(1).max(100),
-    description: z.string().trim().max(500),
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().trim().max(500).optional(),
   }).optional(),
   checklist: StorySetupChecklistSchema,
   fragments: z.array(StorySetupDraftFragmentInputSchema).max(12).superRefine((fragments, ctx) => {
@@ -115,9 +115,14 @@ function normalizeStorySetupFragmentType(
 
 export function normalizeStorySetupSnapshotInput(
   input: z.infer<typeof StorySetupSnapshotInputSchema>,
+  currentStory: { name: string; description: string },
 ): z.infer<typeof StorySetupSnapshotSchema> {
   return StorySetupSnapshotSchema.parse({
     ...input,
+    story: input.story ? {
+      name: input.story.name?.trim() || currentStory.name.trim(),
+      description: input.story.description?.trim() ?? currentStory.description.trim(),
+    } : undefined,
     fragments: input.fragments.map(fragment => ({
       ...fragment,
       type: normalizeStorySetupFragmentType(fragment.type),
