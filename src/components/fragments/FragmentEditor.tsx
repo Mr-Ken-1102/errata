@@ -4,6 +4,7 @@ import { api, ApiError, type Fragment, type FragmentVersion } from '@/lib/api'
 import { qk, q, useActiveBranchId } from '@/lib/query-keys'
 import { componentId, fragmentComponentId } from '@/lib/dom-ids'
 import { cn } from '@/lib/utils'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 import { diffRows } from '@/lib/diff'
 import { DiffRowsView } from '@/components/DiffRowsView'
 import { parseVisualRefs, readImageUrl, type BoundaryBox } from '@/lib/fragment-visuals'
@@ -29,6 +30,7 @@ import { Hint, EmptyHint, MetaLabel } from '@/components/ui/prose-text'
 import {
   compareFragmentTypeVisuals,
   getFragmentTypeVisual,
+  getLocalizedFragmentTypeVisual,
   isVersionedFragmentType,
 } from '@/components/fragments/fragment-type-icons'
 import { describeVersionReason } from './fragment-version-label'
@@ -37,6 +39,30 @@ export interface FragmentPrefill {
   name: string
   description: string
   content: string
+}
+
+const VERSION_REASON_KEYS: Partial<Record<string, TranslationKey>> = {
+  created: 'fragmentEditor.versionCreated',
+  'manual-update': 'fragmentEditor.versionEdited',
+  'llm-applyProposedChanges': 'fragmentEditor.versionAiEdit',
+  'librarian-manual-accept': 'fragmentEditor.versionLibrarian',
+  'librarian-auto-apply': 'fragmentEditor.versionLibrarianAuto',
+  'librarian-revert-proposal': 'fragmentEditor.versionLibrarianRevert',
+}
+
+function localizedVersionReason(
+  reason: string | undefined,
+  isLatest: boolean,
+  t: (key: TranslationKey) => string,
+): string | null {
+  if (!reason) return null
+  if (reason === 'autosave') {
+    return t(isLatest ? 'fragmentEditor.versionAutosaved' : 'fragmentEditor.versionEdited')
+  }
+  const key = VERSION_REASON_KEYS[reason]
+  if (key) return t(key)
+  if (reason.startsWith('librarian-')) return t('fragmentEditor.versionLibrarian')
+  return describeVersionReason(reason, isLatest)
 }
 
 interface FragmentEditorProps {
@@ -59,6 +85,7 @@ export function FragmentEditor({
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const confirm = useConfirm()
+  const { t } = useLanguage()
 
   // Fetch live fragment data so sticky/placement updates are reflected immediately.
   // initialDataUpdatedAt prevents TanStack Query from treating initialData as immediately
@@ -464,12 +491,12 @@ export function FragmentEditor({
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(String(reader.result ?? ''))
-        reader.onerror = () => reject(new Error('Failed to read image file'))
+        reader.onerror = () => reject(new Error(t('fragmentEditor.imageReadError')))
         reader.readAsDataURL(file)
       })
       setContent(dataUrl)
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Could not upload image')
+      setUploadError(err instanceof Error ? err.message : t('fragmentEditor.imageUploadError'))
     }
   }
 
@@ -506,24 +533,24 @@ export function FragmentEditor({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Badge variant="secondary" className="text-[0.625rem] h-4 cursor-pointer hover:bg-secondary/80 transition-colors">
-                    {fragment.type}
+                    {getLocalizedFragmentTypeVisual(fragment.type, story?.settings.customFragmentTypes ?? [], t).singularLabel}
                   </Badge>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                  {sortedTypes.map((t) => (
+                  {sortedTypes.map((typeInfo) => (
                     <DropdownMenuItem
-                      key={t.type}
+                      key={typeInfo.type}
                       className="text-xs"
                       onClick={() => {
                         updateMutation.mutate({
-                          type: t.type,
+                          type: typeInfo.type,
                           name: name || fragment.name,
                           description: description || fragment.description,
                           content: content || fragment.content
                         })
                       }}
                     >
-                      {t.type}
+                      {getLocalizedFragmentTypeVisual(typeInfo.type, story?.settings.customFragmentTypes ?? [], t).singularLabel}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -531,7 +558,7 @@ export function FragmentEditor({
               {fragment.sticky && (
                 <Badge className="text-[0.625rem] h-4 gap-0.5">
                   <Pin className="size-2" />
-                  pinned
+                  {t('fragmentEditor.pinned')}
                 </Badge>
               )}
             </div>
@@ -553,10 +580,10 @@ export function FragmentEditor({
                   data-component-id={fragmentComponentId(fragment, 'copy-clipboard')}
                 >
                   {copied ? <Check className="size-3 text-primary" /> : <Copy className="size-3" />}
-                  <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+                  <span className="hidden sm:inline">{copied ? t('fragmentEditor.copied') : t('fragmentEditor.copy')}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Copy fragment to clipboard</TooltipContent>
+              <TooltipContent side="bottom">{t('fragmentEditor.copyTooltip')}</TooltipContent>
             </Tooltip>
           )}
           {fragment && !fragment.archived && fragment.type !== 'prose' && fragment.type !== 'image' && fragment.type !== 'icon' && (
@@ -569,10 +596,10 @@ export function FragmentEditor({
                   onClick={() => setShowRefine(!showRefine)}
                 >
                   <Sparkles className="size-3" />
-                  <span className="hidden sm:inline">Refine</span>
+                  <span className="hidden sm:inline">{t('fragmentEditor.refine')}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Refine this fragment with Librarian</TooltipContent>
+              <TooltipContent side="bottom">{t('fragmentEditor.refineTooltip')}</TooltipContent>
             </Tooltip>
           )}
           {fragment && !fragment.archived && fragment.type !== 'prose' && (
@@ -586,10 +613,10 @@ export function FragmentEditor({
                   disabled={metaMutation.isPending}
                 >
                   {isLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
-                  <span className="hidden sm:inline">{isLocked ? 'Locked' : 'Lock'}</span>
+                  <span className="hidden sm:inline">{isLocked ? t('fragmentEditor.locked') : t('fragmentEditor.lock')}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{isLocked ? 'Unlock — allow AI modifications' : 'Lock — prevent AI from modifying'}</TooltipContent>
+              <TooltipContent side="bottom">{isLocked ? t('fragmentEditor.unlockTooltip') : t('fragmentEditor.lockTooltip')}</TooltipContent>
             </Tooltip>
           )}
           {fragment && (
@@ -604,10 +631,10 @@ export function FragmentEditor({
                   data-component-id={fragmentComponentId(fragment, 'sticky-toggle')}
                 >
                   <Pin className="size-3" />
-                  <span className="hidden sm:inline">{fragment.sticky ? 'Unpin' : 'Pin'}</span>
+                  <span className="hidden sm:inline">{fragment.sticky ? t('fragmentEditor.unpin') : t('fragmentEditor.pin')}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{fragment.sticky ? 'Remove from context' : 'Always include in context'}</TooltipContent>
+              <TooltipContent side="bottom">{fragment.sticky ? t('fragmentEditor.unpinTooltip') : t('fragmentEditor.pinTooltip')}</TooltipContent>
             </Tooltip>
           )}
           {fragment && fragment.sticky && fragment.type !== 'prose' && (
@@ -622,10 +649,10 @@ export function FragmentEditor({
                   data-component-id={fragmentComponentId(fragment, 'placement-toggle')}
                 >
                   {fragment.placement === 'system' ? <Monitor className="size-3" /> : <User className="size-3" />}
-                  <span className="hidden sm:inline">{fragment.placement === 'system' ? 'System' : 'User'}</span>
+                  <span className="hidden sm:inline">{fragment.placement === 'system' ? t('fragmentEditor.system') : t('fragmentEditor.user')}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{fragment.placement === 'system' ? 'Placed in system context' : 'Placed in user context'}</TooltipContent>
+              <TooltipContent side="bottom">{fragment.placement === 'system' ? t('fragmentEditor.systemPlacement') : t('fragmentEditor.userPlacement')}</TooltipContent>
             </Tooltip>
           )}
           {fragment && !fragment.archived && (
@@ -636,17 +663,17 @@ export function FragmentEditor({
                   variant="ghost"
                   className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
                   onClick={async () => {
-                    if (await confirm({ title: 'Archive this fragment?', confirmText: 'Archive' })) {
+                    if (await confirm({ title: t('fragmentEditor.archiveConfirm'), confirmText: t('fragmentEditor.archive') })) {
                       archiveMutation.mutate()
                     }
                   }}
                   disabled={archiveMutation.isPending}
                 >
                   <Archive className="size-3" />
-                  <span className="hidden sm:inline">Archive</span>
+                  <span className="hidden sm:inline">{t('fragmentEditor.archive')}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Move to archive</TooltipContent>
+              <TooltipContent side="bottom">{t('fragmentEditor.archiveTooltip')}</TooltipContent>
             </Tooltip>
           )}
           {fragment && fragment.archived && (
@@ -661,10 +688,10 @@ export function FragmentEditor({
                     disabled={restoreMutation.isPending}
                   >
                     <Undo2 className="size-3" />
-                    <span className="hidden sm:inline">Restore</span>
+                    <span className="hidden sm:inline">{t('fragmentEditor.restore')}</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Restore from archive</TooltipContent>
+                <TooltipContent side="bottom">{t('fragmentEditor.restoreTooltip')}</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -673,7 +700,7 @@ export function FragmentEditor({
                     variant="ghost"
                     className="h-7 text-xs gap-1 text-destructive/70 hover:text-destructive"
                     onClick={async () => {
-                      if (await confirm({ title: 'Permanently delete this fragment?', description: 'This cannot be undone.', confirmText: 'Delete', destructive: true })) {
+                      if (await confirm({ title: t('fragmentEditor.deleteConfirm'), description: t('fragmentEditor.deleteDescription'), confirmText: t('fragmentEditor.delete'), destructive: true })) {
                         deleteMutation.mutate()
                       }
                     }}
@@ -682,7 +709,7 @@ export function FragmentEditor({
                     <Trash2 className="size-3" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Permanently delete</TooltipContent>
+                <TooltipContent side="bottom">{t('fragmentEditor.deleteTooltip')}</TooltipContent>
               </Tooltip>
             </>
           )}
@@ -692,7 +719,7 @@ export function FragmentEditor({
                 <X className="size-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Close</TooltipContent>
+            <TooltipContent side="bottom">{t('fragmentEditor.close')}</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -714,7 +741,7 @@ export function FragmentEditor({
       <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-auto">
         <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4">
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Name</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('fragmentEditor.name')}</label>
             <Input
               value={name}
               onChange={(e) => { userEditedRef.current = true; setName(e.target.value) }}
@@ -726,7 +753,7 @@ export function FragmentEditor({
 
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">
-              Description <span className="normal-case tracking-normal text-muted-foreground">(max 250 chars)</span>
+              {t('fragmentEditor.description')} <span className="normal-case tracking-normal text-muted-foreground">{t('fragmentEditor.max250Chars')}</span>
             </label>
             <Input
               value={description}
@@ -754,14 +781,14 @@ export function FragmentEditor({
           {isMediaType ? (
             <>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                {type === 'icon' ? 'Icon' : 'Image'}
+                {type === 'icon' ? t('fragmentEditor.icon') : t('fragmentEditor.image')}
               </label>
               {mediaPreviewUrl ? (
                 <div className="space-y-2">
                   <div className="rounded-lg border border-border/40 overflow-hidden bg-muted/20">
                     <img
                       src={mediaPreviewUrl}
-                      alt={name || 'Preview'}
+                      alt={name || t('fragmentEditor.previewAlt')}
                       className="w-full h-auto object-contain max-h-64"
                     />
                   </div>
@@ -769,7 +796,7 @@ export function FragmentEditor({
                     <div className="flex items-center gap-2">
                       <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border/40 text-xs text-muted-foreground hover:bg-accent/50 cursor-pointer transition-colors">
                         <Upload className="size-3" />
-                        Replace
+                        {t('fragmentEditor.replace')}
                         <input
                           type="file"
                           accept="image/*"
@@ -780,7 +807,7 @@ export function FragmentEditor({
                           }}
                         />
                       </label>
-                      <span className="text-[0.625rem] text-muted-foreground">or paste a URL below</span>
+                      <span className="text-[0.625rem] text-muted-foreground">{t('fragmentEditor.orPasteUrl')}</span>
                     </div>
                   )}
                   {isEditing && (
@@ -808,9 +835,9 @@ export function FragmentEditor({
                   <ImagePlus className="size-8 text-muted-foreground" />
                   <div className="text-center">
                     <Hint size="sm">
-                      {isEditing ? 'Drop an image here or click to upload' : 'No image set'}
+                      {isEditing ? t('fragmentEditor.dropImage') : t('fragmentEditor.noImage')}
                     </Hint>
-                    <p className="text-[0.6875rem] text-muted-foreground mt-1">PNG, JPG, SVG, or paste a URL</p>
+                    <p className="text-[0.6875rem] text-muted-foreground mt-1">{t('fragmentEditor.imageFormats')}</p>
                   </div>
                   {isEditing && (
                     <input
@@ -837,7 +864,7 @@ export function FragmentEditor({
             </>
           ) : (
             <>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Content</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('fragmentEditor.content')}</label>
 
               {contentSegments ? (
                 /* Split editor — editable textareas interleaved with frozen divs */
@@ -883,10 +910,10 @@ export function FragmentEditor({
                                 className="shrink-0 mt-0.5 inline-flex items-center gap-1 h-5 px-1.5 rounded text-[0.625rem] text-sky-600/70 dark:text-sky-400/60 opacity-0 group-hover:opacity-100 hover:bg-sky-500/10 hover:text-sky-700 dark:hover:text-sky-300 transition-all"
                               >
                                 <Snowflake className="size-2.5" />
-                                <span>Unfreeze</span>
+                                <span>{t('fragmentEditor.unfreeze')}</span>
                               </button>
                             </TooltipTrigger>
-                            <TooltipContent side="top">Remove freeze protection</TooltipContent>
+                            <TooltipContent side="top">{t('fragmentEditor.removeFreeze')}</TooltipContent>
                           </Tooltip>
                         </div>
                       </div>
@@ -926,19 +953,19 @@ export function FragmentEditor({
                     `}
                   >
                     <Snowflake className="size-3" />
-                    {hasTextSelection ? 'Freeze selected text' : 'Select text to freeze'}
+                    {hasTextSelection ? t('fragmentEditor.freezeSelected') : t('fragmentEditor.selectToFreeze')}
                   </button>
                 ) : <span />}
                 <div className="flex gap-3 text-[0.625rem] text-muted-foreground tabular-nums">
-                  <span>{content.trim() ? content.trim().split(/\s+/).length : 0} words</span>
-                  <span>{content.length} chars</span>
+                  <span>{content.trim() ? content.trim().split(/\s+/).length : 0} {t('fragmentEditor.words')}</span>
+                  <span>{content.length} {t('fragmentEditor.chars')}</span>
                 </div>
               </div>
 
               {/* Orphaned frozen sections — text no longer in content */}
               {orphanedFrozen.length > 0 && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[0.625rem] text-amber-600 dark:text-amber-400/70">Orphaned:</span>
+                  <span className="text-[0.625rem] text-amber-600 dark:text-amber-400/70">{t('fragmentEditor.orphaned')}</span>
                   {orphanedFrozen.map((s) => (
                     <span key={s.id} className="inline-flex items-center gap-1 h-5 px-1.5 rounded border border-amber-500/20 bg-amber-500/[0.05] text-[0.625rem] text-amber-700 dark:text-amber-400/60">
                       <span className="max-w-[120px] truncate">{s.text}</span>
@@ -959,17 +986,17 @@ export function FragmentEditor({
                 <div className="h-px bg-border/30 mx-6" />
                 <div className="px-6 py-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Version history</p>
-                    <span className="text-[0.625rem] text-muted-foreground">Current v{fragment.version ?? 1}</span>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('fragmentEditor.versionHistory')}</p>
+                    <span className="text-[0.625rem] text-muted-foreground">{t('fragmentEditor.currentVersion').replace('{version}', String(fragment.version ?? 1))}</span>
                   </div>
                   {versions.length === 0 ? (
-                    <Hint>No version history yet.</Hint>
+                    <Hint>{t('fragmentEditor.noVersionHistory')}</Hint>
                   ) : (
                     <div className="space-y-1.5 max-h-36 overflow-auto pr-1">
                       {versions.map((v: FragmentVersion) => {
                         const isCurrent = v.version === (fragment.version ?? 1)
                         // `versions` is sorted descending, so [0] is the tip/latest.
-                        const reasonLabel = describeVersionReason(v.reason, v.version === versions[0]?.version)
+                        const reasonLabel = localizedVersionReason(v.reason, v.version === versions[0]?.version, t)
                         return (
                         <div
                           key={v.version}
@@ -981,7 +1008,7 @@ export function FragmentEditor({
                           <div className="min-w-0">
                             <p className="text-xs font-medium flex items-center gap-1.5">
                               v{v.version}
-                              {isCurrent && <span className="text-[0.5625rem] uppercase tracking-wide text-primary/80">current</span>}
+                              {isCurrent && <span className="text-[0.5625rem] uppercase tracking-wide text-primary/80">{t('fragmentEditor.current')}</span>}
                             </p>
                             <p className="text-[0.625rem] text-muted-foreground truncate" title={v.reason}>
                               {new Date(v.createdAt).toLocaleString()}{reasonLabel ? ` · ${reasonLabel}` : ''}
@@ -995,7 +1022,7 @@ export function FragmentEditor({
                               className="h-6 text-xs"
                               onClick={() => setPreviewVersion(v)}
                             >
-                              Preview
+                              {t('fragmentEditor.preview')}
                             </Button>
                             <Button
                               type="button"
@@ -1005,7 +1032,7 @@ export function FragmentEditor({
                               onClick={() => revertVersionMutation.mutate(v.version)}
                               disabled={revertVersionMutation.isPending || isCurrent}
                             >
-                              Switch
+                              {t('fragmentEditor.switch')}
                             </Button>
                             <Button
                               type="button"
@@ -1014,7 +1041,7 @@ export function FragmentEditor({
                               className="size-6 text-muted-foreground hover:text-destructive"
                               onClick={() => deleteVersionMutation.mutate(v.version)}
                               disabled={deleteVersionMutation.isPending || isCurrent}
-                              title={isCurrent ? 'Switch to another version before deleting this one' : 'Delete this version'}
+                              title={isCurrent ? t('fragmentEditor.switchBeforeDelete') : t('fragmentEditor.deleteVersion')}
                             >
                               <Trash2 className="size-3" />
                             </Button>
@@ -1027,7 +1054,7 @@ export function FragmentEditor({
                   {previewVersion && (
                     <div className="mt-2 space-y-2 rounded-md border border-border/40 bg-muted/20 p-2">
                       <div className="flex items-center justify-between">
-                        <p className="text-xs font-medium">Diff preview for v{previewVersion.version}</p>
+                        <p className="text-xs font-medium">{t('fragmentEditor.diffPreview').replace('{version}', String(previewVersion.version))}</p>
                         <Button
                           type="button"
                           size="sm"
@@ -1035,13 +1062,13 @@ export function FragmentEditor({
                           className="h-6 text-xs"
                           onClick={() => setPreviewVersion(null)}
                         >
-                          Close
+                          {t('fragmentEditor.close')}
                         </Button>
                       </div>
-                      <p className="text-[0.625rem] text-muted-foreground">`-` current content, `+` selected version; `~` edited line shows word-level changes inline</p>
+                      <p className="text-[0.625rem] text-muted-foreground">{t('fragmentEditor.diffHelp')}</p>
                       <pre className="max-h-40 overflow-auto rounded border border-border/30 bg-background/50 p-2 text-[0.6875rem] leading-4">
                         {versionDiffRows.length === 0 ? (
-                          'No content differences.'
+                          t('fragmentEditor.noDiff')
                         ) : (
                           <DiffRowsView rows={versionDiffRows} />
                         )}
@@ -1065,12 +1092,12 @@ export function FragmentEditor({
         {isEditing && (
           <div className="flex items-center gap-2 px-6 py-4 border-t border-border/50">
             <MetaLabel className="transition-opacity">
-              {saveStatus === 'saving' && 'Saving...'}
-              {saveStatus === 'saved' && 'Saved'}
+              {saveStatus === 'saving' && t('fragmentEditor.saving')}
+              {saveStatus === 'saved' && t('fragmentEditor.saved')}
             </MetaLabel>
             <div className="flex-1" />
             <Button type="button" size="sm" variant="ghost" onClick={handleClose}>
-              Close
+              {t('fragmentEditor.close')}
             </Button>
           </div>
         )}
@@ -1080,6 +1107,7 @@ export function FragmentEditor({
 }
 
 function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [cropTarget, setCropTarget] = useState<{
@@ -1129,7 +1157,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(String(reader.result ?? ''))
-        reader.onerror = () => reject(new Error('Failed to read file'))
+        reader.onerror = () => reject(new Error(t('fragmentEditor.fileReadError')))
         reader.readAsDataURL(file)
       })
       const created = await api.fragments.create(storyId, {
@@ -1186,7 +1214,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
 
   return (
     <div>
-      <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">Visual</label>
+      <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">{t('fragmentEditor.visual')}</label>
 
       {/* Linked visuals — with inline crop & unlink */}
       {visualRefs.length > 0 && (
@@ -1207,7 +1235,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
                     {ref.kind}
                     {ref.boundary && (
                       <span className="ml-1 text-muted-foreground">
-                        crop {Math.round(ref.boundary.width * 100)}% &times; {Math.round(ref.boundary.height * 100)}%
+                        {t('fragmentEditor.crop')} {Math.round(ref.boundary.width * 100)}% &times; {Math.round(ref.boundary.height * 100)}%
                       </span>
                     )}
                   </p>
@@ -1231,7 +1259,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
                         <Crop className="size-3" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent side="top">Set crop region</TooltipContent>
+                    <TooltipContent side="top">{t('fragmentEditor.setCrop')}</TooltipContent>
                   </Tooltip>
                 )}
                 <Tooltip>
@@ -1247,7 +1275,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
                       <Unlink className="size-3" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Unlink</TooltipContent>
+                  <TooltipContent side="top">{t('fragmentEditor.unlink')}</TooltipContent>
                 </Tooltip>
               </div>
             )
@@ -1256,7 +1284,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
       )}
 
       {visualRefs.length === 0 && unlinkedMedia.length === 0 && (
-        <EmptyHint className="mb-2">No image or icon linked</EmptyHint>
+        <EmptyHint className="mb-2">{t('fragmentEditor.noVisualLinked')}</EmptyHint>
       )}
 
       {/* Available media — click to instantly link */}
@@ -1271,7 +1299,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
                 onClick={() => handleQuickLink(m.id, m.type as 'icon' | 'image')}
                 disabled={saveMutation.isPending}
                 className="relative size-12 rounded-md border border-border/40 overflow-hidden transition-all hover:border-primary/50 hover:ring-1 hover:ring-primary/20 group/tile shrink-0"
-                title={`Click to link ${m.name}`}
+                title={t('fragmentEditor.clickToLink').replace('{name}', m.name)}
               >
                 {url ? (
                   <img src={url} alt={m.name} className="size-full object-cover bg-muted/20" />
@@ -1289,7 +1317,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
           {/* Upload tile */}
           <label className={`size-12 rounded-md border-2 border-dashed border-border/40 flex flex-col items-center justify-center gap-0.5 shrink-0 transition-colors ${uploading ? 'opacity-50' : 'hover:border-primary/40 hover:bg-accent/30 cursor-pointer'}`}>
             <Upload className="size-3.5 text-muted-foreground" />
-            <span className="text-[0.5rem] text-muted-foreground">{uploading ? '...' : 'Upload'}</span>
+            <span className="text-[0.5rem] text-muted-foreground">{uploading ? '...' : t('fragmentEditor.upload')}</span>
             <input
               type="file"
               accept="image/*"
@@ -1309,7 +1337,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
       {unlinkedMedia.length === 0 && (
         <label className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-md border text-xs cursor-pointer transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'border-border/40 hover:bg-accent/50'}`}>
           <Upload className="size-3" />
-          {uploading ? 'Uploading...' : 'Upload & link'}
+          {uploading ? t('fragmentEditor.uploading') : t('fragmentEditor.uploadAndLink')}
           <input
             type="file"
             accept="image/*"
@@ -1342,6 +1370,7 @@ function VisualRefsSection({ storyId, fragmentId }: { storyId: string; fragmentI
 // --- Tags sub-component ---
 
 export function TagsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [newTag, setNewTag] = useState('')
@@ -1377,7 +1406,7 @@ export function TagsSection({ storyId, fragmentId }: { storyId: string; fragment
 
   return (
     <div>
-      <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">Tags</label>
+      <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('fragmentEditor.tags')}</label>
       <div className="flex flex-wrap gap-1 mb-2">
         {data?.tags.map((tag) => (
           <Badge key={tag} variant="secondary" className="text-xs gap-1">
@@ -1392,14 +1421,14 @@ export function TagsSection({ storyId, fragmentId }: { storyId: string; fragment
           </Badge>
         ))}
         {(!data?.tags || data.tags.length === 0) && (
-          <EmptyHint asChild><span>No tags</span></EmptyHint>
+          <EmptyHint asChild><span>{t('fragmentEditor.noTags')}</span></EmptyHint>
         )}
       </div>
       <div className="flex gap-1.5">
         <Input
           value={newTag}
           onChange={(e) => setNewTag(e.target.value)}
-          placeholder="Add tag..."
+          placeholder={t('fragmentEditor.addTagPlaceholder')}
           className="h-7 text-xs bg-transparent"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -1416,7 +1445,7 @@ export function TagsSection({ storyId, fragmentId }: { storyId: string; fragment
           onClick={handleAddTag}
           disabled={!newTag.trim()}
         >
-          Add
+          {t('fragmentEditor.add')}
         </Button>
       </div>
     </div>
@@ -1426,6 +1455,7 @@ export function TagsSection({ storyId, fragmentId }: { storyId: string; fragment
 // --- Refs sub-component ---
 
 export function RefsSection({ storyId, fragmentId }: { storyId: string; fragmentId: string }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [newRefId, setNewRefId] = useState('')
@@ -1459,7 +1489,7 @@ export function RefsSection({ storyId, fragmentId }: { storyId: string; fragment
 
   return (
     <div>
-      <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">References</label>
+      <label className="text-xs font-medium text-muted-foreground mb-1.5 block uppercase tracking-wider">{t('fragmentEditor.references')}</label>
       <div className="flex flex-wrap gap-1 mb-1">
         {data?.refs.map((refId) => (
           <Badge key={refId} variant="outline" className="text-xs gap-1">
@@ -1474,12 +1504,12 @@ export function RefsSection({ storyId, fragmentId }: { storyId: string; fragment
           </Badge>
         ))}
         {(!data?.refs || data.refs.length === 0) && (
-          <EmptyHint asChild><span>No refs</span></EmptyHint>
+          <EmptyHint asChild><span>{t('fragmentEditor.noRefs')}</span></EmptyHint>
         )}
       </div>
       {data?.backRefs && data.backRefs.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1.5">
-          <span className="text-xs text-muted-foreground">Referenced by:</span>
+          <span className="text-xs text-muted-foreground">{t('fragmentEditor.referencedBy')}</span>
           {data.backRefs.map((refId) => (
             <Badge key={refId} variant="secondary" className="text-[0.625rem]">
               {refId}
@@ -1491,7 +1521,7 @@ export function RefsSection({ storyId, fragmentId }: { storyId: string; fragment
         <Input
           value={newRefId}
           onChange={(e) => setNewRefId(e.target.value)}
-          placeholder="Fragment ID (e.g. ch-bokura)"
+          placeholder={t('fragmentEditor.fragmentIdPlaceholder')}
           className="h-7 text-xs bg-transparent"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -1508,7 +1538,7 @@ export function RefsSection({ storyId, fragmentId }: { storyId: string; fragment
           onClick={handleAddRef}
           disabled={!newRefId.trim()}
         >
-          Link
+          {t('fragmentEditor.link')}
         </Button>
       </div>
     </div>

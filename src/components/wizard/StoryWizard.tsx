@@ -13,6 +13,7 @@ import {
   type StorySetupController,
 } from './use-story-setup-controller'
 import { useLanguage } from '@/lib/i18n'
+import { getLocalizedFragmentTypeLabel } from '@/components/fragments/fragment-type-icons'
 
 interface StoryWizardProps {
   controller: StorySetupController
@@ -156,7 +157,7 @@ function StorySetupRail({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium text-foreground/90">{fragment.name}</p>
-                      <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">{fragment.type}</p>
+                      <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">{getLocalizedFragmentTypeLabel(fragment.type, t)}</p>
                     </div>
                     <span className="mt-0.5 text-xs text-muted-foreground transition-transform group-open:rotate-90" aria-hidden>›</span>
                   </div>

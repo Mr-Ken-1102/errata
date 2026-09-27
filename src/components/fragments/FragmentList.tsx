@@ -22,6 +22,7 @@ import { Plus, Pin, GripVertical, FileDown, UserPlus, Archive, FolderPlus, Chevr
 import { Caption } from '@/components/ui/prose-text'
 import { FragmentBubbleShape } from './FragmentBubbleShape'
 import { useLanguage } from '@/lib/i18n'
+import { getLocalizedFragmentTypeLabel } from '@/components/fragments/fragment-type-icons'
 
 interface FragmentListProps {
   storyId: string
@@ -149,7 +150,7 @@ const FragmentRow = memo(function FragmentRow({
           )}
           {showType && (
             <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
-              {fragment.type}
+              {getLocalizedFragmentTypeLabel(fragment.type, t)}
             </Badge>
           )}
         </div>
