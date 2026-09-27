@@ -9,6 +9,7 @@
 body {
   @apply m-0;
   font-family: var(--font-sans);
+  font-weight: var(--font-sans-weight, 500);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
@@ -16,6 +17,7 @@ body {
 
 code {
   font-family: var(--font-mono);
+  font-weight: var(--font-mono-weight, 400);
 }
 
 /* ── Theme tokens ─────────────────────────────────────── */
@@ -65,10 +67,17 @@ code {
 /* Font families — NOT inline so they emit real CSS custom properties
    that can be overridden at runtime via JS (font picker). */
 @theme {
-  --font-display: "Instrument Serif", "Georgia", serif;
+  --font-display: "Comfortaa", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-prose: "Newsreader", "Georgia", serif;
-  --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Comfortaa", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", Menlo, monospace;
+}
+
+:root {
+  --font-display-weight: 600;
+  --font-prose-weight: 400;
+  --font-sans-weight: 500;
+  --font-mono-weight: 400;
 }
 
 /* ── Light mode ───────────────────────────────────────── */
@@ -240,15 +249,18 @@ code {
 
 @utility font-display {
   font-family: var(--font-display);
+  font-weight: var(--font-display-weight, 600);
 }
 
 @utility font-prose {
   font-family: var(--font-prose);
+  font-weight: var(--font-prose-weight, 400);
 }
 
 /* Prose content styling for the main reading experience */
 @utility prose-content {
   font-family: var(--font-prose);
+  font-weight: var(--font-prose-weight, 400);
   font-size: var(--prose-font-size, 1.0625rem);
   line-height: 1.75;
   letter-spacing: 0.005em;
