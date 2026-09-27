@@ -47,13 +47,10 @@ export const Route = createRootRoute({
 
 const themeScript = `(function(){var t=localStorage.getItem('errata-theme');var r=document.documentElement;r.classList.toggle('dark',t==='dark');r.classList.toggle('high-contrast',t==='high-contrast')})()`;
 const languageScript = `(function(){try{var l=localStorage.getItem('errata-language');document.documentElement.lang=l==='vi'?'vi':'en'}catch(e){document.documentElement.lang='en'}})()`;
-const fontScript = `(function(){var f=localStorage.getItem('errata-fonts');if(!f)return;try{var p=JSON.parse(f),s=document.documentElement.style,fb={display:', Georgia, serif',prose:', Georgia, serif',sans:', -apple-system, BlinkMacSystemFont, sans-serif',mono:', "Fira Code", Menlo, monospace'};for(var k in p){if(p[k]&&fb[k])s.setProperty('--font-'+k,'"'+p[k]+'"'+fb[k])}}catch(e){}})()`;
+const fontScript = `(function(){try{var defaults={display:'Comfortaa',prose:'Newsreader',sans:'Comfortaa',mono:'JetBrains Mono'};var raw=localStorage.getItem('errata-fonts');var p=raw?JSON.parse(raw):{};var s=document.documentElement.style;var fb={display:', -apple-system, BlinkMacSystemFont, sans-serif',prose:', Georgia, serif',sans:', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',mono:', "Fira Code", Menlo, monospace'};for(var k in defaults){var n=p[k]||defaults[k];if(p[k]&&fb[k])s.setProperty('--font-'+k,'"'+p[k]+'"'+fb[k]);var w=n==='Comfortaa'?(k==='display'?600:(k==='sans'||k==='prose'?500:400)):400;s.setProperty('--font-'+k+'-weight',String(w))}}catch(e){}})()`;
 
 const fontLoaderScript = `(function(){
-var language=document.documentElement.lang==='vi'?'vi':'en';
-var defaults=language==='vi'
-?{display:'Newsreader',prose:'Newsreader',sans:'Inter',mono:'JetBrains Mono'}
-:{display:'Instrument Serif',prose:'Newsreader',sans:'Outfit',mono:'JetBrains Mono'};
+var defaults={display:'Comfortaa',prose:'Newsreader',sans:'Comfortaa',mono:'JetBrains Mono'};
 var specs={
 'Instrument Serif':'ital@0;1',
 'Playfair Display':'ital,wght@0,400..900;1,400..900',
