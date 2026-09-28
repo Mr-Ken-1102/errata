@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CircleHelp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useHelp } from '@/hooks/use-help'
+import { useOptionalTranslation } from '@/lib/i18n'
 
 /**
  * SettingsSection: section wrapper for the scroll-snap settings layout.
@@ -59,7 +60,7 @@ export function SettingsSection({
 export function SectionHeading({
   label,
   helpTopic,
-  helpLabel = 'Learn more',
+  helpLabel,
   action,
   className,
 }: {
@@ -70,6 +71,8 @@ export function SectionHeading({
   className?: string
 }) {
   const { openHelp } = useHelp()
+  const t = useOptionalTranslation()
+  const resolvedHelpLabel = helpLabel ?? t('common.learnMore')
   return (
     <div className={cn('mb-2 flex items-center justify-between gap-2', className)}>
       <div className="flex items-center gap-1.5">
@@ -79,7 +82,7 @@ export function SectionHeading({
             type="button"
             onClick={() => openHelp(helpTopic)}
             className="text-muted-foreground transition-colors hover:text-primary/60"
-            title={helpLabel}
+            title={resolvedHelpLabel}
           >
             <CircleHelp className="size-3" />
           </button>
@@ -112,7 +115,7 @@ export function SettingRow({
   label,
   description,
   helpTopic,
-  helpLabel = 'Learn more',
+  helpLabel,
   children,
   disabled,
   className,
@@ -126,6 +129,8 @@ export function SettingRow({
   className?: string
 }) {
   const { openHelp } = useHelp()
+  const t = useOptionalTranslation()
+  const resolvedHelpLabel = helpLabel ?? t('common.learnMore')
   return (
     <div
       className={cn(
@@ -143,7 +148,7 @@ export function SettingRow({
               type="button"
               onClick={(e) => { e.stopPropagation(); openHelp(helpTopic) }}
               className="text-muted-foreground transition-colors hover:text-primary/60"
-              title={helpLabel}
+              title={resolvedHelpLabel}
             >
               <CircleHelp className="size-3" />
             </button>

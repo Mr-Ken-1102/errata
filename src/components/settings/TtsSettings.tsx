@@ -87,7 +87,9 @@ export function TtsSettings() {
             <SettingRow label={t('settings.tts.voice')} description={t('settings.tts.supertonicVoiceDescription')} disabled={disabled}>
               <SettingsSelect className="max-w-[11rem]" value={s.supertonicVoiceId} onChange={(v) => { stopTts(); set({ supertonicVoiceId: v }) }} disabled={disabled}>
                 {SUPERTONIC_VOICES.map((v) => (
-                  <option key={v.id} value={v.id}>{v.label}</option>
+                  <option key={v.id} value={v.id}>
+                    {(v.id.startsWith('F') ? t('settings.tts.femaleVoice') : t('settings.tts.maleVoice')).replace('{number}', v.id.slice(1))}
+                  </option>
                 ))}
               </SettingsSelect>
             </SettingRow>

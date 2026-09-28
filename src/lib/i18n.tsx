@@ -25,6 +25,12 @@ const EN_MESSAGES = {
   'app.name': 'Errata',
   'settings.language.heading': 'Language',
   'common.learnMore': 'Learn more',
+  'common.close': 'Close',
+  'common.loading': 'Loading',
+  'common.sidebar': 'Sidebar',
+  'common.mobileSidebarDescription': 'Displays the mobile sidebar.',
+  'common.toggleSidebar': 'Toggle Sidebar',
+  'common.fileDropPrompt': 'Drag a file here, or click to pick one.',
   'sidebar.backToStories': 'Back to stories',
   'sidebar.story': 'Story',
   'sidebar.storySetup': 'Story setup',
@@ -286,6 +292,8 @@ const EN_MESSAGES = {
   'settings.tts.pitch': 'Pitch',
   'settings.tts.volume': 'Volume',
   'settings.tts.testVoice': 'Test voice',
+  'settings.tts.femaleVoice': 'Female {number}',
+  'settings.tts.maleVoice': 'Male {number}',
   'ttsPlayer.region': 'Read-aloud player',
   'ttsPlayer.progress': 'Reading progress',
   'ttsPlayer.pause': 'Pause reading',
@@ -637,6 +645,13 @@ const EN_MESSAGES = {
   'storyRoute.import': 'Import',
   'storyRoute.importFailed': 'Import failed',
   'chat.sendMessage': 'Send message',
+  'chat.fallbackFailed': 'Chat failed',
+  'chat.streamEndedBeforeCompletion': 'Chat stream ended before reporting completion',
+  'storySetup.error.validateWithDetail': 'Story setup could not validate its update: {error}',
+  'storySetup.error.validateChecklist': 'Story setup ended before it could validate the checklist. Please retry.',
+  'storySetup.error.noNextQuestion': 'Story setup updated the checklist but ended before asking its next question. Please retry.',
+  'storySetup.error.continueFailed': 'Errata could not continue the conversation.',
+  'storySetup.error.paused': 'Story setup paused.',
   'fragmentExport.title': 'Export Fragments',
   'fragmentExport.selected': 'selected',
   'fragmentExport.deselectAll': 'Deselect all',
@@ -1401,6 +1416,8 @@ const EN_MESSAGES = {
   'settings.remote.internetTunnel': 'Internet (Cloudflare Tunnel)',
   'settings.remote.internetTunnelDescription': 'A temporary public HTTPS link. cloudflared downloads automatically.',
   'settings.remote.toggleTunnel': 'Toggle tunnel',
+  'settings.remote.tunnelLabel': 'Tunnel',
+  'settings.remote.qrCodeAlt': '{label} QR code',
   'settings.remote.setPasswordToShare': 'Set a password above to enable network sharing.',
   'settings.remote.httpWarning': 'Local-network access is plain HTTP — the password is sent unencrypted on your LAN. The tunnel is HTTPS.',
   'settings.erratanet.heading': 'ErrataNet',
@@ -1759,6 +1776,12 @@ export type TranslationKey = keyof typeof EN_MESSAGES
 const VI_MESSAGES = {
   'settings.language.heading': 'Ngôn ngữ',
   'common.learnMore': 'Tìm hiểu thêm',
+  'common.close': 'Đóng',
+  'common.loading': 'Đang tải',
+  'common.sidebar': 'Thanh bên',
+  'common.mobileSidebarDescription': 'Hiển thị thanh bên trên thiết bị di động.',
+  'common.toggleSidebar': 'Bật hoặc tắt thanh bên',
+  'common.fileDropPrompt': 'Kéo tệp vào đây hoặc bấm để chọn.',
   'sidebar.backToStories': 'Quay lại danh sách truyện',
   'sidebar.story': 'Truyện',
   'sidebar.storySetup': 'Thiết lập truyện',
@@ -2020,6 +2043,8 @@ const VI_MESSAGES = {
   'settings.tts.pitch': 'Cao độ',
   'settings.tts.volume': 'Âm lượng',
   'settings.tts.testVoice': 'Thử giọng đọc',
+  'settings.tts.femaleVoice': 'Giọng nữ {number}',
+  'settings.tts.maleVoice': 'Giọng nam {number}',
   'ttsPlayer.region': 'Trình đọc thành tiếng',
   'ttsPlayer.progress': 'Tiến trình đọc',
   'ttsPlayer.pause': 'Tạm dừng đọc',
@@ -2221,6 +2246,13 @@ const VI_MESSAGES = {
   'storyRoute.import': 'Nhập',
   'storyRoute.importFailed': 'Nhập thất bại',
   'chat.sendMessage': 'Gửi tin nhắn',
+  'chat.fallbackFailed': 'Trò chuyện thất bại',
+  'chat.streamEndedBeforeCompletion': 'Luồng trò chuyện kết thúc trước khi báo hoàn tất',
+  'storySetup.error.validateWithDetail': 'Thiết lập truyện không thể xác thực cập nhật: {error}',
+  'storySetup.error.validateChecklist': 'Thiết lập truyện kết thúc trước khi xác thực được danh sách kiểm tra. Vui lòng thử lại.',
+  'storySetup.error.noNextQuestion': 'Thiết lập truyện đã cập nhật danh sách kiểm tra nhưng kết thúc trước khi hỏi câu tiếp theo. Vui lòng thử lại.',
+  'storySetup.error.continueFailed': 'Errata không thể tiếp tục cuộc trò chuyện.',
+  'storySetup.error.paused': 'Thiết lập truyện đã tạm dừng.',
   'fragmentExport.title': 'Xuất fragment',
   'fragmentExport.selected': 'đã chọn',
   'fragmentExport.deselectAll': 'Bỏ chọn tất cả',
@@ -2985,6 +3017,8 @@ const VI_MESSAGES = {
   'settings.remote.internetTunnel': 'Internet (Cloudflare Tunnel)',
   'settings.remote.internetTunnelDescription': 'Tạo liên kết HTTPS công khai tạm thời. cloudflared sẽ được tải tự động.',
   'settings.remote.toggleTunnel': 'Bật hoặc tắt tunnel',
+  'settings.remote.tunnelLabel': 'Đường hầm',
+  'settings.remote.qrCodeAlt': 'Mã QR {label}',
   'settings.remote.setPasswordToShare': 'Hãy đặt mật khẩu ở trên để bật chia sẻ qua mạng.',
   'settings.remote.httpWarning': 'Truy cập qua mạng cục bộ dùng HTTP thuần — mật khẩu được gửi không mã hóa trong mạng LAN. Tunnel dùng HTTPS.',
   'settings.erratanet.heading': 'ErrataNet',
@@ -3590,4 +3624,17 @@ export function useLanguage(): LanguageContextValue {
   const context = useContext(LanguageContext)
   if (!context) throw new Error('useLanguage must be used within LanguageProvider')
   return context
+}
+
+/**
+ * Translation hook for reusable UI primitives.
+ * Uses the active app language when a LanguageProvider is present, while
+ * falling back to English when a primitive is rendered independently.
+ */
+export function useOptionalTranslation(): (key: TranslationKey) => string {
+  const context = useContext(LanguageContext)
+  return useCallback(
+    (key: TranslationKey) => context?.t(key) ?? translate(DEFAULT_LANGUAGE, key),
+    [context],
+  )
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { useOptionalTranslation } from '@/lib/i18n'
 import { ErrataMark } from '@/components/ErrataLogo'
 
 /**
@@ -18,7 +19,9 @@ interface SpinnerProps {
  * A single thin rotating arc. With reduced motion, degrades to a static
  * errata mark at low opacity.
  */
-export function Spinner({ size = 'md', className, label = 'Loading' }: SpinnerProps) {
+export function Spinner({ size = 'md', className, label }: SpinnerProps) {
+  const t = useOptionalTranslation()
+  const resolvedLabel = label ?? t('common.loading')
   const px = size === 'sm' ? 14 : 20
   const stroke = size === 'sm' ? 1.25 : 1.5
   const r = (px - stroke) / 2
@@ -27,7 +30,7 @@ export function Spinner({ size = 'md', className, label = 'Loading' }: SpinnerPr
   return (
     <span
       role="status"
-      aria-label={label}
+      aria-label={resolvedLabel}
       className={cn('inline-flex items-center justify-center text-muted-foreground/60', className)}
       style={{ width: px, height: px }}
     >
