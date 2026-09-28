@@ -28,7 +28,8 @@ describe('P1.5 manual UX remediation', () => {
     expect(settings).toContain('getModelRoleDisplay(role, t)')
     expect(settings).toContain('{roleDisplay.label}')
     expect(settings).toContain('{roleDisplay.description}')
-    expect(settings).toContain('getLocalizedSettingsInheritLabel(getInheritLabel(')
+    expect(settings).toContain('getLocalizedSettingsInheritLabel(')
+    expect(settings).toContain('getInheritLabel(role.key, roles, settings, globalConfig)')
     expect(settings).not.toContain('>{role.label}<')
     expect(settings).not.toContain('>{role.description}<')
 
