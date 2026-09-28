@@ -1,0 +1,189 @@
+name: P2.3 performance benchmark
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - scripts/p2.3-backend-stress-safe.ts
+      - .github/workflows/p2.3-performance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE_SHA: 230b87878379ec0290b973fc3e747a63cbd3525b
+      CANDIDATE_SHA: 0598aaa159290eefce122ca003b05067310267be
+
+    steps:
+      - name: Checkout benchmark definition
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout frozen master source
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          ref: ${{ env.BASE_SHA }}
+          path: baseline
+
+      - name: Checkout canonical master-fix source
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+
+      - name: Setup exact Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Verify source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "$BASE_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          echo "BASE_HEAD=$(git -C baseline rev-parse HEAD)"
+          echo "CANDIDATE_HEAD=$(git -C candidate rev-parse HEAD)"
+
+      - name: Apply controlled identical toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp candidate/package.json baseline/package.json
+          cp candidate/bun.lock baseline/bun.lock
+          cp scripts/p2.3-backend-stress-safe.ts baseline/scripts/p2.3-backend-stress-safe.ts
+          cp scripts/p2.3-backend-stress-safe.ts candidate/scripts/p2.3-backend-stress-safe.ts
+          echo "Both source trees will execute with candidate package.json + bun.lock."
+
+      - name: Install identical dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd baseline && bun install --frozen-lockfile)
+          (cd candidate && bun install --frozen-lockfile)
+
+      - name: Run alternating backend benchmark trials
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT_DIR="$RUNNER_TEMP/p2.3-results"
+          mkdir -p "$RESULT_DIR"
+
+          run_one() {
+            tree="$1"
+            trial="$2"
+            log="$RESULT_DIR/$tree-$trial.log"
+            set +e
+            (
+              cd "$tree"
+              bun scripts/p2.3-backend-stress-safe.ts                 --prose=2000                 --nonProse=500                 --reanalysisRatio=0.1                 --chapterEvery=50                 --runs=30                 --warmups=5                 --compactType=proseLimit                 --compactValue=10                 --targetOffset=5
+            ) >"$log" 2>&1
+            code=$?
+            set -e
+            if [ "$code" -ne 0 ]; then
+              cat "$log"
+              exit "$code"
+            fi
+            echo "$tree trial $trial complete"
+          }
+
+          run_one baseline 1
+          run_one candidate 1
+          run_one candidate 2
+          run_one baseline 2
+          run_one baseline 3
+          run_one candidate 3
+
+      - name: Analyze benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT_DIR="$RUNNER_TEMP/p2.3-results"
+          python3 - "$RESULT_DIR" <<'PY'
+          import json
+          import pathlib
+          import statistics
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+
+          def load(path):
+              text = path.read_text(encoding="utf-8", errors="replace")
+              start = text.index("JSON_REPORT_START") + len("JSON_REPORT_START")
+              end = text.index("JSON_REPORT_END", start)
+              return json.loads(text[start:end].strip())
+
+          reports = {
+              side: [load(root / f"{side}-{i}.log") for i in (1, 2, 3)]
+              for side in ("baseline", "candidate")
+          }
+
+          labels = [x["label"] for x in reports["baseline"][0]["timings"]]
+          core = {
+              "summaryBefore (index)",
+              "summary projection (warm)",
+              "buildContextState (normal)",
+              "buildContextState (regenerate path)",
+          }
+
+          correctness = all(
+              r["correctness"]["summaryRebuildMatchesLegacy"]
+              for side in reports.values()
+              for r in side
+          )
+
+          summary = {
+              "baseline_sha": "230b87878379ec0290b973fc3e747a63cbd3525b",
+              "candidate_sha": "0598aaa159290eefce122ca003b05067310267be",
+              "trials_per_side": 3,
+              "runs_per_trial": 30,
+              "warmups_per_trial": 5,
+              "correctness_all_trials": correctness,
+              "metrics": {},
+              "material_regressions": [],
+          }
+
+          for label in labels:
+              b = [next(x for x in r["timings"] if x["label"] == label)["meanMs"] for r in reports["baseline"]]
+              c = [next(x for x in r["timings"] if x["label"] == label)["meanMs"] for r in reports["candidate"]]
+              bmed = statistics.median(b)
+              cmed = statistics.median(c)
+              ratios = [(cv / bv) if bv else 0 for bv, cv in zip(b, c)]
+              delta = cmed - bmed
+              ratio = (cmed / bmed) if bmed else 0
+              consistent_20pct = all(x > 1.20 for x in ratios)
+              material = label in core and consistent_20pct and delta > 5.0
+              summary["metrics"][label] = {
+                  "baseline_trial_means_ms": b,
+                  "candidate_trial_means_ms": c,
+                  "baseline_median_mean_ms": bmed,
+                  "candidate_median_mean_ms": cmed,
+                  "candidate_vs_baseline_ratio": ratio,
+                  "candidate_delta_ms": delta,
+                  "all_three_trials_over_20pct_slower": consistent_20pct,
+                  "material_regression": material,
+              }
+              if material:
+                  summary["material_regressions"].append(label)
+
+          summary["verdict"] = (
+              "FAIL_CORRECTNESS" if not correctness
+              else "REVIEW_REGRESSION" if summary["material_regressions"]
+              else "PASS_NO_SIGNIFICANT_REGRESSION"
+          )
+
+          print("P2_3_SUMMARY_START")
+          print(json.dumps(summary, indent=2))
+          print("P2_3_SUMMARY_END")
+
+          if summary["verdict"] != "PASS_NO_SIGNIFICANT_REGRESSION":
+              sys.exit(2)
+          PY
