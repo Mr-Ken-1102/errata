@@ -5,7 +5,12 @@ echo [1/3] Checking for Bun...
 where bun >nul 2>nul
 if %errorlevel% neq 0 (
   echo ERROR: Bun is not installed or not on PATH.
-  echo Install Bun, then run this script again.
+  echo Use start.bat for automatic pinned Bun setup, or install Bun and run this script again.
+  if not defined ERRATA_NO_PAUSE (
+    echo.
+    echo Press any key to close this window.
+    pause >nul
+  )
   exit /b 1
 )
 

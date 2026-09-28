@@ -49,7 +49,7 @@ Switch from prose view to Character Chat to run in-world conversations with your
 ```bash
 git clone https://github.com/Mr-Ken-1102/errata.git
 cd errata
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
@@ -62,14 +62,24 @@ From an unpacked source checkout on Windows, you can double-click `start.bat` or
 ```bat
 start.bat          rem Electron desktop development mode
 start.bat web      rem Browser development server
-start.bat check    rem Validate Bun and required desktop files only
+start.bat check    rem Validate pinned toolchain metadata and required desktop files
 ```
 
 The launcher changes into the repository directory before starting and defaults `DATA_DIR` to `<repo>\data`. That source data is separate from the installed Electron application's OS user-data directory. If you intentionally set `DATA_DIR` yourself, the launcher preserves your value.
 
 ## Development
 
-One-click setup on Windows -- installs Git and Bun if needed, clones/pulls the repo, installs dependencies, and starts the dev server:
+### Reproducible toolchain
+
+Errata's supported development toolchain is intentionally pinned:
+
+- **Bun 1.4.2** — recorded in `package.json`, GitHub Actions, and the Windows bootstrap scripts.
+- **Node.js >= 22.12.0** — the Windows source launcher uses verified portable Node.js 22.23.2 when Node is missing.
+- **`bun.lock` is authoritative** — use `bun install --frozen-lockfile`; dependency updates must intentionally update and review the lockfile.
+- **Vite 7.3.6 + pinned Nitro nightly** — Nitro is fixed to the newest audited nightly that still declares Vite 7 support; moving to Vite 8 is a separate compatibility migration.
+- Release-critical CI must use the same pinned Bun version before tests, builds, or packaging.
+
+One-click setup on Windows installs Git and the pinned Bun version if needed, clones/pulls the repo, installs the locked dependencies, and starts the dev server:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/setup.ps1

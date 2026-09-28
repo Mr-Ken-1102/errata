@@ -1,6 +1,11 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
+import {
+  binaryPatternForPlatform,
+  executablePrefixForPlatform,
+  runInstructionsForPlatform,
+} from './package-binary-utils.ts'
 
 const pkg = JSON.parse(await readFile('package.json', 'utf-8'))
 const version = pkg.version ?? '0.0.0'
@@ -27,8 +32,9 @@ async function listFilesRecursive(rootDir) {
 
 async function findLatestBinary() {
   const entries = await readdir(distDir, { withFileTypes: true })
+  const binaryPattern = binaryPatternForPlatform(process.platform)
   const candidates = entries
-    .filter((entry) => entry.isFile() && /^errata.*\.exe$/i.test(entry.name))
+    .filter((entry) => entry.isFile() && binaryPattern.test(entry.name))
     .map((entry) => join(distDir, entry.name))
 
   if (candidates.length === 0) {
@@ -64,6 +70,9 @@ async function main() {
     filesForZip[rel] = new Uint8Array(await readFile(fullPath))
   }
 
+  const executablePrefix = executablePrefixForPlatform(process.platform)
+  const runInstructions = runInstructionsForPlatform(process.platform, binaryName)
+
   filesForZip['README.txt'] = strToU8(
     [
       `Errata v${version}`,
@@ -71,11 +80,11 @@ async function main() {
       `Included binary: ${binaryName}`,
       'Required static assets are in ./public.',
       '',
-      'Run on Windows:',
-      `  .\\${binaryName}`,
+      'Run:',
+      ...runInstructions,
       '',
       'Check version:',
-      `  .\\${binaryName} --version`,
+      `  ${executablePrefix}${binaryName} --version`,
       '',
       'Optional environment variables:',
       '  DATA_DIR=<path>',
