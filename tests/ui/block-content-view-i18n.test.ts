@@ -14,7 +14,7 @@ describe('BlockContentView localization', () => {
   it('preserves marker parsing and dynamic block/tool data verbatim', () => {
     const source = readFileSync('src/components/blocks/BlockContentView.tsx', 'utf8')
 
-    expect(source).toContain('msg.content.split(/\\[@block=([^\\]]+)\\]\\n?/)') 
+    expect(source).toContain('msg.content.split(/\\[@block=([^\\]]+)\\]\\n?/)')
     expect(source).toContain('const srcMatch = marker.match(/^(.+?)\\s+src=(.+)$/)')
     expect(source).toContain('segments.push({ id: srcMatch[2], name: srcMatch[1], role: msg.role, content })')
     expect(source).toContain('segments.push({ id: marker, name: marker, role: msg.role, content })')
