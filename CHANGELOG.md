@@ -6,11 +6,13 @@ All notable changes to Errata are documented here. Format loosely follows
 ## [1.0.0] — Unreleased
 
 **Release identity:** **Errata v1.0** is the first curated release line of
-`Mr-Ken-1102/errata`. It is based on upstream `tealios/errata` v1.12.0 (2026-09-14,
-commit `610c7e7587fe334f0908dd2065f9be7c4761a0dc`) plus selectively integrated and
-adapted work from audited Errata forks. See [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md)
-for the exact source repositories, source authors/maintainers, versions/branch snapshots,
-commit SHAs, dates, integration method, rejected/reverted work, and upgrade-traceability rules.
+`Mr-Ken-1102/errata`. It is based on upstream `tealios/errata` v1.12.0
+(2026-09-14, commit `610c7e7587fe334f0908dd2065f9be7c4761a0dc`) plus selectively
+integrated and adapted work from audited Errata forks. The upstream project has
+continued beyond that baseline; newer upstream commits are intentionally not
+silently merged into this v1.0 release line. See
+[`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md) for source lineage and
+integration checkpoints.
 
 ### Added
 - **Server-owned durable runs** for generation, Librarian refine/transform/chat,
@@ -24,28 +26,40 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
   Librarian metadata.
 - **Standalone SillyTavern lorebook import** with parser and drag-and-drop UI flows
   independent of character-card import.
-- **Windows source launcher and Electron desktop packaging**, including an isolated
-  source `DATA_DIR`, packaged server sidecar, GitHub update feed for this fork, and
-  Windows smoke coverage that boots the bundled sidecar and checks `/api/health`.
+- **Vietnamese interface support** across the story library, writing flow, Story
+  Setup, Librarian, Agents, Help, Settings, TTS, Remote and supporting dialogs,
+  while preserving user-authored content, provider/model identifiers, plugin
+  metadata, prompts and machine values.
+- **Windows source launcher, standalone binaries and Electron desktop packaging**
+  with isolated application data, packaged server sidecar and cross-platform
+  non-publishing release validation.
 - **Curated desktop identity isolation** for v1.0: a dedicated application ID,
-  dedicated user/session data namespace, and a distinct default Windows install path
-  prevent collision with upstream/Viscerous desktop installs while keeping the visible
-  product name `Errata`.
+  dedicated user/session data namespace, and a distinct default Windows install
+  path prevent collision with upstream/Viscerous desktop installs while keeping
+  the visible product name `Errata`.
 
 ### Changed
 - Generation and chat lifecycle ownership moved to the server while preserving the
-  existing Viscerous context, continuity, output-validation, logging, save, and
+  validated continuity, context, output-validation, logging, save and
   Librarian-trigger semantics.
-- Runs are pinned to story branch/timeline identity so reconnect, replay, cancel,
+- Runs are pinned to story branch/timeline identity so reconnect, replay, cancel
   and lost-POST recovery cannot attach across branches.
-- Selected low-risk performance improvements add active-branch caching, parallel
-  Character Chat summary reads, and lazy font-catalog loading without changing
-  fragment persistence semantics.
-- Release preparation now targets `Mr-Ken-1102/errata`, uses frozen dependency
-  installs, validates release tag/version consistency, and supports non-publishing
-  cross-platform desktop/standalone release dry-runs before a tag is created.
+- OpenAI-compatible provider Base URLs are treated as explicit configuration;
+  runtime no longer silently repairs an incorrect user endpoint by appending
+  `/v1`.
+- Story Setup structured updates are hardened against omitted/partial snapshots
+  and buffered stream timing.
+- Librarian analyze recovery handles an incomplete analysis-tool tail without
+  changing the durable-run ownership model.
+- Selected low-risk performance improvements retain active-branch caching,
+  parallel Character Chat summary reads and lazy font-catalog loading without
+  changing fragment persistence semantics.
+- The source/build toolchain is reproducible: Bun `1.4.2`, Node
+  `>=22.12.0`, Vite `7.3.6`, Nitro
+  `3.0.1-20260821-003948-5e7235e6`, tracked `bun.lock` and frozen dependency
+  installs.
 - Desktop auto-update policy is stable-only by default: prerelease updates and
-  version downgrades are explicitly disabled for the curated v1.x line.
+  version downgrades are disabled for the curated v1.x line.
 
 ### Fixed
 - Disconnecting a browser/subscriber no longer stops an active model run; explicit
@@ -57,25 +71,46 @@ commit SHAs, dates, integration method, rejected/reverted work, and upgrade-trac
 - Settings overlay lifecycle fallback prevents the post-settings non-interactive
   "ghost overlay" state.
 - Vietnamese IME composition is guarded across generation, refinement, inline
-  editing, Story Wizard, Librarian/Character Chat, and Fragment tag/ref Enter paths.
-- README and one-click Windows setup no longer redirect users to another Errata fork.
+  editing, Story Wizard, Librarian/Character Chat and Fragment tag/ref Enter paths.
+- Vietnamese Settings model-role labels/descriptions/inheritance presentation and
+  the Remote tunnel accessibility label are localized without modifying server
+  role identifiers or provider/model values.
+- Source launchers no longer trust a stale dependency-ready stamp; dependency
+  consistency is checked against the frozen lockfile.
+- Legacy `run.bat` now reports a missing Bun runtime instead of closing after the
+  initial check with no actionable explanation.
+- Standalone binary packaging selects the correct executable form on Windows,
+  Linux and macOS.
 
 ### Validation
-- The integrated source tree passed the full Vitest suite, app + desktop typecheck,
-  architecture boundaries, production build, and Windows desktop smoke before release-prep.
-- Final release-prep HEAD `a66846cfb9dc403f36dff5775d521036636b5a11` passed
-  **vitest #172** (run `35696996552`) and **Windows desktop smoke #34**
-  (run `35696996566`).
-- On that same exact HEAD, **Desktop release #3** (run `35696996558`) passed
-  non-publishing installer dry-runs on Windows, Linux and macOS, and **Release Binary #3**
-  (run `35696996573`) passed standalone dry-runs for Windows x64, Linux x64 and macOS ARM64.
-- PR #4 merged as `d73b1f305a69ada9ec05121e8faccb4251ef8d1c`; its tree
-  `e8ada2f764d9e178562cf19fd582cec9c29343eb` exactly matches the validated PR HEAD.
-  Post-merge **vitest #173** (run `35697656773`) and **Test Results #173**
-  (run `35697833469`) both succeeded on that merge commit.
-- The `v1.0.0` tag and GitHub Release remain intentionally pending until this documentation-only
-  provenance closeout is merged and its CI is green. No publishing workflow has been run for
-  the release yet.
+The latest functional release-candidate checkpoint before P2.4 documentation and
+whitespace-only closeout is `master-fix`
+`0598aaa159290eefce122ca003b05067310267be`, tree
+`5af5b559079de1a118b05281a0c7c9c727983235`.
+
+- **P1.4 localization regression gate:** closed/pass after exact-head CI,
+  post-merge tree equality and a full UI hard-code rescan with no actionable
+  leakage remaining after classification.
+- **P1.5 manual UX acceptance:** closed/pass after isolated runtime review of the
+  major user surfaces, remediation of one major and one minor localization
+  finding, exact-head CI, targeted runtime re-acceptance and post-merge tree
+  equality.
+- **P2.1 reproducible toolchain:** closed/pass after exact-head validation and
+  expected-head merge into `master-fix`.
+- **P2.2 full CI matrix on `0598aaa...`:** Vitest **215 files / 1,716 tests**,
+  app + desktop typecheck, architecture boundaries, production build, Windows
+  desktop smoke, standalone binary dry-runs and desktop installer dry-runs on
+  Windows/Linux/macOS all passed.
+- **P2.3 controlled performance comparison:** three alternating trials per side,
+  30 measured iterations + 5 warmups per trial, correctness parity passed and no
+  material regression was detected against frozen `master`
+  `230b87878379ec0290b973fc3e747a63cbd3525b`.
+- The package version remains `1.0.0`; the `v1.0.0` tag and GitHub Release
+  remain intentionally uncreated until P2.4 is closed/pass and the Owner
+  explicitly authorizes P3.
+- After any future Owner-authorized merge to the default `master` branch, Vitest
+  plus the `Test Results` workflow must pass on the merged state before
+  `v1.0.0` is tagged or published.
 
 ## [1.12.0] — 2026-09-14
 
