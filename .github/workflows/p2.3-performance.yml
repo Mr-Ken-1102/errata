@@ -59,8 +59,8 @@ jobs:
           set -euo pipefail
           cp candidate/package.json baseline/package.json
           cp candidate/bun.lock baseline/bun.lock
-          cp scripts/p2.3-backend-stress-safe.ts baseline/scripts/p2.3-backend-stress-safe.ts
-          cp scripts/p2.3-backend-stress-safe.ts candidate/scripts/p2.3-backend-stress-safe.ts
+          cp scripts/p2.3-backend-stress-safe.test.ts baseline/scripts/p2.3-backend-stress-safe.test.ts
+          cp scripts/p2.3-backend-stress-safe.test.ts candidate/scripts/p2.3-backend-stress-safe.test.ts
           echo "Both source trees will execute with candidate package.json + bun.lock."
 
       - name: Install identical dependency graph
