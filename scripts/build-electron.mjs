@@ -95,22 +95,7 @@ await mkdir('build', { recursive: true })
 await cp('public/ErrataLogo.png', 'build/icon.png')
 
 // 5. electron-builder
-// PR/local packaging is unsigned. Published builds are also allowed to remain unsigned for
-// personal/community use; CI opts into the signed release config only when publisher
-// credentials are actually available.
-const signingEnabled = process.env.ERRATA_ENABLE_DESKTOP_SIGNING === '1'
-const builderConfig =
-  publishMode !== 'never' && signingEnabled
-    ? 'electron-builder.release.yml'
-    : 'electron-builder.unsigned.yml'
-
-if (publishMode !== 'never' && !signingEnabled) {
-  console.warn(
-    'Desktop signing credentials are not configured; publishing unsigned desktop artifacts.',
-  )
-}
-const builderArgs = ['electron-builder', '--config', builderConfig]
-console.log(`Electron builder config: ${builderConfig}`)
+const builderArgs = ['electron-builder', '--config', 'electron-builder.yml']
 if (platformFlag) builderArgs.push(platformFlag)
 if (dirOnly) {
   builderArgs.push('--dir')
