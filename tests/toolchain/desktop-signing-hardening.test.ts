@@ -3,31 +3,36 @@ import { describe, expect, it } from 'vitest'
 
 const read = (path: string) => readFileSync(path, 'utf8')
 
-describe('desktop release signing hardening', () => {
-  it('keeps unsigned validation separate from fail-closed release signing', () => {
+describe('desktop release signing policy', () => {
+  it('keeps unsigned packaging available while preserving a signed release config', () => {
     const base = read('electron-builder.yml')
     const unsigned = read('electron-builder.unsigned.yml')
-    const release = read('electron-builder.release.yml')
+    const signed = read('electron-builder.release.yml')
 
     expect(base).not.toMatch(/^\s*identity:\s*null\s*$/m)
     expect(unsigned).toContain('extends: electron-builder.yml')
     expect(unsigned).toContain('identity: null')
 
-    expect(release).toContain('extends: electron-builder.yml')
-    expect(release).toContain('forceCodeSigning: true')
-    expect(release).toContain('notarize: true')
+    expect(signed).toContain('extends: electron-builder.yml')
+    expect(signed).toContain('forceCodeSigning: true')
+    expect(signed).toContain('notarize: true')
   })
 
-  it('selects signing policy from publication mode instead of silently falling back', () => {
+  it('uses signed policy only when publication explicitly enables signing', () => {
     const source = read('scripts/build-electron.mjs')
 
     expect(source).toContain(
-      "publishMode === 'never' ? 'electron-builder.unsigned.yml' : 'electron-builder.release.yml'",
+      "const signingEnabled = process.env.ERRATA_ENABLE_DESKTOP_SIGNING === '1'",
     )
-    expect(source).toContain("const builderArgs = ['electron-builder', '--config', builderConfig]")
+    expect(source).toContain("publishMode !== 'never' && signingEnabled")
+    expect(source).toContain("'electron-builder.release.yml'")
+    expect(source).toContain("'electron-builder.unsigned.yml'")
+    expect(source).toContain(
+      'Desktop signing credentials are not configured; publishing unsigned desktop artifacts.',
+    )
   })
 
-  it('requires dedicated Windows and macOS signing secrets before publication', () => {
+  it('detects signing credentials without making them mandatory for personal releases', () => {
     const workflow = read('.github/workflows/desktop-release.yml')
 
     for (const secret of [
@@ -42,29 +47,38 @@ describe('desktop release signing hardening', () => {
       expect(workflow).toContain(secret)
     }
 
-    expect(workflow).toContain('Require Windows signing secrets')
-    expect(workflow).toContain('Require macOS signing and notarization secrets')
-    expect(workflow).toContain('CSC_LINK: ${{ secrets.MAC_CSC_LINK }}')
-    expect(workflow).toContain('CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}')
+    expect(workflow).toContain('Detect optional desktop signing')
+    expect(workflow).not.toContain('Require Windows signing secrets')
+    expect(workflow).not.toContain('Require macOS signing and notarization secrets')
+    expect(workflow).toContain('publishing unsigned installer')
+    expect(workflow).toContain('publishing unsigned artifacts')
+    expect(workflow).toContain('ERRATA_ENABLE_DESKTOP_SIGNING')
   })
 
-  it('verifies released desktop artifacts instead of trusting build success alone', () => {
+  it('verifies signatures only when optional signing is enabled', () => {
     const workflow = read('.github/workflows/desktop-release.yml')
 
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows' && steps.signing.outputs.enabled == '1'",
+    )
     expect(workflow).toContain('Get-AuthenticodeSignature')
     expect(workflow).toContain("if ($signature.Status -ne 'Valid')")
+
+    expect(workflow).toContain(
+      "if: runner.os == 'macOS' && steps.signing.outputs.enabled == '1'",
+    )
     expect(workflow).toContain('codesign --verify --deep --strict --verbose=2')
     expect(workflow).toContain('spctl --assess --verbose --type exec')
     expect(workflow).toContain('xcrun stapler validate')
   })
 
-  it('keeps pull-request packaging explicitly unsigned and release packaging credentialed', () => {
+  it('keeps unsigned PR/local validation and unsigned release fallback explicit', () => {
     const workflow = read('.github/workflows/desktop-release.yml')
 
     expect(workflow).toContain('Build desktop installers without publishing')
     expect(workflow).toContain('bun run electron:dist')
-    expect(workflow).toContain('Build and upload Windows desktop installer')
-    expect(workflow).toContain('Build, sign, notarize, and upload macOS desktop artifacts')
-    expect(workflow).toContain('Build and upload Linux desktop artifact')
+    expect(workflow).toContain('Build and upload unsigned desktop artifacts')
+    expect(workflow).toContain('Build, sign, and upload desktop artifacts')
+    expect(workflow).toContain('intentionally published unsigned for personal/community distribution')
   })
 })

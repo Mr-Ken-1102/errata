@@ -1,8 +1,9 @@
 name: Desktop release
 
-# Release events publish signed installers + update metadata. Pull requests and manual
-# dispatches run the same cross-platform installer build unsigned, so packaging can be
-# validated without exposing publisher credentials.
+# Release events publish installers + update metadata. Signing is optional for this
+# personal/community fork: if publisher credentials exist, Windows/macOS artifacts are
+# signed and verified; otherwise the release proceeds unsigned with an explicit warning.
+# Pull requests and manual dispatches always validate packaging unsigned.
 on:
   release:
     types: [published]
@@ -79,54 +80,79 @@ jobs:
             exit 1
           fi
 
-      - name: Require Windows signing secrets
-        if: runner.os == 'Windows'
+      - name: Detect optional desktop signing
+        id: signing
         shell: bash
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: |
-          missing=0
-          for name in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "::error::$name is required for a Windows release."
-              missing=1
-            fi
-          done
-          exit "$missing"
-
-      - name: Require macOS signing and notarization secrets
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          missing=0
-          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!name}" ]; then
-              echo "::error::$name is required for a signed and notarized macOS release."
-              missing=1
-            fi
-          done
-          exit "$missing"
+          enabled=0
+
+          case "$RUNNER_OS" in
+            Windows)
+              if [ -n "$WIN_CSC_LINK" ] && [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
+                enabled=1
+                echo "Windows signing credentials detected; signed release mode enabled."
+              else
+                echo "::warning::Windows signing credentials are not configured; publishing unsigned installer."
+              fi
+              ;;
+            macOS)
+              if [ -n "$MAC_CSC_LINK" ] &&
+                 [ -n "$MAC_CSC_KEY_PASSWORD" ] &&
+                 [ -n "$APPLE_ID" ] &&
+                 [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] &&
+                 [ -n "$APPLE_TEAM_ID" ]; then
+                enabled=1
+                echo "macOS signing/notarization credentials detected; signed release mode enabled."
+              else
+                echo "::warning::macOS signing/notarization credentials are not configured; publishing unsigned artifacts."
+              fi
+              ;;
+            Linux)
+              echo "Linux release does not require desktop publisher signing."
+              ;;
+          esac
+
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build and upload Windows desktop installer
-        if: runner.os == 'Windows'
+      - name: Build and upload unsigned desktop artifacts
+        if: steps.signing.outputs.enabled != '1'
         run: bun run electron:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ERRATA_ENABLE_DESKTOP_SIGNING: '0'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Build, sign, and upload desktop artifacts
+        if: steps.signing.outputs.enabled == '1'
+        run: bun run electron:release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ERRATA_ENABLE_DESKTOP_SIGNING: '1'
+
+          # Windows signing credentials (used only on Windows).
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
-      - name: Verify Windows Authenticode signature
-        if: runner.os == 'Windows'
+          # macOS signing/notarization credentials (used only on macOS).
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify Windows Authenticode signature when signing is enabled
+        if: runner.os == 'Windows' && steps.signing.outputs.enabled == '1'
         shell: pwsh
         run: |
           $installer = Get-ChildItem release -Filter 'Errata-*-windows-x64.exe' |
@@ -146,19 +172,8 @@ jobs:
           }
           Write-Host "Signer: $($signature.SignerCertificate.Subject)"
 
-      - name: Build, sign, notarize, and upload macOS desktop artifacts
-        if: runner.os == 'macOS'
-        run: bun run electron:release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Verify macOS signature and notarization
-        if: runner.os == 'macOS'
+      - name: Verify macOS signature and notarization when signing is enabled
+        if: runner.os == 'macOS' && steps.signing.outputs.enabled == '1'
         shell: bash
         run: |
           set -euo pipefail
@@ -171,8 +186,10 @@ jobs:
           spctl --assess --verbose --type exec "$APP_PATH"
           xcrun stapler validate "$APP_PATH"
 
-      - name: Build and upload Linux desktop artifact
-        if: runner.os == 'Linux'
-        run: bun run electron:release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record unsigned Windows release mode
+        if: runner.os == 'Windows' && steps.signing.outputs.enabled != '1'
+        run: echo "::notice::Windows installer was intentionally published unsigned for personal/community distribution."
+
+      - name: Record unsigned macOS release mode
+        if: runner.os == 'macOS' && steps.signing.outputs.enabled != '1'
+        run: echo "::notice::macOS artifacts were intentionally published unsigned for personal/community distribution."
