@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -503,9 +504,13 @@ async function main(): Promise<void> {
     console.log('')
     printStatsTable(report.timings)
     console.log('')
+    const reportJson = JSON.stringify(report, null, 2)
     console.log('JSON_REPORT_START')
-    console.log(JSON.stringify(report, null, 2))
+    console.log(reportJson)
     console.log('JSON_REPORT_END')
+    if (process.env.P2_3_REPORT_PATH) {
+      writeFileSync(process.env.P2_3_REPORT_PATH, reportJson, 'utf8')
+    }
   } finally {
     console.log(`P2_3_DATA_DIR=${dataDir}`)
   }
