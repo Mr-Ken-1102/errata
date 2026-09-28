@@ -914,7 +914,7 @@ export function ProseChainView({
 
   const branchFromMutation = useMutation({
     mutationFn: async (sectionIndex: number) => {
-      const name = window.prompt('Timeline name:')
+      const name = window.prompt(t('timeline.namePlaceholder'))
       if (!name?.trim()) throw new Error('Cancelled')
       const index = await api.branches.list(storyId)
       return api.branches.create(storyId, {

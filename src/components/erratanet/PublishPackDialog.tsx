@@ -29,7 +29,7 @@ import {
   ExternalLink,
   Image as ImageIcon,
 } from 'lucide-react'
-import { useLanguage } from '@/lib/i18n'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface PublishPackDialogProps {
   open: boolean
@@ -47,21 +47,17 @@ interface PublishPackDialogProps {
   storyName?: string
 }
 
-const LICENSES = [
-  { value: 'CC0-1.0', label: 'CC0 1.0 (public domain)' },
-  { value: 'CC-BY-4.0', label: 'CC BY 4.0 (attribution)' },
-  { value: 'CC-BY-SA-4.0', label: 'CC BY-SA 4.0 (share-alike)' },
-  { value: 'CC-BY-NC-4.0', label: 'CC BY-NC 4.0 (non-commercial)' },
-  { value: 'proprietary', label: 'Proprietary (all rights reserved)' },
-] as const
+const LICENSES: Array<{ value: string; labelKey: TranslationKey }> = [
+  { value: 'CC0-1.0', labelKey: 'erratanet.license.cc0' },
+  { value: 'CC-BY-4.0', labelKey: 'erratanet.license.ccBy' },
+  { value: 'CC-BY-SA-4.0', labelKey: 'erratanet.license.ccBySa' },
+  { value: 'CC-BY-NC-4.0', labelKey: 'erratanet.license.ccByNc' },
+  { value: 'proprietary', labelKey: 'erratanet.license.proprietary' },
+]
 
 type ContentRating = 'general' | 'mature' | 'r18'
 
-const CONTENT_RATINGS: { value: ContentRating; label: string; hint: string }[] = [
-  { value: 'general', label: 'General', hint: 'Suitable for everyone.' },
-  { value: 'mature', label: 'Mature', hint: 'Mature themes; not explicit.' },
-  { value: 'r18', label: 'R18', hint: 'Explicit adult content. Marked NSFW.' },
-]
+const CONTENT_RATINGS: ContentRating[] = ['general', 'mature', 'r18']
 
 const README_MAX = 8000
 
@@ -436,7 +432,7 @@ export function PublishPackDialog({
                 data-component-id="publish-pack-license"
               >
                 {LICENSES.map((l) => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
+                  <option key={l.value} value={l.value}>{t(l.labelKey)}</option>
                 ))}
               </select>
             </div>
@@ -533,18 +529,18 @@ export function PublishPackDialog({
             <div>
               <h4 className={sectionLabel}>{t('erratanet.publish.contentRating')}</h4>
               <div className="flex w-fit gap-[3px] rounded-lg bg-muted/25 p-[3px]">
-                {CONTENT_RATINGS.map((r) => (
+                {CONTENT_RATINGS.map((rating) => (
                   <button
-                    key={r.value}
+                    key={rating}
                     type="button"
-                    onClick={() => setContentRating(r.value)}
+                    onClick={() => setContentRating(rating)}
                     className={cn(
                       'rounded-md px-3 py-[6px] text-[0.6875rem] font-medium transition-all duration-150',
-                      contentRating === r.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                      contentRating === rating ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                     )}
-                    data-component-id={`publish-pack-rating-${r.value}`}
+                    data-component-id={`publish-pack-rating-${rating}`}
                   >
-                    {ratingLabel(r.value)}
+                    {ratingLabel(rating)}
                   </button>
                 ))}
               </div>
