@@ -17,7 +17,7 @@ import { ProviderSelect } from '@/components/settings/ProviderSelect'
 import { getDesktopBridge, onDesktopBridgeReady } from '@/lib/desktop'
 import { resolveProvider, getInheritLabel } from '@/lib/model-role-helpers'
 import { useInteractionSounds } from '@/lib/interaction-sounds'
-import { useLanguage } from '@/lib/i18n'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 import {
   BUILTIN_FRAGMENT_TYPES,
   compareFragmentTypeVisuals,
@@ -163,6 +163,51 @@ function MentionTypePicker({
   )
 }
 
+const MODEL_ROLE_DISPLAY_KEYS: Record<string, { label: TranslationKey; description: TranslationKey }> = {
+  generation: {
+    label: 'settings.providers.modelRole.generation.label',
+    description: 'settings.providers.modelRole.generation.description',
+  },
+  'character-chat': {
+    label: 'settings.providers.modelRole.characterChat.label',
+    description: 'settings.providers.modelRole.characterChat.description',
+  },
+  directions: {
+    label: 'settings.providers.modelRole.directions.label',
+    description: 'settings.providers.modelRole.directions.description',
+  },
+  librarian: {
+    label: 'settings.providers.modelRole.librarian.label',
+    description: 'settings.providers.modelRole.librarian.description',
+  },
+  'story-setup': {
+    label: 'settings.providers.modelRole.storySetup.label',
+    description: 'settings.providers.modelRole.storySetup.description',
+  },
+}
+
+function getModelRoleDisplay(
+  role: { key: string; label: string; description: string },
+  t: (key: TranslationKey) => string,
+): { label: string; description: string } {
+  const keys = MODEL_ROLE_DISPLAY_KEYS[role.key]
+  return keys
+    ? { label: t(keys.label), description: t(keys.description) }
+    : { label: role.label, description: role.description }
+}
+
+function getLocalizedSettingsInheritLabel(
+  rawLabel: string,
+  roles: Array<{ key: string; label: string }>,
+  t: (key: TranslationKey) => string,
+): string {
+  let label = rawLabel.replace(/^Inherit/, t('settings.providers.inherit'))
+  for (const role of roles) {
+    const keys = MODEL_ROLE_DISPLAY_KEYS[role.key]
+    if (keys) label = label.replace(`· ${role.label}`, `· ${t(keys.label)}`)
+  }
+  return label
+}
 
 function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: {
   story: StoryMeta
@@ -201,13 +246,14 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
           const directModelId = overrides[role.key]?.modelId ?? null
           const effectiveProviderId = resolveProvider(role.key, settings, globalConfig)
           const isGeneration = role.key === 'generation'
+          const roleDisplay = getModelRoleDisplay(role, t)
 
           return (
             <div key={role.key} className="px-3 py-2">
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="min-w-0">
-                  <p className="text-[0.75rem] font-medium text-foreground/80">{role.label}</p>
-                  <p className="text-[0.625rem] text-muted-foreground leading-snug">{role.description}</p>
+                  <p className="text-[0.75rem] font-medium text-foreground/80">{roleDisplay.label}</p>
+                  <p className="text-[0.625rem] text-muted-foreground leading-snug">{roleDisplay.description}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -222,7 +268,13 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                       })
                     }}
                     disabled={updateMutation.isPending}
-                    inheritLabel={isGeneration ? undefined : getInheritLabel(role.key, roles, settings, globalConfig)}
+                    inheritLabel={isGeneration
+                      ? undefined
+                      : getLocalizedSettingsInheritLabel(
+                          getInheritLabel(role.key, roles, settings, globalConfig),
+                          roles,
+                          t,
+                        )}
                   />
                 </div>
                 <div className="min-w-0 flex-1">
