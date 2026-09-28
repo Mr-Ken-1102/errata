@@ -13,7 +13,6 @@ count.txt
 __unconfig*
 todos.json
 data/
-bun.lock
 _data
 AGENTS.md
 CLAUDE.md
