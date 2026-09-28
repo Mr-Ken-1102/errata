@@ -52,6 +52,11 @@ describe('P2.1 reproducible toolchain', () => {
 
     expect(workflows.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(6)
     expect(workflows.match(/bun-version: 1\.4\.2/g)).toHaveLength(6)
+    expect(
+      workflows.match(
+        /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/g,
+      ),
+    ).toHaveLength(6)
     expect(workflows).toContain('bun install --frozen-lockfile')
     expect(smoke).toContain('- bun.lock')
   })
