@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { useOptionalTranslation } from '@/lib/i18n'
 import { isTerminalChatEvent, type ChatEvent, type RunKind, type RunStatus, type SequencedChatEvent } from '@/lib/api/types'
 
 /**
@@ -154,6 +155,7 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
     recoverFullRunOnAttach = false,
   } = options
 
+  const t = useOptionalTranslation()
   const [runId, setRunId] = useState<string | null>(null)
   const [phase, setPhase] = useState<RunPhase>('idle')
   const [isReconnecting, setIsReconnecting] = useState(false)
@@ -308,20 +310,20 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
         // to reattach to, so stop retrying and surface it.
         const status = (err as { status?: number })?.status
         if (status === 404) {
-          settle('error', 'This generation is no longer available')
+          settle('error', t('runStream.noLongerAvailable'))
           return
         }
         attemptRef.current += 1
         scheduleReconnect()
       }
     }, delay)
-  }, [branchId, clearReconnectTimer, consume, settle, storyId])
+  }, [branchId, clearReconnectTimer, consume, settle, storyId, t])
 
   const start = useCallback(async (
     post: (clientRequestId: string) => Promise<ReadableStream<SequencedChatEvent>>,
   ) => {
     if (branchId === undefined) {
-      throw new Error('Timeline is still loading')
+      throw new Error(t('runStream.timelineLoading'))
     }
 
     clearReconnectTimer()
@@ -384,11 +386,11 @@ export function useRunStream(options: UseRunStreamOptions): UseRunStreamResult {
       // The POST itself failed, so no run exists to reattach to.
       // settle() owns the terminal guard and callback; do not pre-mark settled
       // or it will intentionally no-op.
-      const message = err instanceof Error ? err.message : 'Request failed'
+      const message = err instanceof Error ? err.message : t('runStream.requestFailed')
       settle('error', message)
       throw err
     }
-  }, [branchId, clearReconnectTimer, consume, scheduleReconnect, settle, storyId])
+  }, [branchId, clearReconnectTimer, consume, scheduleReconnect, settle, storyId, t])
 
   const cancel = useCallback(async () => {
     const currentRunId = runIdRef.current

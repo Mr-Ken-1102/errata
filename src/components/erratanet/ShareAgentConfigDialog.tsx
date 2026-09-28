@@ -36,7 +36,7 @@ import {
   ExternalLink,
   Code2,
 } from 'lucide-react'
-import { useLanguage } from '@/lib/i18n'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface ShareAgentConfigDialogProps {
   open: boolean
@@ -49,12 +49,12 @@ interface ShareAgentConfigDialogProps {
   defaultIncludes?: string[]
 }
 
-const LICENSES = [
-  { value: 'CC0-1.0', label: 'CC0 1.0 (public domain)' },
-  { value: 'CC-BY-4.0', label: 'CC BY 4.0 (attribution)' },
-  { value: 'CC-BY-SA-4.0', label: 'CC BY-SA 4.0 (share-alike)' },
-  { value: 'proprietary', label: 'Proprietary (all rights reserved)' },
-] as const
+const LICENSES: Array<{ value: string; labelKey: TranslationKey }> = [
+  { value: 'CC0-1.0', labelKey: 'erratanet.license.cc0' },
+  { value: 'CC-BY-4.0', labelKey: 'erratanet.license.ccBy' },
+  { value: 'CC-BY-SA-4.0', labelKey: 'erratanet.license.ccBySa' },
+  { value: 'proprietary', labelKey: 'erratanet.license.proprietary' },
+]
 
 const sectionLabel = 'text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-2'
 
@@ -348,7 +348,7 @@ export function ShareAgentConfigDialog({ open, onOpenChange, storyId, storyName,
             <div>
               <h4 className={sectionLabel}>{t('erratanet.shareConfig.license')}</h4>
               <select value={license} onChange={(e) => setLicense(e.target.value)} className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]">
-                {LICENSES.map((l) => (<option key={l.value} value={l.value}>{l.label}</option>))}
+                {LICENSES.map((l) => (<option key={l.value} value={l.value}>{t(l.labelKey)}</option>))}
               </select>
             </div>
 
