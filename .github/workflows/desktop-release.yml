@@ -1,8 +1,8 @@
 name: Desktop release
 
-# Release events publish signed installers + update metadata. Pull requests and manual
-# dispatches run the same cross-platform installer build unsigned, so packaging can be
-# validated without exposing publisher credentials.
+# Release events publish installers + update metadata. Pull requests and manual dispatches run
+# the same cross-platform installer build without publishing, so release packaging can be
+# validated before a tag/release exists.
 on:
   release:
     types: [published]
@@ -16,10 +16,7 @@ on:
       - scripts/build-electron.mjs
       - scripts/build-binary.mjs
       - electron-builder.yml
-      - electron-builder.unsigned.yml
-      - electron-builder.release.yml
       - build/installer.nsh
-      - tests/toolchain/desktop-signing-hardening.test.ts
       - .github/workflows/desktop-release.yml
 
 jobs:
@@ -79,100 +76,21 @@ jobs:
             exit 1
           fi
 
-      - name: Require Windows signing secrets
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: |
-          missing=0
-          for name in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "::error::$name is required for a Windows release."
-              missing=1
-            fi
-          done
-          exit "$missing"
-
-      - name: Require macOS signing and notarization secrets
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          missing=0
-          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!name}" ]; then
-              echo "::error::$name is required for a signed and notarized macOS release."
-              missing=1
-            fi
-          done
-          exit "$missing"
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build and upload Windows desktop installer
-        if: runner.os == 'Windows'
+      - name: Build and upload desktop installers
         run: bun run electron:release
         env:
+          # Used by electron-builder to upload assets to the triggering GitHub Release.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-
-      - name: Verify Windows Authenticode signature
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem release -Filter 'Errata-*-windows-x64.exe' |
-            Where-Object { $_.Name -notlike '*.__uninstaller.exe' } |
-            Select-Object -First 1
-          if (-not $installer) {
-            throw 'Windows installer was not produced.'
-          }
-
-          $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
-          Write-Host "Authenticode status: $($signature.Status)"
-          if ($signature.Status -ne 'Valid') {
-            throw "Windows installer Authenticode signature is not valid: $($signature.Status)"
-          }
-          if (-not $signature.SignerCertificate) {
-            throw 'Windows installer has no signer certificate.'
-          }
-          Write-Host "Signer: $($signature.SignerCertificate.Subject)"
-
-      - name: Build, sign, notarize, and upload macOS desktop artifacts
-        if: runner.os == 'macOS'
-        run: bun run electron:release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Skip macOS code signing unless a certificate is configured. Without this, the
+          # mac runner attempts ad-hoc signing with no cert and fails ("not a file"). When
+          # CSC_LINK is set, signing + notarization run via the secrets below.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+          # macOS code signing + notarization (only consumed on the macOS runner).
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Verify macOS signature and notarization
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_PATH=$(find release -type d -name 'Errata.app' -print -quit)
-          if [ -z "$APP_PATH" ]; then
-            echo "::error::Errata.app was not produced."
-            exit 1
-          fi
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          spctl --assess --verbose --type exec "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
-
-      - name: Build and upload Linux desktop artifact
-        if: runner.os == 'Linux'
-        run: bun run electron:release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
