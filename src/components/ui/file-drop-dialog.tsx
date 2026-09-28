@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { useOptionalTranslation } from '@/lib/i18n'
 import {
   Dialog,
   DialogContent,
@@ -111,7 +112,7 @@ export const FileDropzone = React.forwardRef<HTMLDivElement, FileDropzoneProps>(
       accept,
       multiple = false,
       hint,
-      label = 'Drag a file here, or click to pick one.',
+      label,
       icon,
       disabled = false,
       forceActive = false,
@@ -120,6 +121,8 @@ export const FileDropzone = React.forwardRef<HTMLDivElement, FileDropzoneProps>(
     },
     ref,
   ) {
+    const t = useOptionalTranslation()
+    const resolvedLabel = label ?? t('common.fileDropPrompt')
     const inputRef = React.useRef<HTMLInputElement>(null)
     const [dragOver, setDragOver] = React.useState(false)
     const active = forceActive || dragOver
@@ -247,7 +250,7 @@ export const FileDropzone = React.forwardRef<HTMLDivElement, FileDropzoneProps>(
                   active ? 'text-primary' : 'text-foreground/70 group-hover:text-foreground/80',
                 )}
               >
-                {label}
+                {resolvedLabel}
               </p>
               {hint && (
                 <p className="text-[0.6875rem] text-muted-foreground mt-1.5 text-center">

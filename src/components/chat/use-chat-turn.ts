@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatEvent } from '@/lib/api'
 import { generateRunId } from '@/lib/client-ids'
+import { useOptionalTranslation } from '@/lib/i18n'
 import type { AssistantMessage, ChatMessage } from './ChatMessageParts'
 
 /** How tall the composer grows before it scrolls instead. */
@@ -64,6 +65,7 @@ function applyEvent(message: AssistantMessage, event: ChatEvent): AssistantMessa
  * successful completion. A normal finish commits the rendered reply.
  */
 export function useChatTurn({ start, cancel, onCommit }: UseChatTurnOptions) {
+  const t = useOptionalTranslation()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -128,7 +130,7 @@ export function useChatTurn({ start, cancel, onCommit }: UseChatTurnOptions) {
       }
     } catch (err) {
       if (!controller.signal.aborted) {
-        failure = err instanceof Error ? err.message : 'Chat failed'
+        failure = err instanceof Error ? err.message : t('chat.fallbackFailed')
       }
     } finally {
       if (activeRef.current?.runId === runId) activeRef.current = null
@@ -136,7 +138,7 @@ export function useChatTurn({ start, cancel, onCommit }: UseChatTurnOptions) {
     }
 
     if (!finished && !failure && !controller.signal.aborted) {
-      failure = 'Chat stream ended before reporting completion'
+      failure = t('chat.streamEndedBeforeCompletion')
     }
     setError(failure)
     if (finished && !stopped && !failure) {
@@ -147,7 +149,7 @@ export function useChatTurn({ start, cancel, onCommit }: UseChatTurnOptions) {
       setInput(text)
     }
     textareaRef.current?.focus()
-  }, [input, messages, onCommit, start])
+  }, [input, messages, onCommit, start, t])
 
   const stop = useCallback(() => {
     const active = activeRef.current

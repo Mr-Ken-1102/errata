@@ -30,6 +30,7 @@ function CopyButton({ value }: { value: string }) {
 }
 
 function ConnectionCard({ icon, label, url, qr }: { icon: React.ReactNode; label: string; url: string; qr: string | null }) {
+  const { t } = useLanguage()
   return (
     <div className="space-y-2 rounded-md border border-border/30 bg-card/30 p-3">
       <div className="flex items-center gap-2">
@@ -39,7 +40,7 @@ function ConnectionCard({ icon, label, url, qr }: { icon: React.ReactNode; label
       </div>
       {qr && (
         <div className="flex justify-center pt-1">
-          <img src={qr} alt={`${label} QR code`} className="size-40 rounded-md bg-white p-1.5" />
+          <img src={qr} alt={t('settings.remote.qrCodeAlt').replace('{label}', label)} className="size-40 rounded-md bg-white p-1.5" />
         </div>
       )}
     </div>
@@ -169,7 +170,7 @@ export function SharingPanel() {
             </div>
           )}
           {status?.tunnel.status === 'running' && status.tunnel.url && (
-            <ConnectionCard icon={<Globe className="size-3.5" />} label="Tunnel" url={status.tunnel.url} qr={status.tunnelQr} />
+            <ConnectionCard icon={<Globe className="size-3.5" />} label={t('settings.remote.tunnelLabel')} url={status.tunnel.url} qr={status.tunnelQr} />
           )}
         </div>
 

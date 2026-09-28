@@ -699,13 +699,14 @@ describe('language UI wiring', () => {
     expect(settingsSource).toContain("invalidTitle={`${t('settings.numberInput.enterValueFrom')} 0 ${t('settings.numberInput.to')} 2.`}")
   })
 
-  it('localizes shared help tooltips without coupling settings primitives to language context', () => {
+  it('localizes shared help tooltips without requiring settings primitives to have a language provider', () => {
     const primitiveSource = readFileSync('src/components/settings/primitives.tsx', 'utf8')
     const settingsSource = readFileSync('src/components/sidebar/SettingsPanel.tsx', 'utf8')
 
-    expect(primitiveSource).toContain("helpLabel = 'Learn more'")
     expect(primitiveSource).toContain('helpLabel?: string')
-    expect(primitiveSource).toContain('title={helpLabel}')
+    expect(primitiveSource).toContain('useOptionalTranslation()')
+    expect(primitiveSource).toContain("helpLabel ?? t('common.learnMore')")
+    expect(primitiveSource).toContain('title={resolvedHelpLabel}')
     expect(primitiveSource).not.toContain("useLanguage()")
     expect(settingsSource).toContain("helpLabel={t('common.learnMore')}")
     expect(settingsSource.match(/helpLabel=\{t\('common\.learnMore'\)\}/g)?.length).toBe(6)

@@ -9,6 +9,7 @@ import {
   type StorySetupMessage,
 } from '@/lib/api'
 import { invalidateStoryContent } from '@/lib/branch-cache'
+import { useOptionalTranslation } from '@/lib/i18n'
 import {
   readStorySetupSession,
   storySetupSessionNeedsRefresh,
@@ -76,6 +77,7 @@ export function useStorySetupController({
   active,
 }: UseStorySetupControllerOptions): StorySetupController {
   const queryClient = useQueryClient()
+  const t = useOptionalTranslation()
   const [messages, setMessages] = useState<StorySetupMessage[]>([])
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
@@ -169,11 +171,11 @@ export function useStorySetupController({
         setChecklist(previousChecklist)
         setDraftFragments(previousDraftFragments)
         throw new Error(latestToolError
-          ? `Story setup could not validate its update: ${latestToolError}`
-          : 'Story setup ended before it could validate the checklist. Please retry.')
+          ? t('storySetup.error.validateWithDetail').replace('{error}', latestToolError)
+          : t('storySetup.error.validateChecklist'))
       }
       if (!accumulated.trim()) {
-        throw new Error('Story setup updated the checklist but ended before asking its next question. Please retry.')
+        throw new Error(t('storySetup.error.noNextQuestion'))
       }
       completed = true
       if (accumulated.trim()) {
@@ -187,7 +189,7 @@ export function useStorySetupController({
       if (lifecycle !== lifecycleRef.current) return
       setPaused(true)
       if ((caught as Error).name !== 'AbortError') {
-        setError(caught instanceof Error ? caught.message : 'Errata could not continue the conversation.')
+        setError(caught instanceof Error ? caught.message : t('storySetup.error.continueFailed'))
       }
     } finally {
       if (lifecycle !== lifecycleRef.current) return
@@ -195,10 +197,10 @@ export function useStorySetupController({
       setIsStreaming(false)
       if (abortRef.current === controller) abortRef.current = null
       if (!completed && controller.signal.aborted) {
-        setError(current => current ?? 'Story setup paused.')
+        setError(current => current ?? t('storySetup.error.paused'))
       }
     }
-  }, [queryClient, storyId])
+  }, [queryClient, storyId, t])
 
   // Load once for each story/timeline identity. Content revisions are evaluated
   // when the surface activates, rather than resetting a live conversation every
