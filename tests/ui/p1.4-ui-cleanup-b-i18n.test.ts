@@ -65,6 +65,6 @@ describe('P1.4-B UI localization cleanup', () => {
     expect(sharing).toContain("t('settings.remote.qrCodeAlt').replace('{label}', label)")
     expect(sharing).toContain("label=\"LAN\"")
     expect(sharing).toContain("status?.tunnel.status === 'running'")
-    expect(sharing).toContain("status?.tunnel.status === 'error'")
+    expect(sharing).toContain("status.tunnel.status === 'error'")
   })
 })
