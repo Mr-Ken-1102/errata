@@ -125,17 +125,26 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build and upload desktop artifacts
+      - name: Build and upload unsigned desktop artifacts
+        if: steps.signing.outputs.enabled != '1'
         run: bun run electron:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ERRATA_ENABLE_DESKTOP_SIGNING: ${{ steps.signing.outputs.enabled }}
+          ERRATA_ENABLE_DESKTOP_SIGNING: '0'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-          # Optional Windows signing credentials.
+      - name: Build, sign, and upload desktop artifacts
+        if: steps.signing.outputs.enabled == '1'
+        run: bun run electron:release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ERRATA_ENABLE_DESKTOP_SIGNING: '1'
+
+          # Windows signing credentials (used only on Windows).
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
-          # Optional macOS signing/notarization credentials.
+          # macOS signing/notarization credentials (used only on macOS).
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
