@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - scripts/p2.3-backend-stress-safe.ts
+      - scripts/p2.3-backend-stress-safe.test.ts
       - .github/workflows/p2.3-performance.yml
 
 permissions:
@@ -84,7 +85,8 @@ jobs:
             set +e
             (
               cd "$tree"
-              bun scripts/p2.3-backend-stress-safe.ts                 --prose=2000                 --nonProse=500                 --reanalysisRatio=0.1                 --chapterEvery=50                 --runs=30                 --warmups=5                 --compactType=proseLimit                 --compactValue=10                 --targetOffset=5
+              test -f scripts/p2.3-backend-stress-safe.test.ts
+              bunx vitest run --config vitest.config.ts scripts/p2.3-backend-stress-safe.test.ts --reporter=basic
             ) >"$log" 2>&1
             code=$?
             set -e
