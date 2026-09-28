@@ -77,7 +77,8 @@ describe('desktop release signing policy', () => {
 
     expect(workflow).toContain('Build desktop installers without publishing')
     expect(workflow).toContain('bun run electron:dist')
-    expect(workflow).toContain('Build and upload desktop artifacts')
+    expect(workflow).toContain('Build and upload unsigned desktop artifacts')
+    expect(workflow).toContain('Build, sign, and upload desktop artifacts')
     expect(workflow).toContain('intentionally published unsigned for personal/community distribution')
   })
 })
