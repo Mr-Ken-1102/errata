@@ -6,7 +6,6 @@ on:
     paths:
       - scripts/p2.3-backend-stress-safe.ts
       - tests/performance/p2.3-backend-stress-safe.test.ts
-      - tests/performance/p2.3-backend-stress-safe.test.ts
       - .github/workflows/p2.3-performance.yml
 
 permissions:
@@ -61,6 +60,7 @@ jobs:
           set -euo pipefail
           cp candidate/package.json baseline/package.json
           cp candidate/bun.lock baseline/bun.lock
+          mkdir -p baseline/tests/performance candidate/tests/performance
           cp tests/performance/p2.3-backend-stress-safe.test.ts baseline/tests/performance/p2.3-backend-stress-safe.test.ts
           cp tests/performance/p2.3-backend-stress-safe.test.ts candidate/tests/performance/p2.3-backend-stress-safe.test.ts
           echo "Both source trees will execute with candidate package.json + bun.lock."
