@@ -9,7 +9,7 @@ describe('desktop release signing hardening', () => {
     const unsigned = read('electron-builder.unsigned.yml')
     const release = read('electron-builder.release.yml')
 
-    expect(base).not.toContain('identity: null')
+    expect(base).not.toMatch(/^\s*identity:\s*null\s*$/m)
     expect(unsigned).toContain('extends: electron-builder.yml')
     expect(unsigned).toContain('identity: null')
 
