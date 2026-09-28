@@ -1,0 +1,6 @@
+extends: electron-builder.yml
+
+# PR/local packaging intentionally stays unsigned so contributors and CI can
+# validate installers without access to publisher credentials.
+mac:
+  identity: null
