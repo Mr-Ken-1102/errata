@@ -11,7 +11,7 @@ import {
   BUILTIN_FRAGMENT_TYPES,
   FRAGMENT_TYPE_ICON_OPTIONS,
   FragmentTypeIcon,
-  getFragmentTypeIconLabel,
+  getLocalizedFragmentTypeIconLabel,
   titleFromFragmentType,
 } from '@/components/fragments/fragment-type-icons'
 import { componentId } from '@/lib/dom-ids'
@@ -272,7 +272,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                             aria-label={t('fragmentTypes.iconLabel')}
                           >
                             {FRAGMENT_TYPE_ICON_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
+                              <option key={option.value} value={option.value}>{getLocalizedFragmentTypeIconLabel(option.value, t)}</option>
                             ))}
                           </select>
                         </div>
@@ -287,7 +287,7 @@ export function FragmentTypesPanel({ storyId, story }: FragmentTypesPanelProps) 
                     </div>
 
                     <p className="text-[0.625rem] text-muted-foreground">
-                      {getFragmentTypeIconLabel(def.icon)}
+                      {getLocalizedFragmentTypeIconLabel(def.icon, t)}
                     </p>
                   </div>
                 )}

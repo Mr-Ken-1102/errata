@@ -27,7 +27,7 @@ describe('StoryWizard localization safety', () => {
     expect(source).toContain("item.status !== 'missing'")
     expect(source).toContain('{item.note}')
     expect(source).toContain('{fragment.name}')
-    expect(source).toContain('{fragment.type}')
+    expect(source).toContain('getLocalizedFragmentTypeLabel(fragment.type, t)')
     expect(source).toContain('{fragment.description}')
     expect(source).toContain('{fragment.content}')
   })

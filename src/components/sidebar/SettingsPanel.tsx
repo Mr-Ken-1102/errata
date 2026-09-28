@@ -22,7 +22,7 @@ import {
   BUILTIN_FRAGMENT_TYPES,
   compareFragmentTypeVisuals,
   FragmentTypeDisplayIcon,
-  getFragmentTypeVisual,
+  getLocalizedFragmentTypeVisual,
 } from '@/components/fragments/fragment-type-icons'
 import {
   SettingsSection,
@@ -119,16 +119,17 @@ function MentionTypePicker({
   enabledTypes: string[]
   onChange: (types: string[]) => void
 }) {
+  const { t } = useLanguage()
   const customTypes = story.settings.customFragmentTypes ?? []
   const options = useMemo(() => {
     const visuals = [
-      ...BASE_MENTION_TYPES.map((type) => getFragmentTypeVisual(type, customTypes)),
+      ...BASE_MENTION_TYPES.map((type) => getLocalizedFragmentTypeVisual(type, customTypes, t)),
       ...customTypes
         .filter((def) => !BUILTIN_FRAGMENT_TYPES.has(def.type))
-        .map((def) => getFragmentTypeVisual(def.type, customTypes)),
+        .map((def) => getLocalizedFragmentTypeVisual(def.type, customTypes, t)),
     ]
     return visuals.sort(compareFragmentTypeVisuals)
-  }, [customTypes])
+  }, [customTypes, t])
   const enabled = new Set(enabledTypes)
 
   const toggleType = (type: string) => {

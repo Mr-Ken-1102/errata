@@ -164,7 +164,7 @@ describe('FragmentList localization', () => {
     expect(source).toContain("e.dataTransfer.setData('application/x-errata-folder-id', folderId)")
     expect(source).toContain('{fragment.name}')
     expect(source).toContain('{fragment.id}')
-    expect(source).toContain('{fragment.type}')
+    expect(source).toContain('getLocalizedFragmentTypeLabel(fragment.type, t)')
     expect(source).toContain('{folder.name}')
     expect(source).toContain('              sys')
   })

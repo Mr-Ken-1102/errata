@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { GripVertical, Monitor, User } from 'lucide-react'
 import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
-import { BUILTIN_FRAGMENT_TYPES } from '@/components/fragments/fragment-type-icons'
+import { BUILTIN_FRAGMENT_TYPES, getLocalizedFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
 import { q, useActiveBranchId } from '@/lib/query-keys'
 import { useLanguage } from '@/lib/i18n'
 
@@ -167,7 +167,7 @@ export function ContextOrderPanel({ storyId, story }: ContextOrderPanelProps) {
                       typeBadgeColor[fragment.type] ?? 'bg-muted/40 text-muted-foreground border-border/50',
                     )}
                   >
-                    {fragment.type}
+                    {getLocalizedFragmentTypeVisual(fragment.type, story.settings.customFragmentTypes ?? [], t).singularLabel}
                   </Badge>
                   {fragment.placement === 'system' && (
                     <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1 text-muted-foreground bg-muted/30 border-transparent">

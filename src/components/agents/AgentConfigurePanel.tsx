@@ -101,11 +101,11 @@ function BlurSaveTextarea({
   )
 }
 
-const CONTENT_MODES = [
-  { value: null, label: 'None' },
-  { value: 'prepend' as const, label: 'Prepend' },
-  { value: 'append' as const, label: 'Append' },
-  { value: 'override' as const, label: 'Replace' },
+const CONTENT_MODES: Array<{ value: 'override' | 'prepend' | 'append' | null; labelKey: TranslationKey }> = [
+  { value: null, labelKey: 'agentsPanel.none' },
+  { value: 'prepend', labelKey: 'agentsPanel.prepend' },
+  { value: 'append', labelKey: 'agentsPanel.append' },
+  { value: 'override', labelKey: 'agentsPanel.replace' },
 ]
 
 /** Hierarchical agent groups in display order */
@@ -173,6 +173,35 @@ function groupAgents(agents: AgentBlockInfo[]): { labelKey: TranslationKey; agen
   }
 
   return groups
+}
+
+const MODEL_ROLE_LABEL_KEYS: Record<string, TranslationKey> = {
+  generation: 'agentsPanel.group.generation',
+  directions: 'agentsPanel.group.directions',
+  librarian: 'agentsPanel.group.librarian',
+  'character-chat': 'agentsPanel.group.character',
+  'story-setup': 'agentsPanel.agent.storySetup.name',
+}
+
+function getLocalizedRoleSource(
+  source: string,
+  t: (key: TranslationKey) => string,
+): string {
+  const key = MODEL_ROLE_LABEL_KEYS[source]
+  return key ? t(key) : source
+}
+
+function getLocalizedInheritLabel(
+  rawLabel: string,
+  roles: Array<{ key: string; label: string }>,
+  t: (key: TranslationKey) => string,
+): string {
+  let label = rawLabel.replace(/^Inherit/, t('agentsPanel.inherit'))
+  for (const role of roles) {
+    const key = MODEL_ROLE_LABEL_KEYS[role.key]
+    if (key) label = label.replace(`· ${role.label}`, `· ${t(key)}`)
+  }
+  return label
 }
 
 function getAgentDisplay(
@@ -522,9 +551,9 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      setTransferError(error instanceof Error ? error.message : 'Could not export agent configuration')
+      setTransferError(error instanceof Error ? error.message : t('agentsPanel.exportError'))
     }
-  }, [storyId, agentName])
+  }, [storyId, agentName, t])
 
   const importFile = useCallback(async (file: File) => {
     setTransferError(null)
@@ -535,12 +564,12 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
         ? (json as { config: unknown }).config
         : json
       const parsed = AgentBlockConfigSchema.safeParse(candidate)
-      if (!parsed.success) throw new Error('This file is not a valid agent configuration')
+      if (!parsed.success) throw new Error(t('agentsPanel.invalidConfig'))
       setPendingImportConfig(parsed.data)
     } catch (error) {
-      setTransferError(error instanceof Error ? error.message : 'Could not read agent configuration')
+      setTransferError(error instanceof Error ? error.message : t('agentsPanel.readImportError'))
     }
-  }, [])
+  }, [t])
 
   const confirmImport = useCallback(async () => {
     if (!pendingImportConfig) return
@@ -550,9 +579,9 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
       queryClient.invalidateQueries({ queryKey: ['agent-blocks', storyId, agentName] })
       setPendingImportConfig(null)
     } catch (error) {
-      setTransferError(error instanceof Error ? error.message : 'Could not import agent configuration')
+      setTransferError(error instanceof Error ? error.message : t('agentsPanel.importError'))
     }
-  }, [pendingImportConfig, storyId, agentName, queryClient])
+  }, [pendingImportConfig, storyId, agentName, queryClient, t])
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -581,7 +610,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
   if (!data) {
     return (
       <div className="flex items-center justify-center py-24">
-        <EmptyState title="Could not load agent blocks" />
+        <EmptyState title={t('agentsPanel.loadError')} />
       </div>
     )
   }
@@ -608,7 +637,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
             variant="ghost"
             className="size-7 p-0"
             onClick={handleExport}
-            title="Export config"
+            title={t('agentsPanel.exportConfig')}
           >
             <Upload className="size-3.5" />
           </Button>
@@ -617,7 +646,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
             variant="ghost"
             className="size-7 p-0"
             onClick={() => fileInputRef.current?.click()}
-            title="Import config"
+            title={t('agentsPanel.importConfig')}
           >
             <Download className="size-3.5" />
           </Button>
@@ -635,7 +664,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
             onClick={() => setShowPreview(true)}
           >
             <Eye className="size-3" />
-            Preview
+            {t('agentsPanel.preview')}
           </Button>
         </div>
       </div>
@@ -680,7 +709,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
             return (
               <div className="rounded-lg border border-border/30 divide-y divide-border/20">
                 <div className="flex items-center justify-between gap-3 px-3 py-2">
-                  <p className="text-[0.75rem] font-medium text-foreground/80 shrink-0">Provider</p>
+                  <p className="text-[0.75rem] font-medium text-foreground/80 shrink-0">{t('agentsPanel.provider')}</p>
                   <div className="min-w-0 flex-1 max-w-[160px]">
                     <ProviderSelect
                       value={directProviderId}
@@ -692,12 +721,18 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                         })
                       }}
                       disabled={modelOverrideMutation.isPending}
-                      inheritLabel={isGeneration ? undefined : getInheritLabel(overrideKey, roles, story.settings, globalConfig ?? null)}
+                      inheritLabel={isGeneration
+                        ? undefined
+                        : getLocalizedInheritLabel(
+                            getInheritLabel(overrideKey, roles, story.settings, globalConfig ?? null),
+                            roles,
+                            t,
+                          )}
                     />
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-3 px-3 py-2">
-                  <p className="text-[0.75rem] font-medium text-foreground/80 shrink-0">Model</p>
+                  <p className="text-[0.75rem] font-medium text-foreground/80 shrink-0">{t('agentsPanel.model')}</p>
                   <div className="min-w-0 flex-1 max-w-[160px]">
                     <ModelSelect
                       providerId={effectiveProviderId}
@@ -716,16 +751,16 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                         })
                       }}
                       disabled={modelOverrideMutation.isPending}
-                      defaultLabel={isGeneration ? 'Default' : 'Inherit'}
+                      defaultLabel={isGeneration ? t('agentsPanel.default') : t('agentsPanel.inherit')}
                     />
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-3 px-3 py-2">
                   <div className="shrink-0">
-                    <p className="text-[0.75rem] font-medium text-foreground/80">Temp</p>
+                    <p className="text-[0.75rem] font-medium text-foreground/80">{t('agentsPanel.temperature')}</p>
                     {inherited && directTemp == null && (
                       <p className="text-[0.5625rem] text-muted-foreground/60 leading-tight">
-                        {inherited.value} via {inherited.source}
+                        {inherited.value} {t('agentsPanel.via')} {getLocalizedRoleSource(inherited.source, t)}
                       </p>
                     )}
                   </div>
@@ -737,7 +772,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                     onCommit={(value) => updateSampling('temperature', value)}
                     disabled={modelOverrideMutation.isPending}
                     placeholder={inherited ? `${inherited.value}` : '—'}
-                    title="Temperature (0–2). Leave empty to inherit."
+                    title={t('agentsPanel.temperatureTooltip')}
                     className="w-[72px]"
                   />
                 </div>
@@ -746,7 +781,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                     <p className="text-[0.75rem] font-medium text-foreground/80">Top P</p>
                     {inheritedTopP && directTopP == null && (
                       <p className="text-[0.5625rem] text-muted-foreground/60 leading-tight">
-                        {inheritedTopP.value} via {inheritedTopP.source}
+                        {inheritedTopP.value} {t('agentsPanel.via')} {getLocalizedRoleSource(inheritedTopP.source, t)}
                       </p>
                     )}
                   </div>
@@ -758,7 +793,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                     onCommit={(value) => updateSampling('topP', value)}
                     disabled={modelOverrideMutation.isPending}
                     placeholder={inheritedTopP ? `${inheritedTopP.value}` : '—'}
-                    title="Nucleus sampling (0–1). Leave empty to inherit or use the model default."
+                    title={t('agentsPanel.topPTooltip')}
                     className="w-[72px]"
                   />
                 </div>
@@ -767,7 +802,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                     <p className="text-[0.75rem] font-medium text-foreground/80">Top K</p>
                     {inheritedTopK && directTopK == null && (
                       <p className="text-[0.5625rem] text-muted-foreground/60 leading-tight">
-                        {inheritedTopK.value} via {inheritedTopK.source}
+                        {inheritedTopK.value} {t('agentsPanel.via')} {getLocalizedRoleSource(inheritedTopK.source, t)}
                       </p>
                     )}
                   </div>
@@ -780,7 +815,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                     onCommit={(value) => updateSampling('topK', value)}
                     disabled={modelOverrideMutation.isPending}
                     placeholder={inheritedTopK ? `${inheritedTopK.value}` : '—'}
-                    title="Top-k sampling (1–1000). Leave empty to inherit or use the model default."
+                    title={t('agentsPanel.topKTooltip')}
                     className="w-[72px]"
                   />
                 </div>
@@ -792,8 +827,8 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
           {agentName === 'librarian.analyze' && (
             <div className="rounded-lg border border-border/30 px-3 py-2.5 flex items-center justify-between">
               <div>
-                <p className="text-[0.75rem] font-medium text-foreground/80">Disable post-generation analysis</p>
-                <p className="text-[0.5625rem] text-muted-foreground leading-snug mt-0.5">Prevent the librarian from running automatically after prose is generated</p>
+                <p className="text-[0.75rem] font-medium text-foreground/80">{t('agentsPanel.disablePostAnalysis')}</p>
+                <p className="text-[0.5625rem] text-muted-foreground leading-snug mt-0.5">{t('agentsPanel.disablePostAnalysisDescription')}</p>
               </div>
               <button
                 className={cn(
@@ -817,7 +852,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                 onClick={() => setShowTools(!showTools)}
               >
                 <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                  Tools
+                  {t('agentsPanel.tools')}
                 </span>
                 <span className="text-[0.5625rem] text-muted-foreground/50 font-medium">
                   {availableTools.length - disabledTools.size}/{availableTools.length}
@@ -870,7 +905,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
               onClick={() => setShowBlocks(!showBlocks)}
             >
               <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                Prompt blocks
+                {t('agentsPanel.promptBlocks')}
               </span>
               <span className="text-[0.5625rem] text-muted-foreground/50 font-medium">
                 {mergedBlocks.length}
@@ -896,7 +931,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                         <div className={cn("flex items-center gap-2 px-1", index > 0 && "mt-3 mb-1.5", index === 0 && "mb-1.5")}>
                           <div className="size-1 rounded-full bg-muted-foreground/50" />
                           <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                            {block.role} messages
+                            {block.role === 'system' ? t('agentsPanel.systemMessages') : t('agentsPanel.userMessages')}
                           </span>
                           <div className="flex-1 h-px bg-border/20" />
                         </div>
@@ -972,7 +1007,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                               e.stopPropagation()
                               handleToggleEnabled(block.id, block.enabled)
                             }}
-                            title={block.enabled ? 'Disable block' : 'Enable block'}
+                            title={block.enabled ? t('agentsPanel.disableBlock') : t('agentsPanel.enableBlock')}
                           >
                             {block.enabled && <Check className="size-2.5" strokeWidth={3} />}
                           </button>
@@ -999,7 +1034,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                                         : 'text-muted-foreground bg-muted/20',
                                     )}
                                   >
-                                    {isScript ? 'JavaScript' : 'Plain text'}
+                                    {isScript ? 'JavaScript' : t('agentsPanel.plainText')}
                                   </Badge>
                                 </div>
 
@@ -1032,7 +1067,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                                     }}
                                     className="text-xs min-h-[80px] resize-y border-border/30 focus:border-border/60"
                                     rows={4}
-                                    placeholder="Block content..."
+                                    placeholder={t('agentsPanel.blockContent')}
                                   />
                                 )}
 
@@ -1044,7 +1079,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                                     onClick={() => deleteCustomMutation.mutate(block.id)}
                                   >
                                     <Trash2 className="size-3" />
-                                    Delete
+                                    {t('agentsPanel.delete')}
                                   </Button>
                                 </div>
                               </>
@@ -1052,7 +1087,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                               <>
                                 <div className="pt-2">
                                   <h4 className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-1.5">
-                                    Original Content
+                                    {t('agentsPanel.originalContent')}
                                   </h4>
                                   <pre className="whitespace-pre-wrap text-[0.6875rem] text-muted-foreground bg-muted/15 rounded-md p-3 max-h-[120px] overflow-y-auto border border-border/15 leading-relaxed">
                                     {block.contentPreview}{block.contentPreview.length >= 200 ? '...' : ''}
@@ -1061,14 +1096,14 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
 
                                 <div>
                                   <h4 className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-1.5">
-                                    Modify
+                                    {t('agentsPanel.modify')}
                                   </h4>
                                   <div className="flex rounded-lg bg-muted/25 p-[3px] gap-[3px]">
-                                    {CONTENT_MODES.map(({ value: mode, label }) => {
+                                    {CONTENT_MODES.map(({ value: mode, labelKey }) => {
                                       const isActive = (block.override?.contentMode ?? null) === mode
                                       return (
                                         <button
-                                          key={label}
+                                          key={labelKey}
                                           className={cn(
                                             'flex-1 px-1 py-[5px] rounded-md text-[0.625rem] font-medium transition-all duration-150',
                                             isActive
@@ -1077,7 +1112,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                                           )}
                                           onClick={() => handleContentModeChange(block.id, mode)}
                                         >
-                                          {label}
+                                          {t(labelKey)}
                                         </button>
                                       )
                                     })}
@@ -1088,7 +1123,13 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                                   <BlurSaveTextarea
                                     value={block.override?.customContent ?? ''}
                                     onSave={(val) => handleCustomContentChange(block.id, val)}
-                                    placeholder={`Content to ${block.override.contentMode}...`}
+                                    placeholder={t(
+                                      block.override.contentMode === 'prepend'
+                                        ? 'agentsPanel.contentToPrepend'
+                                        : block.override.contentMode === 'append'
+                                          ? 'agentsPanel.contentToAppend'
+                                          : 'agentsPanel.contentToReplace',
+                                    )}
                                     className="font-mono text-xs min-h-[60px] resize-y border-border/30 focus:border-border/60 bg-muted/10"
                                     rows={3}
                                   />
@@ -1108,7 +1149,7 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
                   onClick={() => setShowCreateDialog(true)}
                 >
                   <Plus className="size-3.5 transition-transform duration-200 group-hover:scale-110" />
-                  <span className="font-medium">Add Context Block</span>
+                  <span className="font-medium">{t('agentsPanel.addContextBlock')}</span>
                 </button>
               </div>
             )}
@@ -1126,10 +1167,10 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
         <DialogContent className="sm:max-w-[900px] max-h-[80vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-5 pt-5 pb-3">
             <DialogTitle className="font-display text-lg flex items-center gap-2.5">
-              {agent?.displayName ?? agentName} — Context Preview
+              {agentDisplay?.name ?? agentName} — {t('agentsPanel.contextPreview')}
               {previewData && (
                 <Badge variant="outline" className="text-[0.625rem] font-normal text-muted-foreground">
-                  {previewData.blockCount} {previewData.blockCount === 1 ? 'block' : 'blocks'}
+                  {previewData.blockCount} {previewData.blockCount === 1 ? t('agentsPanel.block') : t('agentsPanel.blocks')}
                 </Badge>
               )}
             </DialogTitle>
@@ -1137,11 +1178,11 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
 
           {previewLoading ? (
             <div className="flex items-center justify-center py-20">
-              <Spinner label="Compiling context" />
+              <Spinner label={t('agentsPanel.compilingContext')} />
             </div>
           ) : previewData && previewData.messages.length === 0 && previewData.tools.length === 0 ? (
             <div className="flex items-center justify-center py-20">
-              <EmptyState title="No messages in context" />
+              <EmptyState title={t('agentsPanel.noMessagesContext')} />
             </div>
           ) : previewData ? (
             <BlockContentView
@@ -1157,14 +1198,14 @@ function AgentBlockEditor({ storyId, agentName, agents, onBack }: AgentBlockEdit
       <Dialog open={!!pendingImportConfig} onOpenChange={(open) => { if (!open) setPendingImportConfig(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import Agent Config</DialogTitle>
+            <DialogTitle>{t('agentsPanel.importAgentConfig')}</DialogTitle>
             <DialogDescription>
-              Replace the <span className="font-medium text-foreground">{agent?.displayName ?? agentName}</span> context configuration? This will overwrite custom blocks, overrides, and tool settings.
+              {t('agentsPanel.importConfirm').replace('{agent}', agentDisplay?.name ?? agentName)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingImportConfig(null)}>Cancel</Button>
-            <Button onClick={confirmImport}>Import</Button>
+            <Button variant="outline" onClick={() => setPendingImportConfig(null)}>{t('agentsPanel.cancel')}</Button>
+            <Button onClick={confirmImport}>{t('agentsPanel.import')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

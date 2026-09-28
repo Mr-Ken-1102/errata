@@ -11,6 +11,7 @@ import { componentId } from '@/lib/dom-ids'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { q, useActiveBranchId } from '@/lib/query-keys'
 import { useLanguage } from '@/lib/i18n'
+import { getLocalizedFragmentTypeLabel } from '@/components/fragments/fragment-type-icons'
 
 interface ArchivePanelProps {
   storyId: string
@@ -98,7 +99,7 @@ export function ArchivePanel({ storyId, onSelect }: ArchivePanelProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{fragment.name}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <Badge variant="secondary" className="text-[0.625rem] h-4">{fragment.type}</Badge>
+                  <Badge variant="secondary" className="text-[0.625rem] h-4">{getLocalizedFragmentTypeLabel(fragment.type, t)}</Badge>
                   <span className="text-[0.625rem] font-mono text-muted-foreground">{fragment.id}</span>
                 </div>
               </div>

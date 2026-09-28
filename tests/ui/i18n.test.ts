@@ -759,7 +759,7 @@ describe('language UI wiring', () => {
     expect(archiveSource).toContain("f.id.toLowerCase().includes(q)")
     expect(archiveSource).toContain("f.type.toLowerCase().includes(q)")
     expect(archiveSource).toContain('{fragment.name}')
-    expect(archiveSource).toContain('{fragment.type}')
+    expect(archiveSource).toContain('getLocalizedFragmentTypeLabel(fragment.type, t)')
     expect(archiveSource).toContain('{fragment.id}')
     expect(archiveSource).toContain("e.key === 'Enter' || e.key === ' '")
     expect(archiveSource).toContain('onSelect(fragment)')
@@ -811,8 +811,8 @@ describe('language UI wiring', () => {
     expect(fragmentTypesSource).toContain("checked={def.showInSidebar}")
     expect(fragmentTypesSource).toContain('placeholder="location"')
     expect(fragmentTypesSource).toContain("option.value")
-    expect(fragmentTypesSource).toContain("option.label")
-    expect(fragmentTypesSource).toContain("getFragmentTypeIconLabel(def.icon)")
+    expect(fragmentTypesSource).toContain("getLocalizedFragmentTypeIconLabel(option.value, t)")
+    expect(fragmentTypesSource).toContain("getLocalizedFragmentTypeIconLabel(def.icon, t)")
   })
 
   it('localizes story-info edit and action chrome without changing story update data, cover file handling, or action callbacks', () => {

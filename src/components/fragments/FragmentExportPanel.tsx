@@ -30,7 +30,7 @@ import {
   UploadCloud,
   BookmarkPlus,
 } from 'lucide-react'
-import { FragmentTypeDisplayIcon, getFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
+import { FragmentTypeDisplayIcon, getLocalizedFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
 import { useLanguage } from '@/lib/i18n'
 
 interface FragmentExportPanelProps {
@@ -222,7 +222,7 @@ export function FragmentExportPanel({ storyId, storyName, onClose }: FragmentExp
 
       <PanelBody className="px-6 py-4 gap-6">
           {Object.entries(grouped).map(([type, fragments]) => {
-            const visual = getFragmentTypeVisual(type)
+            const visual = getLocalizedFragmentTypeVisual(type, undefined, t)
             const groupAllSelected = fragments.every((f) => selected.has(f.id))
             const groupSomeSelected = fragments.some((f) => selected.has(f.id))
 

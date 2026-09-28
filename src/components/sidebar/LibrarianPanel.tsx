@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import { diffRows } from '@/lib/diff'
 import { toolResultOutcome } from '@/lib/librarian-outcome'
 import { continuityKeyLabel } from '@/lib/continuity-keys'
-import { translate, useLanguage, type AppLanguage } from '@/lib/i18n'
+import { translate, useLanguage, type AppLanguage, type TranslationKey } from '@/lib/i18n'
 import { DiffRowsView } from '@/components/DiffRowsView'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -50,7 +50,7 @@ import { LibrarianChat } from '@/components/librarian/LibrarianChat'
 import {
   compareFragmentTypeVisuals,
   FragmentTypeDisplayIcon,
-  getFragmentTypeVisual,
+  getLocalizedFragmentTypeVisual,
   inferFragmentTypeFromId,
   type FragmentTypeVisual,
 } from '@/components/fragments/fragment-type-icons'
@@ -350,6 +350,7 @@ function buildMentionGroups(
   entries: MentionEntry[],
   fragmentById: Map<string, Fragment>,
   customTypeByType: Map<string, CustomFragmentType>,
+  t: (key: TranslationKey) => string,
 ): MentionGroup[] {
   const groups = new Map<string, MentionGroup>()
   for (const entry of entries) {
@@ -357,7 +358,7 @@ function buildMentionGroups(
     const type = fragmentById.get(fragmentId)?.type ?? inferFragmentTypeFromId(fragmentId) ?? 'custom'
     const group = groups.get(type) ?? {
       type,
-      visual: getFragmentTypeVisual(type, customTypeByType),
+      visual: getLocalizedFragmentTypeVisual(type, customTypeByType, t),
       entries: [],
     }
     group.entries.push(entry)
@@ -538,6 +539,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
               Object.entries(status.recentMentions ?? {}),
               fragmentById,
               customTypeByType,
+              t,
             )
 
             return (
@@ -922,8 +924,9 @@ function AnalysisItem({
         .map((fragmentId) => [fragmentId, []] as MentionEntry),
       fragmentById,
       customTypeByType,
+      t,
     ),
-    [analysis?.mentions, fragmentById, customTypeByType],
+    [analysis?.mentions, fragmentById, customTypeByType, t],
   )
 
   return (

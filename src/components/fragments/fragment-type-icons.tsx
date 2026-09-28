@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { CustomFragmentType } from '@/lib/api'
+import type { TranslationKey } from '@/lib/i18n'
 
 export const BUILTIN_FRAGMENT_TYPES = new Set([
   'prose',
@@ -45,6 +46,33 @@ export interface FragmentTypeVisual {
   icon: string
   order: number
   isBuiltin: boolean
+}
+
+const BUILTIN_FRAGMENT_TYPE_I18N: Record<string, { label: TranslationKey; singularLabel: TranslationKey }> = {
+  prose: { label: 'fragmentTypes.builtin.prose', singularLabel: 'fragmentTypes.builtin.prose' },
+  guideline: { label: 'fragmentTypes.builtin.guidelines', singularLabel: 'fragmentTypes.builtin.guideline' },
+  character: { label: 'fragmentTypes.builtin.characters', singularLabel: 'fragmentTypes.builtin.character' },
+  knowledge: { label: 'fragmentTypes.builtin.knowledge', singularLabel: 'fragmentTypes.builtin.knowledge' },
+  image: { label: 'fragmentTypes.builtin.images', singularLabel: 'fragmentTypes.builtin.image' },
+  icon: { label: 'fragmentTypes.builtin.icons', singularLabel: 'fragmentTypes.builtin.icon' },
+  marker: { label: 'fragmentTypes.builtin.markers', singularLabel: 'fragmentTypes.builtin.marker' },
+  summary: { label: 'fragmentTypes.builtin.summaries', singularLabel: 'fragmentTypes.builtin.summary' },
+}
+
+const ICON_LABEL_KEYS: Record<string, TranslationKey> = {
+  Hash: 'fragmentTypes.icon.hash',
+  FileText: 'fragmentTypes.icon.document',
+  BookOpen: 'fragmentTypes.icon.book',
+  BookMarked: 'fragmentTypes.icon.markedBook',
+  NotebookText: 'fragmentTypes.icon.notebook',
+  ScrollText: 'fragmentTypes.icon.scroll',
+  Database: 'fragmentTypes.icon.database',
+  Users: 'fragmentTypes.icon.people',
+  MapPin: 'fragmentTypes.icon.mapPin',
+  Landmark: 'fragmentTypes.icon.landmark',
+  Boxes: 'fragmentTypes.icon.boxes',
+  Image: 'fragmentTypes.icon.image',
+  Sparkles: 'fragmentTypes.icon.sparkles',
 }
 
 const BUILTIN_FRAGMENT_TYPE_VISUALS: Record<string, FragmentTypeVisual> = {
@@ -150,12 +178,43 @@ export function getFragmentTypeVisual(
   }
 }
 
+export function getLocalizedFragmentTypeVisual(
+  type: string,
+  customTypes: CustomFragmentType[] | Map<string, CustomFragmentType> | undefined,
+  t: (key: TranslationKey) => string,
+): FragmentTypeVisual {
+  const visual = getFragmentTypeVisual(type, customTypes)
+  const keys = BUILTIN_FRAGMENT_TYPE_I18N[type]
+  if (!keys) return visual
+  return {
+    ...visual,
+    label: t(keys.label),
+    singularLabel: t(keys.singularLabel),
+  }
+}
+
+export function getLocalizedFragmentTypeLabel(
+  type: string,
+  t: (key: TranslationKey) => string,
+): string {
+  const keys = BUILTIN_FRAGMENT_TYPE_I18N[type]
+  return keys ? t(keys.singularLabel) : type
+}
+
 export function compareFragmentTypeVisuals(a: FragmentTypeVisual, b: FragmentTypeVisual): number {
   return a.order - b.order || a.label.localeCompare(b.label)
 }
 
 export function getFragmentTypeIconLabel(icon?: string) {
   return FRAGMENT_TYPE_ICON_OPTIONS.find((option) => option.value === icon)?.label ?? 'Hash'
+}
+
+export function getLocalizedFragmentTypeIconLabel(
+  icon: string | undefined,
+  t: (key: TranslationKey) => string,
+): string {
+  const key = ICON_LABEL_KEYS[icon ?? 'Hash']
+  return key ? t(key) : getFragmentTypeIconLabel(icon)
 }
 
 export function FragmentTypeIcon({ icon, className }: { icon?: string; className?: string }) {
