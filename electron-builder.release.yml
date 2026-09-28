@@ -1,0 +1,10 @@
+extends: electron-builder.yml
+
+# Publication must fail closed if Windows code signing is unavailable.
+win:
+  forceCodeSigning: true
+
+# macOS publication must be signed and notarized. Credentials are supplied only
+# through CI secrets; no certificate or password belongs in the repository.
+mac:
+  notarize: true
