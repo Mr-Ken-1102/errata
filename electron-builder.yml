@@ -35,12 +35,9 @@ nsis:
   include: build/installer.nsh
 
 mac:
-  # No Apple Developer cert is configured yet, so skip code signing entirely (identity: null).
-  # An ad-hoc/empty-password signing attempt fails on CI ("not a file"). To enable signing +
-  # notarization later, remove `identity: null` and provide the CSC_* / APPLE_* secrets; the
-  # build will then honor CSC_IDENTITY_AUTO_DISCOVERY. Unsigned macOS builds run only after the
-  # user clears Gatekeeper quarantine, and their auto-update stays inert.
-  identity: null
+  # Signing policy is layered by build mode:
+  # - electron-builder.unsigned.yml sets identity: null for PR/local dry-runs.
+  # - electron-builder.release.yml requires real signing/notarization for publication.
   # zip is required alongside dmg for electron-updater on macOS.
   target:
     - dmg
