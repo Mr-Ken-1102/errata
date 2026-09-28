@@ -87,7 +87,7 @@ jobs:
             (
               cd "$tree"
               test -f tests/performance/p2.3-backend-stress-safe.test.ts
-              bunx vitest run --config vitest.config.ts tests/performance/p2.3-backend-stress-safe.test.ts --reporter=basic
+              P2_3_REPORT_PATH="$RESULT_DIR/$tree-$trial.json" bunx vitest run --config vitest.config.ts tests/performance/p2.3-backend-stress-safe.test.ts --reporter=basic
             ) >"$log" 2>&1
             code=$?
             set -e
@@ -119,13 +119,10 @@ jobs:
           root = pathlib.Path(sys.argv[1])
 
           def load(path):
-              text = path.read_text(encoding="utf-8", errors="replace")
-              start = text.index("JSON_REPORT_START") + len("JSON_REPORT_START")
-              end = text.index("JSON_REPORT_END", start)
-              return json.loads(text[start:end].strip())
+              return json.loads(path.read_text(encoding="utf-8"))
 
           reports = {
-              side: [load(root / f"{side}-{i}.log") for i in (1, 2, 3)]
+              side: [load(root / f"{side}-{i}.json") for i in (1, 2, 3)]
               for side in ("baseline", "candidate")
           }
 
