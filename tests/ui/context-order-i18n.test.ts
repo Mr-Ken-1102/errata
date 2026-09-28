@@ -18,7 +18,7 @@ describe('ContextOrderPanel localization', () => {
     expect(source).toContain('settingsMutation.mutate({ fragmentOrder: newOrder })')
     expect(source).toContain('{fragment.name}')
     expect(source).toContain('{fragment.id}')
-    expect(source).toContain('{fragment.type}')
+    expect(source).toContain('getLocalizedFragmentTypeVisual(fragment.type, story.settings.customFragmentTypes ?? [], t).singularLabel')
     expect(source).toContain('\n                      sys\n')
   })
 })

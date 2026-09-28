@@ -759,7 +759,7 @@ describe('language UI wiring', () => {
     expect(archiveSource).toContain("f.id.toLowerCase().includes(q)")
     expect(archiveSource).toContain("f.type.toLowerCase().includes(q)")
     expect(archiveSource).toContain('{fragment.name}')
-    expect(archiveSource).toContain('{fragment.type}')
+    expect(archiveSource).toContain('getLocalizedFragmentTypeLabel(fragment.type, t)')
     expect(archiveSource).toContain('{fragment.id}')
     expect(archiveSource).toContain("e.key === 'Enter' || e.key === ' '")
     expect(archiveSource).toContain('onSelect(fragment)')
