@@ -95,7 +95,12 @@ await mkdir('build', { recursive: true })
 await cp('public/ErrataLogo.png', 'build/icon.png')
 
 // 5. electron-builder
-const builderArgs = ['electron-builder', '--config', 'electron-builder.yml']
+// Packaging without publication is explicitly unsigned so PR/local validation never needs
+// publisher credentials. Publication uses the fail-closed release config instead.
+const builderConfig =
+  publishMode === 'never' ? 'electron-builder.unsigned.yml' : 'electron-builder.release.yml'
+const builderArgs = ['electron-builder', '--config', builderConfig]
+console.log(`Electron builder config: ${builderConfig}`)
 if (platformFlag) builderArgs.push(platformFlag)
 if (dirOnly) {
   builderArgs.push('--dir')
