@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { ThemeProvider } from '@/lib/theme'
+import { LanguageProvider } from '@/lib/i18n'
 import { HelpProvider } from '@/hooks/use-help'
 import { HelpPanel } from '@/components/help/HelpPanel'
 import { TtsPlayerBar } from '@/components/tts/TtsPlayerBar'
@@ -45,10 +46,11 @@ export const Route = createRootRoute({
 })
 
 const themeScript = `(function(){var t=localStorage.getItem('errata-theme');var r=document.documentElement;r.classList.toggle('dark',t==='dark');r.classList.toggle('high-contrast',t==='high-contrast')})()`;
-const fontScript = `(function(){var f=localStorage.getItem('errata-fonts');if(!f)return;try{var p=JSON.parse(f),s=document.documentElement.style,fb={display:', Georgia, serif',prose:', Georgia, serif',sans:', -apple-system, BlinkMacSystemFont, sans-serif',mono:', "Fira Code", Menlo, monospace'};for(var k in p){if(p[k]&&fb[k])s.setProperty('--font-'+k,'"'+p[k]+'"'+fb[k])}}catch(e){}})()`;
+const languageScript = `(function(){try{var l=localStorage.getItem('errata-language');document.documentElement.lang=l==='vi'?'vi':'en'}catch(e){document.documentElement.lang='en'}})()`;
+const fontScript = `(function(){try{var defaults={display:'Comfortaa',prose:'Newsreader',sans:'Comfortaa',mono:'JetBrains Mono'};var raw=localStorage.getItem('errata-fonts');var p=raw?JSON.parse(raw):{};var s=document.documentElement.style;var fb={display:', -apple-system, BlinkMacSystemFont, sans-serif',prose:', Georgia, serif',sans:', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',mono:', "Fira Code", Menlo, monospace'};for(var k in defaults){var n=p[k]||defaults[k];if(p[k]&&fb[k])s.setProperty('--font-'+k,'"'+p[k]+'"'+fb[k]);var w=n==='Comfortaa'?(k==='display'?600:(k==='sans'||k==='prose'?500:400)):400;s.setProperty('--font-'+k+'-weight',String(w))}}catch(e){}})()`;
 
 const fontLoaderScript = `(function(){
-var defaults={display:'Instrument Serif',prose:'Newsreader',sans:'Outfit',mono:'JetBrains Mono'};
+var defaults={display:'Comfortaa',prose:'Newsreader',sans:'Comfortaa',mono:'JetBrains Mono'};
 var specs={
 'Instrument Serif':'ital@0;1',
 'Playfair Display':'ital,wght@0,400..900;1,400..900',
@@ -60,6 +62,8 @@ var specs={
 'Outfit':'wght@300..700',
 'DM Sans':'wght@300..700',
 'Plus Jakarta Sans':'wght@300..700',
+'Inter':'wght@300..700',
+'Comfortaa':'wght@300..700',
 'Lexend':'wght@300..700',
 'Atkinson Hyperlegible Next':'ital,wght@0,400..700;1,400..700',
 'Atkinson Hyperlegible Mono':'ital,wght@0,400..700;1,400..700',
@@ -86,12 +90,13 @@ window.__errata_loaded_fonts=active;
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    // The theme/font boot scripts mutate <html> (class, style) before React
-    // hydrates, which is an intentional, expected hydration difference.
+    // The theme/font/language boot scripts mutate <html> before React hydrates,
+    // which is an intentional, expected hydration difference.
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: languageScript }} />
         <script dangerouslySetInnerHTML={{ __html: fontScript }} />
         <script dangerouslySetInnerHTML={{ __html: fontLoaderScript }} />
       </head>
@@ -110,21 +115,23 @@ function CustomCssProvider() {
 
 function RootComponent() {
   return (
-    <ThemeProvider>
-      <InteractionSoundsController />
-      <CustomCssProvider />
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <ConfirmProvider>
-            <HelpProvider>
-              <Outlet />
-              <HelpPanel />
-              <TtsPlayerBar />
-              <DesktopUpdateBanner />
-            </HelpProvider>
-          </ConfirmProvider>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <LanguageProvider>
+      <ThemeProvider>
+        <InteractionSoundsController />
+        <CustomCssProvider />
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <ConfirmProvider>
+              <HelpProvider>
+                <Outlet />
+                <HelpPanel />
+                <TtsPlayerBar />
+                <DesktopUpdateBanner />
+              </HelpProvider>
+            </ConfirmProvider>
+          </TooltipProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </LanguageProvider>
   )
 }

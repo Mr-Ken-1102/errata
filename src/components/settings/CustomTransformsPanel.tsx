@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { RotateCcw, Plus, Trash2, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { useWritingTransforms, type WritingTransform } from '@/lib/theme'
+import { useLanguage } from '@/lib/i18n'
 
 function generateId(): string {
   return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
@@ -10,6 +11,7 @@ function generateId(): string {
 /** Inline editor for selection transforms (rendered directly in the Authoring section). */
 export function CustomTransformsControls() {
   const [transforms, setTransforms, resetToDefaults] = useWritingTransforms()
+  const { t: tr } = useLanguage()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const dragItem = useRef<number | null>(null)
@@ -106,7 +108,7 @@ export function CustomTransformsControls() {
                   type="button"
                   onClick={() => toggleEnabled(t.id)}
                   className={`relative shrink-0 h-[16px] w-[28px] rounded-full transition-colors cursor-pointer ${t.enabled ? 'bg-foreground' : 'bg-muted-foreground/20'}`}
-                  aria-label={`Toggle ${t.label}`}
+                  aria-label={`${tr('settings.authoring.toggleTransform')} ${t.label}`}
                 >
                   <span
                     className={`absolute top-[2px] h-[12px] w-[12px] rounded-full bg-background transition-[left] duration-150 ${t.enabled ? 'left-[14px]' : 'left-[2px]'}`}
@@ -118,7 +120,7 @@ export function CustomTransformsControls() {
                   type="button"
                   onClick={() => removeTransform(t.id)}
                   className="text-muted-foreground hover:text-destructive/70 transition-colors shrink-0 cursor-pointer"
-                  title="Delete"
+                  title={tr('settings.authoring.deleteTransform')}
                 >
                   <Trash2 className="size-3" />
                 </button>
@@ -127,24 +129,24 @@ export function CustomTransformsControls() {
               {isExpanded && (
                 <div className="px-3 pb-3 space-y-2 border-t border-border/20 pt-2">
                   <div>
-                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1 block">Label</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1 block">{tr('settings.authoring.transformLabel')}</label>
                     <input
                       type="text"
                       value={t.label}
                       onChange={(e) => updateLabel(t.id, e.target.value)}
                       draggable={false}
                       className="w-full h-8 px-2.5 text-[0.75rem] bg-muted/30 border border-border/40 rounded-md focus:border-foreground/20 focus:outline-none cursor-text"
-                      placeholder="Transform name"
+                      placeholder={tr('settings.authoring.transformNamePlaceholder')}
                     />
                   </div>
                   <div>
-                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1 block">Instruction</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1 block">{tr('settings.authoring.transformInstruction')}</label>
                     <textarea
                       value={t.instruction}
                       onChange={(e) => updateInstruction(t.id, e.target.value)}
                       draggable={false}
                       className="w-full min-h-[80px] px-2.5 py-2 text-[0.75rem] bg-muted/30 border border-border/40 rounded-md focus:border-foreground/20 focus:outline-none resize-y cursor-text"
-                      placeholder="Describe what this transform should do to the selected text..."
+                      placeholder={tr('settings.authoring.transformInstructionPlaceholder')}
                     />
                   </div>
                 </div>
@@ -157,11 +159,11 @@ export function CustomTransformsControls() {
       <div className="flex items-center justify-between gap-2 pt-1">
         <Button variant="outline" size="sm" onClick={resetToDefaults}>
           <RotateCcw className="size-3.5 mr-1.5" />
-          Reset defaults
+          {tr('settings.authoring.resetTransformDefaults')}
         </Button>
         <Button variant="outline" size="sm" onClick={addTransform}>
           <Plus className="size-3.5 mr-1.5" />
-          Add transform
+          {tr('settings.authoring.addTransform')}
         </Button>
       </div>
     </div>

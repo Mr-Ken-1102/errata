@@ -12,6 +12,7 @@ import { FileDropDialog } from '@/components/ui/file-drop-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/async-view'
+import { useLanguage } from '@/lib/i18n'
 import {
   Upload,
   Link as LinkIcon,
@@ -31,6 +32,7 @@ type ImportStatus =
   | { type: 'error'; message: string }
 
 export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [url, setUrl] = useState('')
@@ -100,29 +102,29 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     const name = file.name.toLowerCase()
 
     if (name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {
-      setStatus({ type: 'processing', message: 'Importing story archive...' })
+      setStatus({ type: 'processing', message: t('importDialog.importingStoryArchive') })
       try {
         const newStory = await api.stories.importFromZip(file)
         await queryClient.invalidateQueries({ queryKey: ['stories'] })
         handleOpenChange(false)
         navigate({ to: '/story/$storyId', params: { storyId: newStory.id } })
       } catch (err) {
-        setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to import story archive.' })
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : t('importDialog.failedImportStoryArchive') })
       }
       return
     }
 
     if (name.endsWith('.png') || file.type === 'image/png') {
-      setStatus({ type: 'processing', message: 'Reading character card image...' })
+      setStatus({ type: 'processing', message: t('importDialog.readingCharacterCardImage') })
       try {
         const buffer = await file.arrayBuffer()
         if (!isTavernCardPng(buffer)) {
-          setStatus({ type: 'error', message: 'This PNG does not contain an embedded character card.' })
+          setStatus({ type: 'error', message: t('importDialog.pngNoEmbeddedCard') })
           return
         }
         const parsed = extractParsedCard(buffer)
         if (!parsed) {
-          setStatus({ type: 'error', message: 'Could not parse the character card data from this PNG.' })
+          setStatus({ type: 'error', message: t('importDialog.pngParseFailed') })
           return
         }
         const bytes = new Uint8Array(buffer)
@@ -133,13 +135,13 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         const imageDataUrl = `data:image/png;base64,${btoa(binary)}`
         await importCharacterCard(parsed, imageDataUrl)
       } catch (err) {
-        setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to read PNG file.' })
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : t('importDialog.failedReadPng') })
       }
       return
     }
 
     if (name.endsWith('.json') || file.type === 'application/json') {
-      setStatus({ type: 'processing', message: 'Parsing JSON file...' })
+      setStatus({ type: 'processing', message: t('importDialog.parsingJson') })
       try {
         const text = await file.text()
         const parsed = parseCardJson(text)
@@ -147,15 +149,15 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           await importCharacterCard(parsed)
           return
         }
-        setStatus({ type: 'error', message: 'This JSON file is not a recognized character card format (V2/V3).' })
+        setStatus({ type: 'error', message: t('importDialog.jsonNotRecognized') })
       } catch (err) {
-        setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to read JSON file.' })
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : t('importDialog.failedReadJson') })
       }
       return
     }
 
-    setStatus({ type: 'error', message: `Unsupported file type. Accepted: .zip, .json, .png` })
-  }, [importCharacterCard, navigate, queryClient, handleOpenChange])
+    setStatus({ type: 'error', message: t('importDialog.unsupportedFileType') })
+  }, [importCharacterCard, navigate, queryClient, handleOpenChange, t])
 
   const handleFiles = useCallback(async (files: File[]) => {
     const file = files[0]
@@ -166,11 +168,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     const trimmed = url.trim()
     if (!trimmed) return
 
-    setStatus({ type: 'processing', message: 'Fetching from URL...' })
+    setStatus({ type: 'processing', message: t('importDialog.fetchingUrl') })
     try {
       const res = await fetch(trimmed)
       if (!res.ok) {
-        setStatus({ type: 'error', message: `Fetch failed: ${res.status} ${res.statusText}` })
+        setStatus({ type: 'error', message: `${t('importDialog.fetchFailed')}: ${res.status} ${res.statusText}` })
         return
       }
 
@@ -184,15 +186,15 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       }
 
       if (contentType.includes('json') || trimmed.endsWith('.json')) {
-        setStatus({ type: 'error', message: 'The fetched JSON is not a recognized character card format (V2/V3).' })
+        setStatus({ type: 'error', message: t('importDialog.fetchedJsonNotRecognized') })
         return
       }
 
-      setStatus({ type: 'error', message: 'Could not recognize the fetched content as a character card.' })
+      setStatus({ type: 'error', message: t('importDialog.fetchedContentNotRecognized') })
     } catch (err) {
-      setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Network error while fetching URL.' })
+      setStatus({ type: 'error', message: err instanceof Error ? err.message : t('importDialog.networkError') })
     }
-  }, [url, importCharacterCard])
+  }, [url, importCharacterCard, t])
 
   const isProcessing = status.type === 'processing'
 
@@ -200,7 +202,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     <FileDropDialog
       open={open}
       onOpenChange={handleOpenChange}
-      title="Import"
+      title={t('importDialog.title')}
       contentClassName="max-w-md"
       showCloseButton
     >
@@ -212,7 +214,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         label={
           isProcessing
             ? status.message
-            : 'Drag a file here, or click to pick one.'
+            : t('importDialog.dropzoneLabel')
         }
         hint={
           !isProcessing ? (
@@ -241,7 +243,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       {/* URL input */}
       <div className="space-y-1.5">
         <label className="text-[0.6875rem] font-medium text-muted-foreground uppercase tracking-wider">
-          Or import from URL
+          {t('importDialog.importFromUrl')}
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -262,7 +264,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             disabled={isProcessing || !url.trim()}
             onClick={handleUrlFetch}
           >
-            {isProcessing ? <Spinner size="sm" /> : 'Fetch'}
+            {isProcessing ? <Spinner size="sm" /> : t('importDialog.fetch')}
           </Button>
         </div>
       </div>
@@ -272,11 +274,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       </FileDropDialog.Errors>
 
       <p className="text-[0.6875rem] text-muted-foreground leading-relaxed">
-        <strong className="text-muted-foreground">.zip</strong> — Errata story export
+        <strong className="text-muted-foreground">.zip</strong> — {t('importDialog.zipDescription')}
         {' · '}
-        <strong className="text-muted-foreground">.json</strong> — SillyTavern / TavernAI character card (V2/V3)
+        <strong className="text-muted-foreground">.json</strong> — {t('importDialog.jsonDescription')}
         {' · '}
-        <strong className="text-muted-foreground">.png</strong> — Character card with embedded data
+        <strong className="text-muted-foreground">.png</strong> — {t('importDialog.pngDescription')}
       </p>
     </FileDropDialog>
   )

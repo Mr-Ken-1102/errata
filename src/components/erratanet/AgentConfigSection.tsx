@@ -8,24 +8,13 @@ import { cn } from '@/lib/utils'
 import { Share2, Loader2, Code2, Trash2, Check, Plus, Bookmark, ArrowUpFromLine } from 'lucide-react'
 import { ShareAgentConfigDialog } from './ShareAgentConfigDialog'
 import { PackLink } from './PackLink'
+import { useLanguage } from '@/lib/i18n'
 
 /** A config shared from this story, as stamped on the story's erratanet settings. */
 interface SharedConfig {
   pack: string
   version: string
   includes: string[]
-}
-
-/** Short, human label for each bundled surface (parallels "N fragments"). */
-const INCLUDE_SHORT: Record<string, string> = {
-  'agent-blocks': 'blocks',
-  'provider-shape': 'providers',
-  'model-roles': 'models',
-}
-
-function includesLabel(includes: string[]): string {
-  const parts = includes.map((i) => INCLUDE_SHORT[i] ?? i)
-  return parts.length > 0 ? parts.join(', ') : 'nothing'
 }
 
 /** Small uppercase block label, matching the panel's other sections. */
@@ -54,6 +43,11 @@ export function AgentConfigSection({
   hubUrl?: string
 }) {
   const qc = useQueryClient()
+  const { t } = useLanguage()
+  const includesLabel = (includes: string[]) => {
+    const parts = includes.map((i) => i === 'agent-blocks' ? t('erratanet.agentConfig.blocks') : i === 'provider-shape' ? t('erratanet.agentConfig.providers') : i === 'model-roles' ? t('erratanet.agentConfig.models') : i)
+    return parts.length > 0 ? parts.join(', ') : t('erratanet.agentConfig.nothing')
+  }
   // null = closed. {} = share a new config. {slug, includes} = sync an existing one.
   const [share, setShare] = useState<{ slug?: string; includes?: string[] } | null>(null)
   const [savingName, setSavingName] = useState<string | null>(null)
@@ -74,15 +68,15 @@ export function AgentConfigSection({
 
   return (
     <section>
-      <Label>Agent configuration</Label>
+      <Label>{t('erratanet.agentConfig.heading')}</Label>
       <p className="mb-3 text-[0.75rem] leading-snug text-muted-foreground">
-        Share how you&apos;ve tuned this story&apos;s agents, or apply a saved preset to it.
+        {t('erratanet.agentConfig.sectionDescription')}
       </p>
 
       {/* Configs already shared from this story — re-syncable, like fragment packs. */}
       {sharedConfigs.length > 0 && (
         <div className="mb-3 space-y-2">
-          <p className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">Shared configs</p>
+          <p className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">{t('erratanet.agentConfig.sharedConfigs')}</p>
           {sharedConfigs.map((sc) => (
             <div
               key={sc.pack}
@@ -101,7 +95,7 @@ export function AgentConfigSection({
                 onClick={() => setShare({ slug: sc.pack.split('/')[1], includes: sc.includes })}
               >
                 <ArrowUpFromLine className="size-3" />
-                Sync
+                {t('erratanet.panel.sync')}
               </Button>
             </div>
           ))}
@@ -111,7 +105,7 @@ export function AgentConfigSection({
       <div className="space-y-2">
         <Button variant="outline" className="w-full gap-2" onClick={() => setShare({})}>
           <Share2 className="size-4" />
-          {sharedConfigs.length > 0 ? 'Share a new config' : 'Share this config'}
+          {sharedConfigs.length > 0 ? t('erratanet.agentConfig.shareNew') : t('erratanet.agentConfig.shareThis')}
         </Button>
 
         {savingName === null ? (
@@ -121,7 +115,7 @@ export function AgentConfigSection({
             onClick={() => setSavingName(storyName ? `${storyName} setup` : '')}
           >
             <Plus className="size-3.5" />
-            Save current config as a preset
+            {t('erratanet.agentConfig.saveCurrentPreset')}
           </Button>
         ) : (
           <div className="flex gap-2">
@@ -133,7 +127,7 @@ export function AgentConfigSection({
                 if (e.key === 'Enter' && savingName.trim()) saveMut.mutate(savingName.trim())
                 if (e.key === 'Escape') setSavingName(null)
               }}
-              placeholder="Preset name"
+              placeholder={t('erratanet.agentConfig.presetName')}
               className="h-8"
             />
             <Button
@@ -143,27 +137,27 @@ export function AgentConfigSection({
               onClick={() => saveMut.mutate(savingName.trim())}
             >
               {saveMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-              Save
+              {t('erratanet.agentConfig.save')}
             </Button>
           </div>
         )}
         {saveMut.error && (
           <p className="text-[0.6875rem] text-destructive">
-            {saveMut.error instanceof Error ? saveMut.error.message : 'Could not save preset.'}
+            {saveMut.error instanceof Error ? saveMut.error.message : t('erratanet.agentConfig.savePresetFailed')}
           </p>
         )}
       </div>
 
       {/* Presets */}
       <div className="mt-4">
-        <p className="mb-2 text-[0.625rem] uppercase tracking-wider text-muted-foreground">Presets</p>
+        <p className="mb-2 text-[0.625rem] uppercase tracking-wider text-muted-foreground">{t('erratanet.agentConfig.presets')}</p>
         {isLoading ? (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" /> Loading…
+            <Loader2 className="size-3.5 animate-spin" /> {t('erratanet.agentConfig.loading')}
           </p>
         ) : presets.length === 0 ? (
           <p className="text-[0.6875rem] leading-snug text-muted-foreground">
-            No presets yet. Save one above, or import a config from the hub.
+            {t('erratanet.agentConfig.noPresets')}
           </p>
         ) : (
           <div className="space-y-2">
@@ -188,6 +182,7 @@ export function AgentConfigSection({
 
 function PresetRow({ preset, storyId }: { preset: AgentPresetSummary; storyId: string }) {
   const qc = useQueryClient()
+  const { t } = useLanguage()
   const [confirmingScripts, setConfirmingScripts] = useState(false)
   const [applied, setApplied] = useState(false)
 
@@ -236,14 +231,14 @@ function PresetRow({ preset, storyId }: { preset: AgentPresetSummary; storyId: s
           <p className="truncate text-[0.8125rem] text-foreground">{preset.name}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.625rem] text-muted-foreground">
             <span className="tabular-nums">
-              {preset.summary.agents.length} {preset.summary.agents.length === 1 ? 'agent' : 'agents'} · {preset.summary.blockCount} {preset.summary.blockCount === 1 ? 'block' : 'blocks'}
+              {preset.summary.agents.length} {preset.summary.agents.length === 1 ? t('erratanet.agentConfig.agent') : t('erratanet.agentConfig.agents')} · {preset.summary.blockCount} {preset.summary.blockCount === 1 ? t('erratanet.agentConfig.block') : t('erratanet.agentConfig.blocks')}
             </span>
             {preset.summary.hasScripts && (
               <span className="inline-flex items-center gap-0.5 font-mono lowercase text-amber-600 dark:text-amber-400">
-                <Code2 className="size-2.5" /> runs code
+                <Code2 className="size-2.5" /> {t('erratanet.agentConfig.runsCode')}
               </span>
             )}
-            {preset.source && <span className="font-mono">from {preset.source.pack}</span>}
+            {preset.source && <span className="font-mono">{t('erratanet.agentConfig.from')} {preset.source.pack}</span>}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -255,7 +250,7 @@ function PresetRow({ preset, storyId }: { preset: AgentPresetSummary; storyId: s
             onClick={onApply}
           >
             {applyMut.isPending ? <Loader2 className="size-3 animate-spin" /> : applied ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-            {applied ? 'Applied' : 'Apply'}
+            {applied ? t('erratanet.agentConfig.applied') : t('erratanet.agentConfig.apply')}
           </Button>
           <Button
             size="icon"
@@ -263,7 +258,7 @@ function PresetRow({ preset, storyId }: { preset: AgentPresetSummary; storyId: s
             className="size-7 text-muted-foreground hover:text-destructive"
             disabled={delMut.isPending}
             onClick={() => delMut.mutate()}
-            aria-label={`Delete ${preset.name}`}
+            aria-label={`${t('erratanet.agentConfig.delete')} ${preset.name}`}
           >
             <Trash2 className="size-3.5" />
           </Button>
@@ -273,15 +268,15 @@ function PresetRow({ preset, storyId }: { preset: AgentPresetSummary; storyId: s
       {confirmingScripts && !applied && (
         <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
           <p className="text-[0.6875rem] leading-snug text-muted-foreground">
-            This preset runs code. Apply it to this story?
+            {t('erratanet.agentConfig.presetRunsCode')}
           </p>
           <div className="mt-1.5 flex gap-2">
             <Button size="sm" className={cn('h-7 gap-1 px-2.5 text-[0.6875rem]')} onClick={() => applyMut.mutate(true)} disabled={applyMut.isPending}>
               {applyMut.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-              Apply anyway
+              {t('erratanet.agentConfig.applyAnyway')}
             </Button>
             <Button size="sm" variant="ghost" className="h-7 px-2.5 text-[0.6875rem]" onClick={() => setConfirmingScripts(false)}>
-              Cancel
+              {t('erratanet.agentConfig.cancel')}
             </Button>
           </div>
         </div>
@@ -289,7 +284,7 @@ function PresetRow({ preset, storyId }: { preset: AgentPresetSummary; storyId: s
 
       {applyMut.error && !confirmingScripts && (
         <p className="mt-1.5 text-[0.6875rem] text-destructive">
-          {applyMut.error instanceof Error ? applyMut.error.message : 'Apply failed.'}
+          {applyMut.error instanceof Error ? applyMut.error.message : t('erratanet.agentConfig.applyFailed')}
         </p>
       )}
     </div>

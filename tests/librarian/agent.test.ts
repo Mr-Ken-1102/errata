@@ -660,6 +660,64 @@ describe('librarian agent', () => {
     expect(analysis?.analyzeLanes?.directions).toEqual({ requirement: 'required', completion: 'incomplete' })
   })
 
+  it('recovers the required tail once after a valid observation stops early', async () => {
+    await createStory(dataDir, makeStory({
+      settings: {
+        disableLibrarianDirections: false,
+        disableLibrarianSuggestions: true,
+      },
+    }))
+    await createFragment(dataDir, storyId, makeFragment({ id: 'pr-0001' }))
+    await setupProseChain(dataDir, storyId, ['pr-0001'])
+
+    const directions = [
+      { title: 'Enter Quietly', description: 'The party slips into the city.', instruction: 'Write a restrained entry through the gate.' },
+      { title: 'Question the Guard', description: 'A guard blocks the way.', instruction: 'Write a tense exchange with the gate guard.' },
+      { title: 'Wait Until Dawn', description: 'The group pauses outside.', instruction: 'Write a watchful pause before sunrise.' },
+    ]
+    let attempt = 0
+    mockAgentStream.mockImplementation(async (
+      _args: unknown,
+      tools: Record<string, { execute: (args: unknown) => Promise<unknown> }>,
+    ) => {
+      const thisAttempt = ++attempt
+      return {
+        fullStream: (async function* () {
+          if (thisAttempt === 1) {
+            const input = { summary: 'The hero reached the city gate.' }
+            yield { type: 'tool-call' as const, toolCallId: 'observe', toolName: 'reportAnalysis', input }
+            yield { type: 'tool-result' as const, toolCallId: 'observe', toolName: 'reportAnalysis', output: await tools.reportAnalysis.execute(input) }
+            yield { type: 'finish' as const, finishReason: 'stop' }
+            return
+          }
+
+          const directionInput = { directions }
+          yield { type: 'tool-call' as const, toolCallId: 'directions', toolName: 'proposeDirections', input: directionInput }
+          yield { type: 'tool-result' as const, toolCallId: 'directions', toolName: 'proposeDirections', output: await tools.proposeDirections.execute(directionInput) }
+          const finishInput = {}
+          yield { type: 'tool-call' as const, toolCallId: 'finish', toolName: 'finishAnalysis', input: finishInput }
+          yield { type: 'tool-result' as const, toolCallId: 'finish', toolName: 'finishAnalysis', output: await tools.finishAnalysis.execute(finishInput) }
+          yield { type: 'finish' as const, finishReason: 'stop' }
+        })(),
+      }
+    })
+
+    const analysis = await runLibrarian(dataDir, storyId, 'pr-0001')
+    const pass = analysis.passes?.find((entry) => entry.name === 'analyze')
+
+    expect(attempt).toBe(2)
+    expect(analysis.summaryUpdate).toBe('The hero reached the city gate.')
+    expect(analysis.directions).toEqual(directions)
+    expect(analysis.analyzeLanes?.directions).toEqual({ requirement: 'required', completion: 'complete' })
+    expect(pass?.status).toBe('complete')
+    expect(pass?.diagnostics?.attemptCount).toBe(2)
+    expect(pass?.diagnostics?.recoveryAttempted).toBe(true)
+    expect(pass?.diagnostics?.reportToolCallCount).toBe(1)
+    expect(pass?.diagnostics?.directionToolCallCount).toBe(1)
+    expect(pass?.diagnostics?.finishToolCallCount).toBe(1)
+    expect(pass?.diagnostics?.workflowComplete).toBe(true)
+  })
+
   it('allows manual directions when automatic directions are disabled', async () => {
     await createStory(dataDir, makeStory({ settings: { disableLibrarianDirections: true } }))
     await createFragment(dataDir, storyId, makeFragment({ id: 'pr-0001' }))
@@ -711,6 +769,7 @@ describe('librarian agent', () => {
     await expect(runLibrarian(dataDir, storyId, 'pr-0001')).rejects.toThrow(
       'was saved but did not fully complete: late proposal connection failure',
     )
+    expect(mockAgentStream).toHaveBeenCalledTimes(1)
     const summaries = await listAnalyses(dataDir, storyId)
     expect(summaries).toHaveLength(1)
     const analysis = await getAnalysis(dataDir, storyId, summaries[0].id)

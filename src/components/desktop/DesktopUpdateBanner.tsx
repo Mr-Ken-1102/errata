@@ -8,13 +8,23 @@
 import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
 import { getDesktopBridge, onDesktopBridgeReady, type DesktopUpdateState, type ErrataDesktop } from '@/lib/desktop'
+import { useLanguage } from '@/lib/i18n'
 
 const primaryBtn =
   'flex items-center gap-1.5 rounded-md bg-foreground px-2.5 py-1 text-[0.6875rem] font-medium text-background transition-opacity hover:opacity-90'
 const ghostBtn =
   'rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground/70'
 
+function interpolate(message: string, values: Record<string, string | number>): string {
+  let result = message
+  for (const [key, value] of Object.entries(values)) {
+    result = result.replace(`{${key}}`, String(value))
+  }
+  return result
+}
+
 export function DesktopUpdateBanner() {
+  const { t } = useLanguage()
   const [bridge, setBridge] = useState<ErrataDesktop | null>(() => getDesktopBridge())
   const [state, setState] = useState<DesktopUpdateState>({ status: 'idle' })
   const [dismissedKey, setDismissedKey] = useState<string | null>(null)
@@ -42,17 +52,17 @@ export function DesktopUpdateBanner() {
 
   const title =
     state.status === 'downloaded'
-      ? `Errata ${state.version ?? ''} is ready`
+      ? interpolate(t('desktopUpdateBanner.title.downloaded'), { version: state.version ?? '' })
       : state.status === 'downloading'
-        ? `Downloading Errata ${state.version ?? ''}`
-        : `Errata ${state.version ?? ''} is available`
+        ? interpolate(t('desktopUpdateBanner.title.downloading'), { version: state.version ?? '' })
+        : interpolate(t('desktopUpdateBanner.title.available'), { version: state.version ?? '' })
 
   const subtitle =
     state.status === 'downloading'
-      ? `${state.percent ?? 0}% complete`
+      ? interpolate(t('desktopUpdateBanner.subtitle.downloading'), { percent: state.percent ?? 0 })
       : state.status === 'downloaded'
-        ? 'Restart to finish installing. Your stories are backed up first.'
-        : 'Download and install now, or skip this version.'
+        ? t('desktopUpdateBanner.subtitle.downloaded')
+        : t('desktopUpdateBanner.subtitle.available')
 
   return (
     <div className="fixed right-3 top-3 z-50 w-[20rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border/40 bg-background/95 px-3 py-2.5 shadow-lg backdrop-blur">
@@ -60,7 +70,7 @@ export function DesktopUpdateBanner() {
         <p className="font-display text-[0.9375rem] italic leading-tight text-foreground">{title}</p>
         <button
           type="button"
-          aria-label="Dismiss"
+          aria-label={t('desktopUpdateBanner.dismiss')}
           onClick={() => setDismissedKey(key)}
           className="-mr-1 -mt-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground/70"
         >
@@ -74,20 +84,20 @@ export function DesktopUpdateBanner() {
           {state.status === 'downloaded' ? (
             <button type="button" className={primaryBtn} onClick={() => bridge.installUpdate()}>
               <Download className="size-3" />
-              Restart and install
+              {t('settings.updates.restartAndInstall')}
             </button>
           ) : (
             <>
               <button type="button" className={primaryBtn} onClick={() => bridge.downloadUpdate()}>
                 <Download className="size-3" />
-                Download and install
+                {t('settings.updates.downloadAndInstall')}
               </button>
               <button
                 type="button"
                 className={ghostBtn}
                 onClick={() => bridge.skipUpdate(state.version ?? '')}
               >
-                Skip
+                {t('settings.updates.skip')}
               </button>
             </>
           )}

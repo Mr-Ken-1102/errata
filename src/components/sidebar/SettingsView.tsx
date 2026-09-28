@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useLanguage, translateSettingsNavigation } from '@/lib/i18n'
 import { SettingsPanel } from './SettingsPanel'
 import type { StoryMeta } from '@/lib/api'
 
@@ -41,6 +42,7 @@ export function SettingsView({
 }: SettingsViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const { language, t } = useLanguage()
   // Suppress scroll-spy briefly after an explicit TOC click so a near-bottom
   // section (which can't scroll to the top band) stays the active one.
   const clickLockRef = useRef(0)
@@ -55,7 +57,11 @@ export function SettingsView({
 
     const refreshToc = () => {
       sections = Array.from(root.querySelectorAll<HTMLElement>('[data-toc]'))
-      setToc(sections.map((s) => ({ id: s.id, label: s.dataset.toc || s.id, group: s.dataset.tocGroup || '' })))
+      setToc(sections.map((s) => ({
+        id: s.id,
+        label: translateSettingsNavigation(language, s.dataset.toc || s.id),
+        group: translateSettingsNavigation(language, s.dataset.tocGroup || ''),
+      })))
       setActiveId((prev) => {
         if (prev && sections.some((s) => s.id === prev)) return prev
         return sections[0]?.id || ''
@@ -91,7 +97,7 @@ export function SettingsView({
       root.removeEventListener('scroll', resolveActive)
       observer.disconnect()
     }
-  }, [])
+  }, [language])
 
   // Escape to close; focus the panel when it opens.
   useEffect(() => {
@@ -116,14 +122,14 @@ export function SettingsView({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Settings"
+      aria-label={t('settings.dialog.title')}
       data-cuelume-surface="bloom"
       data-cuelume-close="none"
     >
       {/* Backdrop */}
       <button
         type="button"
-        aria-label="Close settings"
+        aria-label={t('settings.dialog.closeSettings')}
         onClick={onClose}
         className={cn(
           'fixed inset-0 z-40 cursor-default bg-background/60 backdrop-blur-[2px] transition-opacity duration-200 motion-reduce:transition-none',
@@ -146,11 +152,11 @@ export function SettingsView({
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border/50 px-6 py-4">
-          <h2 className="font-display text-lg">Settings</h2>
+          <h2 className="font-display text-lg">{t('settings.dialog.title')}</h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('settings.dialog.close')}
             className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           >
             <X className="size-4" />
@@ -160,7 +166,7 @@ export function SettingsView({
         {/* Body: TOC + scrollable content */}
         <div className="flex min-h-0 flex-1">
           <nav
-            aria-label="Settings sections"
+            aria-label={t('settings.dialog.sections')}
             className="hidden w-44 shrink-0 overflow-y-auto border-r border-border/30 p-2.5 sm:block"
           >
             {toc.map((item, i) => (

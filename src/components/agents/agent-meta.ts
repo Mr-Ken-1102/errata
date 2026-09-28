@@ -1,4 +1,5 @@
 import { BookOpen, MessageSquare, Sparkles, Compass, Wand2, Bot, Layers3 } from 'lucide-react'
+import type { TranslationKey } from '@/lib/i18n'
 
 // Shared display metadata for agents, used by both the floating activity wisp and
 // the activity panel's status strip so they describe agents the same way.
@@ -95,6 +96,76 @@ export const AGENT_META: Record<string, AgentMeta> = {
     glow: 'oklch(0.72 0.11 320 / 35%)',
     icon: Compass,
   },
+  'story-setup.chat': {
+    label: 'Story Setup',
+    status: 'Planning',
+    actions: ['Planning', 'Shaping the premise', 'Preparing starter fragments'],
+    color: 'oklch(0.72 0.10 250)',
+    glow: 'oklch(0.72 0.10 250 / 35%)',
+    icon: Sparkles,
+  },
+}
+
+const AGENT_META_I18N: Record<string, {
+  label: TranslationKey
+  status: TranslationKey
+  actions: TranslationKey[]
+}> = {
+  'librarian.analyze': {
+    label: 'agentMeta.label.librarian',
+    status: 'agentMeta.status.analyzing',
+    actions: ['agentMeta.action.reading', 'agentMeta.action.annotating', 'agentMeta.action.crossReferencing', 'agentMeta.action.notingDetails'],
+  },
+  'librarian.rollup': {
+    label: 'agentMeta.label.memory',
+    status: 'agentMeta.status.consolidating',
+    actions: ['agentMeta.action.consolidatingMemory', 'agentMeta.action.foldingPassages', 'agentMeta.action.buildingStoryRecord'],
+  },
+  'librarian.refine': {
+    label: 'agentMeta.label.librarian',
+    status: 'agentMeta.status.refining',
+    actions: ['agentMeta.action.refining', 'agentMeta.action.polishing', 'agentMeta.action.tighteningLine', 'agentMeta.action.rephrasing'],
+  },
+  'librarian.chat': {
+    label: 'agentMeta.label.librarian',
+    status: 'agentMeta.status.replying',
+    actions: ['agentMeta.action.listening', 'agentMeta.action.considering', 'agentMeta.action.composingReply'],
+  },
+  'librarian.optimize-character': {
+    label: 'agentMeta.label.librarian',
+    status: 'agentMeta.status.optimizing',
+    actions: ['agentMeta.action.sharpening', 'agentMeta.action.consolidating', 'agentMeta.action.clarifying'],
+  },
+  'librarian.prose-transform': {
+    label: 'agentMeta.label.librarian',
+    status: 'agentMeta.status.transforming',
+    actions: ['agentMeta.action.transforming', 'agentMeta.action.rewriting', 'agentMeta.action.revoicing'],
+  },
+  'character-chat.chat': {
+    label: 'agentMeta.label.character',
+    status: 'agentMeta.status.replying',
+    actions: ['agentMeta.action.listening', 'agentMeta.action.considering', 'agentMeta.action.reachingForWords'],
+  },
+  'directions.suggest': {
+    label: 'agentMeta.label.directions',
+    status: 'agentMeta.status.suggesting',
+    actions: ['agentMeta.action.plottingPath', 'agentMeta.action.weighingOptions', 'agentMeta.action.peeringAhead'],
+  },
+  'generation.writer': {
+    label: 'agentMeta.label.writer',
+    status: 'agentMeta.status.writing',
+    actions: ['agentMeta.action.writing', 'agentMeta.action.findingNextLine', 'agentMeta.action.listeningToPage', 'agentMeta.action.settingScene'],
+  },
+  'generation.prewriter': {
+    label: 'agentMeta.label.prewriter',
+    status: 'agentMeta.status.planning',
+    actions: ['agentMeta.action.planning', 'agentMeta.action.outliningScene', 'agentMeta.action.shapingBrief'],
+  },
+  'story-setup.chat': {
+    label: 'agentMeta.label.storySetup',
+    status: 'agentMeta.status.planning',
+    actions: ['agentMeta.action.planning', 'agentMeta.action.shapingPremise', 'agentMeta.action.preparingStarterFragments'],
+  },
 }
 
 export const DEFAULT_META: AgentMeta = {
@@ -118,4 +189,19 @@ export function getAgentMeta(agentName: string): AgentMeta {
   const label = titleCase(parts[0])
   const status = parts[1] ? titleCase(parts[1]) : 'Working'
   return { ...DEFAULT_META, label, status, actions: [status] }
+}
+
+export function getLocalizedAgentMeta(
+  agentName: string,
+  t: (key: TranslationKey) => string,
+): AgentMeta {
+  const meta = getAgentMeta(agentName)
+  const keys = AGENT_META_I18N[agentName]
+  if (!keys) return meta
+  return {
+    ...meta,
+    label: t(keys.label),
+    status: t(keys.status),
+    actions: keys.actions.map((key) => t(key)),
+  }
 }

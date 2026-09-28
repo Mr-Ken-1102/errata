@@ -12,6 +12,7 @@ import {
   type ChatMessage,
 } from '@/components/chat/ChatMessageParts'
 import { ChatSendButton } from '@/components/chat/ChatSendButton'
+import { useLanguage } from '@/lib/i18n'
 
 interface LibrarianChatProps {
   storyId: string
@@ -79,6 +80,7 @@ function applyEvent(message: AssistantMessage, event: ChatEvent): AssistantMessa
 }
 
 export function LibrarianChat({ storyId, conversationId, initialInput }: LibrarianChatProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -270,7 +272,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
     const text = input.trim()
     if (!text || !historyReady || branchId === undefined) return
     if (isStreaming) {
-      setError('Wait for the current reply to finish before sending another.')
+      setError(t('librarianChat.waitForReply'))
       return
     }
 
@@ -296,14 +298,14 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
           : api.librarian.chat(storyId, text, clientRequestId, branchId)
       ))
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      setError(sendError instanceof Error ? sendError.message : t('librarianChat.chatFailed'))
       // The server may already have persisted the user turn. Re-read rather
       // than guessing which part of the request landed.
       await refreshHistory().catch(() => {})
     } finally {
       textareaRef.current?.focus()
     }
-  }, [branchId, conversationId, historyReady, input, isStreaming, refreshHistory, run, storyId])
+  }, [branchId, conversationId, historyReady, input, isStreaming, refreshHistory, run, storyId, t])
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (
@@ -326,8 +328,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
               data-component-id="librarian-chat-empty"
             >
               <EmptyHint className="max-w-[240px]">
-                Ask the librarian to make changes across your story — update characters,
-                adjust guidelines, or reshape knowledge.
+                {t('librarianChat.emptyHint')}
               </EmptyHint>
             </div>
           )}
@@ -362,7 +363,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
               className="text-[0.625rem] text-muted-foreground italic"
               data-component-id="librarian-chat-reconnecting"
             >
-              Reconnecting — the librarian is still working on the server.
+              {t('librarianChat.reconnecting')}
             </div>
           )}
 
@@ -383,7 +384,7 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask the librarian..."
+            placeholder={t('librarianChat.placeholder')}
             disabled={isStreaming || !historyReady || branchId === undefined}
             className="min-h-[40px] max-h-[400px] resize-none text-xs bg-transparent placeholder:italic placeholder:text-muted-foreground flex-1"
             rows={1}
@@ -394,13 +395,13 @@ export function LibrarianChat({ storyId, conversationId, initialInput }: Librari
             canSend={historyReady && branchId !== undefined && !!input.trim()}
             onSend={() => { void handleSend() }}
             onStop={() => { void run.cancel() }}
-            stopLabel="Stop the librarian"
+            stopLabel={t('librarianChat.stopLabel')}
             idPrefix="librarian-chat"
           />
         </div>
 
         <p className="text-[0.625rem] text-muted-foreground text-center">
-          Enter to send, Shift+Enter for newline
+          {t('librarianChat.shortcutHint')}
         </p>
       </div>
     </div>

@@ -19,6 +19,7 @@ import { RefreshCw, Undo2, PenLine, Bug, Trash2, GitBranch, MessageSquare, Chevr
 import { Caption } from '@/components/ui/prose-text'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useTtsSettings, useIsReadingFragment, playFragment, stopTts } from '@/lib/tts'
+import { useLanguage } from '@/lib/i18n'
 
 interface ProseBlockProps {
   storyId: string
@@ -64,6 +65,7 @@ function ProviderQuickSwitch({
   storyId: string
   isStreamingAction: boolean
 }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const { data: story } = useQuery({
     queryKey: ['story', storyId],
@@ -104,7 +106,7 @@ function ProviderQuickSwitch({
       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center' }}
     >
       <option value="">
-        {defaultProvider ? defaultProvider.defaultModel : 'No provider'}
+        {defaultProvider ? defaultProvider.defaultModel : t('settings.modelSelect.noProvider')}
       </option>
       {providers
         .filter(p => p.id !== globalConfig.defaultProviderId)
@@ -139,6 +141,7 @@ export const ProseBlock = memo(function ProseBlock({
   scrollAnchorId,
   expandThoughtsByDefault = true,
 }: ProseBlockProps) {
+  const { t } = useLanguage()
   // isFirst/isLast are part of the interface for future use
   void isFirst
   void isLast
@@ -415,7 +418,7 @@ export const ProseBlock = memo(function ProseBlock({
     <div ref={blockRef} className="group relative mb-6" data-prose-index={displayIndex} data-component-id={`prose-${fragment.id}-block`}>
       {/* Analyzed indicator — subtle dot in the top-right corner */}
       {hasAnalysis && (
-        <div className="absolute -top-1 -right-1 z-[1]" title="Analyzed by librarian">
+        <div className="absolute -top-1 -right-1 z-[1]" title={t('proseBlock.analyzedByLibrarian')}>
           <div className="size-2 rounded-full bg-emerald-500/70 shadow-[0_0_4px_rgba(16,185,129,0.3)]" />
         </div>
       )}
@@ -439,7 +442,7 @@ export const ProseBlock = memo(function ProseBlock({
                   value={actionInput}
                   onChange={(e) => setActionInput(e.target.value)}
                   className="w-full bg-transparent font-display italic text-sm text-foreground/80 placeholder:text-muted-foreground outline-none border-none p-0 caret-primary"
-                  placeholder="New direction..."
+                  placeholder={t('proseAction.regeneratePlaceholder')}
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') {
@@ -462,7 +465,7 @@ export const ProseBlock = memo(function ProseBlock({
                     disabled={!actionInput.trim() || branchId === undefined}
                     onClick={handlePromptSubmit}
                   >
-                    Regenerate
+                    {t('proseAction.regenerate')}
                   </button>
                 </div>
               </div>
@@ -479,7 +482,7 @@ export const ProseBlock = memo(function ProseBlock({
                   promptInputRef.current?.select()
                 })
               }}
-              title="Click to edit prompt and regenerate"
+              title={t('proseBlock.editPromptRegenerate')}
             >
               <div className="w-0.5 min-h-[1.25rem] rounded-full bg-primary/20 group-hover/prompt:bg-primary/45 transition-colors shrink-0 mt-0.5" />
               <Caption asChild size="sm" className="font-display italic group-hover/prompt:text-muted-foreground truncate transition-colors">
@@ -602,7 +605,7 @@ export const ProseBlock = memo(function ProseBlock({
                 ref={actionInputRef}
                 value={actionInput}
                 onChange={(e) => setActionInput(e.target.value)}
-                placeholder="New direction..."
+                placeholder={t('proseAction.regeneratePlaceholder')}
                 className="w-full resize-none bg-transparent px-3.5 py-2.5 text-sm placeholder:italic placeholder:text-muted-foreground/60 focus:outline-none"
                 rows={2}
                 autoFocus
@@ -620,14 +623,14 @@ export const ProseBlock = memo(function ProseBlock({
                     className="px-2 py-0.5 rounded-md text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors"
                     onClick={() => { setActionMode(null); setActionInput('') }}
                   >
-                    Cancel
+                    {t('proseAction.cancel')}
                   </button>
                   <button
                     className="px-2.5 py-0.5 rounded-md text-[0.6875rem] font-medium bg-foreground/[0.07] hover:bg-foreground/[0.12] text-foreground disabled:opacity-30 transition-all"
                     disabled={!actionInput.trim() || branchId === undefined}
                     onClick={handleActionSubmit}
                   >
-                    Regenerate
+                    {t('proseAction.regenerate')}
                   </button>
                 </div>
               </div>
@@ -640,7 +643,7 @@ export const ProseBlock = memo(function ProseBlock({
                 <button
                   className="text-[0.625rem] font-mono text-muted-foreground/60 hover:text-foreground transition-colors shrink-0 select-all"
                   onClick={(e) => { e.stopPropagation(); void copyText(fragment.id) }}
-                  title="Copy ID"
+                  title={t('proseBlock.copyId')}
                 >
                   {fragment.id}
                 </button>
@@ -652,7 +655,7 @@ export const ProseBlock = memo(function ProseBlock({
                         className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-accent/60 transition-all disabled:opacity-25"
                         disabled={!canPrev || switchMutation.isPending}
                         onClick={() => switchVariation(-1)}
-                        title="Previous variation"
+                        title={t('chevronRail.previousVariation')}
                       >
                         <ChevronLeft className="size-3" />
                       </button>
@@ -661,7 +664,7 @@ export const ProseBlock = memo(function ProseBlock({
                         className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-accent/60 transition-all disabled:opacity-25"
                         disabled={!canNext || switchMutation.isPending}
                         onClick={() => switchVariation(1)}
-                        title="Next variation"
+                        title={t('chevronRail.nextVariation')}
                       >
                         <ChevronRight className="size-3" />
                       </button>
@@ -673,7 +676,7 @@ export const ProseBlock = memo(function ProseBlock({
                     <button
                       className="p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-accent/60 transition-all"
                       onClick={() => { onBranchFrom(sectionIndex); setShowActions(false) }}
-                      title="Split from here"
+                      title={t('proseBlock.splitFromHere')}
                       data-component-id={`prose-${fragment.id}-branch`}
                     >
                       <GitBranch className="size-3" />
@@ -682,7 +685,7 @@ export const ProseBlock = memo(function ProseBlock({
                   <button
                     className="p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-accent/60 transition-all"
                     onClick={() => { onSelect(fragment); setShowActions(false) }}
-                    title="Details"
+                    title={t('proseBlock.details')}
                   >
                     <Info className="size-3" />
                   </button>
@@ -690,7 +693,7 @@ export const ProseBlock = memo(function ProseBlock({
                     <button
                       className="p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-accent/60 transition-all"
                       onClick={() => { onDebugLog(fragment.id); setShowActions(false) }}
-                      title="Debug log"
+                      title={t('proseBlock.debugLog')}
                     >
                       <Bug className="size-3" />
                     </button>
@@ -700,12 +703,12 @@ export const ProseBlock = memo(function ProseBlock({
                       className="p-1 rounded-md text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all disabled:opacity-25"
                       disabled={deleteMutation.isPending}
                       onClick={async () => {
-                        if (await confirm({ title: 'Remove this passage?', description: 'It will be archived.', confirmText: 'Remove', destructive: true })) {
+                        if (await confirm({ title: t('proseBlock.removeConfirmTitle'), description: t('proseBlock.removeConfirmDescription'), confirmText: t('proseBlock.removeConfirmText'), destructive: true })) {
                           deleteMutation.mutate()
                           setShowActions(false)
                         }
                       }}
-                      title="Remove passage"
+                      title={t('proseBlock.removePassage')}
                       data-component-id={`prose-${fragment.id}-remove`}
                     >
                       <Trash2 className="size-3" />
@@ -725,7 +728,7 @@ export const ProseBlock = memo(function ProseBlock({
                   data-component-id={`prose-${fragment.id}-edit`}
                 >
                   <PenLine className="size-3.5" />
-                  Edit
+                  {t('proseBlock.edit')}
                 </button>
                 <button
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.6875rem] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-all disabled:opacity-25"
@@ -737,7 +740,7 @@ export const ProseBlock = memo(function ProseBlock({
                   data-component-id={`prose-${fragment.id}-regenerate`}
                 >
                   <RefreshCw className="size-3.5" />
-                  Redo
+                  {t('proseBlock.redo')}
                 </button>
                 {onAskLibrarian && (
                   <>
@@ -747,7 +750,7 @@ export const ProseBlock = memo(function ProseBlock({
                       data-component-id={`prose-${fragment.id}-refine`}
                     >
                       <MessageSquare className="size-3.5" />
-                      Refine
+                      {t('proseAction.refine')}
                     </button>
                     <button
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.6875rem] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-all"
@@ -755,7 +758,7 @@ export const ProseBlock = memo(function ProseBlock({
                       data-component-id={`prose-${fragment.id}-ask`}
                     >
                       <MessageSquare className="size-3.5" />
-                      Ask
+                      {t('proseBlock.ask')}
                     </button>
                   </>
                 )}
@@ -766,12 +769,12 @@ export const ProseBlock = memo(function ProseBlock({
                     data-component-id={`prose-${fragment.id}-analyze`}
                   >
                     <BookOpen className="size-3.5" />
-                    Analyze
+                    {t('proseBlock.analyze')}
                   </button>
                 )}
                 <button
                   aria-disabled={!ttsSettings.enabled || undefined}
-                  title={ttsSettings.enabled ? undefined : 'Enable Read aloud in Settings to use this'}
+                  title={ttsSettings.enabled ? undefined : t('proseBlock.enableReadAloudHint')}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[0.6875rem] transition-all ${
                     !ttsSettings.enabled
                       ? 'text-muted-foreground/40 cursor-not-allowed'
@@ -788,7 +791,7 @@ export const ProseBlock = memo(function ProseBlock({
                   data-component-id={`prose-${fragment.id}-read-aloud`}
                 >
                   {isReadingThis ? <Square className="size-3.5" /> : <Volume2 className="size-3.5" />}
-                  {isReadingThis ? 'Stop' : 'Read aloud'}
+                  {isReadingThis ? t('proseBlock.stopReading') : t('settings.toc.readAloud')}
                 </button>
               </div>
             </div>
@@ -807,7 +810,7 @@ export const ProseBlock = memo(function ProseBlock({
             data-component-id={`prose-${fragment.id}-undo`}
           >
             <Undo2 className="size-3" />
-            {revertMutation.isPending ? 'Reverting...' : 'Undo'}
+            {revertMutation.isPending ? t('proseBlock.reverting') : t('proseWriting.undo')}
           </Button>
         </div>
       )}

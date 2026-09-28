@@ -21,6 +21,8 @@ import {
 import { Plus, Pin, GripVertical, FileDown, UserPlus, Archive, FolderPlus, ChevronRight, MoreHorizontal, Pencil, Trash2, FolderOpen, ListFilter, BookOpen } from 'lucide-react'
 import { Caption } from '@/components/ui/prose-text'
 import { FragmentBubbleShape } from './FragmentBubbleShape'
+import { useLanguage } from '@/lib/i18n'
+import { getLocalizedFragmentTypeLabel } from '@/components/fragments/fragment-type-icons'
 
 interface FragmentListProps {
   storyId: string
@@ -68,6 +70,7 @@ const FragmentRow = memo(function FragmentRow({
   onDragEnter,
   onDragEnd,
 }: FragmentRowProps) {
+  const { t } = useLanguage()
   const visual = useMemo(() => resolveFragmentVisual(fragment, mediaById), [fragment, mediaById])
   const bubbleSet = useMemo(
     () => (!visual.imageUrl ? generateBubbles(fragment.id, fragment.type) : null),
@@ -137,7 +140,7 @@ const FragmentRow = memo(function FragmentRow({
           </span>
           {fragment.sticky && (
             <Badge variant="secondary" className="text-[0.5625rem] h-3.5 px-1">
-              pinned
+              {t('storyInfo.pinned')}
             </Badge>
           )}
           {fragment.sticky && fragment.placement === 'system' && (
@@ -147,7 +150,7 @@ const FragmentRow = memo(function FragmentRow({
           )}
           {showType && (
             <Badge variant="outline" className="text-[0.5625rem] h-3.5 px-1">
-              {fragment.type}
+              {getLocalizedFragmentTypeLabel(fragment.type, t)}
             </Badge>
           )}
         </div>
@@ -173,7 +176,7 @@ const FragmentRow = memo(function FragmentRow({
           onPin(fragment)
         }}
         disabled={pinPending}
-        title={fragment.sticky ? 'Unpin' : 'Pin to context'}
+        title={fragment.sticky ? t('fragmentList.unpin') : t('fragmentList.pinToContext')}
       >
         <Pin className={`size-3.5 ${fragment.sticky ? 'fill-current' : ''}`} />
       </Button>
@@ -232,6 +235,7 @@ const FolderHeader = memo(function FolderHeader({
 }: FolderHeaderProps) {
   const isRenaming = renamingId === folder.id
   const inputRef = useRef<HTMLInputElement>(null)
+  const { t } = useLanguage()
 
   useEffect(() => {
     if (isRenaming && inputRef.current) {
@@ -329,14 +333,14 @@ const FolderHeader = memo(function FolderHeader({
         <DropdownMenuContent align="end" className="min-w-[120px]">
           <DropdownMenuItem onClick={() => onRename(folder.id)}>
             <Pencil className="size-3 mr-2" />
-            Rename
+            {t('fragmentList.rename')}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => onDelete(folder.id)}
             className="text-destructive focus:text-destructive"
           >
             <Trash2 className="size-3 mr-2" />
-            Delete
+            {t('fragmentList.delete')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -367,6 +371,8 @@ function UncategorizedHeader({
   onDragLeave,
   onDrop,
 }: UncategorizedHeaderProps) {
+  const { t } = useLanguage()
+
   return (
     <div
       onDragOver={onDragOver}
@@ -390,7 +396,7 @@ function UncategorizedHeader({
         />
       </button>
       <button onClick={onToggle} className="flex-1 min-w-0 text-left">
-        <span className="text-xs text-muted-foreground italic truncate block">Uncategorized</span>
+        <span className="text-xs text-muted-foreground italic truncate block">{t('fragmentList.uncategorized')}</span>
       </button>
       <span className="text-[0.625rem] text-muted-foreground tabular-nums shrink-0">
         {count}
@@ -420,6 +426,7 @@ export function FragmentList({
   onImportLorebook,
   selectedId,
 }: FragmentListProps) {
+  const { t } = useLanguage()
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortMode>('order')
   const queryClient = useQueryClient()
@@ -994,7 +1001,7 @@ export function FragmentList({
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search..."
+          placeholder={t('fragmentList.searchPlaceholder')}
           className="h-7 text-xs bg-transparent"
           data-component-id={componentId(listIdBase ?? type ?? 'fragment', 'list-search')}
         />
@@ -1010,13 +1017,13 @@ export function FragmentList({
                     data-component-id={componentId(listIdBase ?? type ?? 'fragment', 'type-filter')}
                   >
                     <ListFilter className="size-3.5 shrink-0" />
-                    <span className="truncate">{typeFilter === 'all' ? 'all types' : typeFilter}</span>
+                    <span className="truncate">{typeFilter === 'all' ? t('fragmentList.allTypes') : typeFilter}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-44">
                   <DropdownMenuRadioGroup value={typeFilter} onValueChange={setTypeFilter}>
                     <DropdownMenuRadioItem value="all" className="text-xs">
-                      <span className="min-w-0 flex-1 truncate">all types</span>
+                      <span className="min-w-0 flex-1 truncate">{t('fragmentList.allTypes')}</span>
                       <span className="ml-auto text-[0.625rem] text-muted-foreground">
                         {typeOptions.reduce((sum, option) => sum + option.count, 0)}
                       </span>
@@ -1033,11 +1040,11 @@ export function FragmentList({
             )}
             <div className="flex gap-0.5">
             {([
-              { mode: 'order' as SortMode, tip: 'Sort by manual order' },
-              { mode: 'name' as SortMode, tip: 'Sort alphabetically' },
-              { mode: 'newest' as SortMode, tip: 'Sort by newest first' },
-              { mode: 'oldest' as SortMode, tip: 'Sort by oldest first' },
-            ]).map(({ mode, tip }) => (
+              { mode: 'order' as SortMode, label: t('fragmentList.sort.orderLabel'), tip: t('fragmentList.sort.orderTip') },
+              { mode: 'name' as SortMode, label: t('fragmentList.sort.nameLabel'), tip: t('fragmentList.sort.nameTip') },
+              { mode: 'newest' as SortMode, label: t('fragmentList.sort.newestLabel'), tip: t('fragmentList.sort.newestTip') },
+              { mode: 'oldest' as SortMode, label: t('fragmentList.sort.oldestLabel'), tip: t('fragmentList.sort.oldestTip') },
+            ]).map(({ mode, label, tip }) => (
               <Tooltip key={mode}>
                 <TooltipTrigger asChild>
                   <button
@@ -1049,7 +1056,7 @@ export function FragmentList({
                         : 'text-muted-foreground hover:text-muted-foreground'
                     }`}
                   >
-                    {mode}
+                    {label}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{tip}</TooltipContent>
@@ -1070,7 +1077,7 @@ export function FragmentList({
                   <FolderPlus className="size-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">New folder</TooltipContent>
+              <TooltipContent side="bottom">{t('fragmentList.newFolder')}</TooltipContent>
             </Tooltip>
             {onImportCard && (
               <Tooltip>
@@ -1079,7 +1086,7 @@ export function FragmentList({
                     <UserPlus className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Import character card</TooltipContent>
+                <TooltipContent side="bottom">{t('fragmentList.importCharacterCard')}</TooltipContent>
               </Tooltip>
             )}
             {onImportLorebook && (
@@ -1089,7 +1096,7 @@ export function FragmentList({
                     <BookOpen className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Import standalone lorebook</TooltipContent>
+                <TooltipContent side="bottom">{t('fragmentList.importStandaloneLorebook')}</TooltipContent>
               </Tooltip>
             )}
             {onImport && (
@@ -1099,7 +1106,7 @@ export function FragmentList({
                     <FileDown className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Import from clipboard or file</TooltipContent>
+                <TooltipContent side="bottom">{t('fragmentList.importFromClipboardOrFile')}</TooltipContent>
               </Tooltip>
             )}
             <Tooltip>
@@ -1108,7 +1115,7 @@ export function FragmentList({
                   <Plus className="size-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Create new fragment</TooltipContent>
+              <TooltipContent side="bottom">{t('fragmentList.createNewFragment')}</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -1118,7 +1125,7 @@ export function FragmentList({
       <div className="px-3 py-2.5 border-b border-border/30">
         <p className="text-[0.625rem] text-muted-foreground leading-relaxed">
           <Pin className="size-2.5 inline -mt-0.5 mr-0.5" />
-          Pinned fragments are sent in full. Unpinned ones appear as catalog rows.
+          {t('fragmentList.pinningInfo')}
         </p>
       </div>
 
@@ -1180,8 +1187,8 @@ export function FragmentList({
             <>
               {displayList.length === 0 && (
                 <EmptyState
-                  title={search.trim() ? 'No matches' : 'No fragments yet'}
-                  hint={search.trim() ? undefined : 'Create one with the plus above, or let the writing wizard draft a starter set.'}
+                  title={search.trim() ? t('fragmentList.noMatches') : t('fragmentList.noFragmentsYet')}
+                  hint={search.trim() ? undefined : t('fragmentList.emptyHint')}
                   className="py-8"
                 />
               )}
@@ -1226,7 +1233,7 @@ export function FragmentList({
               }`}
             >
               <Archive className="size-4" />
-              <span className="text-xs font-medium">Drop to archive</span>
+              <span className="text-xs font-medium">{t('fragmentList.dropToArchive')}</span>
             </div>
           )}
         </div>

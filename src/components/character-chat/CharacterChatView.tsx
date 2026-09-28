@@ -12,6 +12,7 @@ import { CharacterAvatar } from '@/components/shared/CharacterAvatar'
 import { ChatConfig } from './ChatConfig'
 import { ConversationList } from './ConversationList'
 import { q, useActiveBranchId } from '@/lib/query-keys'
+import { useLanguage } from '@/lib/i18n'
 
 interface CharacterChatViewProps {
   storyId: string
@@ -20,6 +21,7 @@ interface CharacterChatViewProps {
 }
 
 export function CharacterChatView({ storyId, initialCharacterId, onClose }: CharacterChatViewProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
 
@@ -41,6 +43,11 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const liveRef = useRef<AssistantMessage | null>(null)
   const conversationIdRef = useRef<string | null>(null)
+  const tRef = useRef(t)
+
+  useEffect(() => {
+    tRef.current = t
+  }, [t])
 
   useEffect(() => {
     conversationIdRef.current = conversationId
@@ -256,7 +263,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
       setError(null)
       setShowConversations(false)
     } catch (resumeError) {
-      setError(resumeError instanceof Error ? resumeError.message : 'Failed to load conversation')
+      setError(resumeError instanceof Error ? resumeError.message : tRef.current('characterChat.view.loadFailed'))
     }
   }, [activeConversationStorageKey, installConversation, pendingMessageStorageKey, resetConversationState, storyId])
 
@@ -344,7 +351,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
         setPendingFirstMessage(null)
         setMessages(previous => previous.slice(0, Math.max(0, previous.length - 2)))
         setInput(text)
-        setError(createError instanceof Error ? createError.message : 'Failed to create conversation')
+        setError(createError instanceof Error ? createError.message : tRef.current('characterChat.view.createFailed'))
       }
       return
     }
@@ -352,7 +359,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
     try {
       await startExistingConversationTurn(conversationId, text)
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      setError(sendError instanceof Error ? sendError.message : tRef.current('characterChat.view.chatFailed'))
       await refreshConversation().catch(() => {})
     } finally {
       textareaRef.current?.focus()
@@ -380,7 +387,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
 
     void startExistingConversationTurn(conversationId, text).catch(async (sendError) => {
       if (cancelled) return
-      setError(sendError instanceof Error ? sendError.message : 'Chat failed')
+      setError(sendError instanceof Error ? sendError.message : tRef.current('characterChat.view.chatFailed'))
       await refreshConversation().catch(() => {})
     }).finally(() => {
       if (!cancelled) {
@@ -445,7 +452,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
                 </Caption>
               </div>
               <p className="text-[0.6875rem] text-muted-foreground max-w-[240px] leading-relaxed">
-                Start a conversation. The character will respond in their voice, knowing only the story events up to your selected point.
+                {t('characterChat.view.startConversation')}
               </p>
             </div>
           )}
@@ -454,7 +461,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
           {messages.length === 0 && !selectedCharacter && characters.length > 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <EmptyHint>
-                Select a character to begin.
+                {t('characterChat.view.selectCharacterToBegin')}
               </EmptyHint>
             </div>
           )}
@@ -463,7 +470,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
           {characters.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <EmptyHint className="max-w-[240px]">
-                Create character fragments in your story first, then return here to chat with them.
+                {t('characterChat.view.noCharacters')}
               </EmptyHint>
             </div>
           )}
@@ -512,7 +519,7 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
 
           {run.isReconnecting && (
             <div className="text-[0.625rem] text-muted-foreground italic">
-              Reconnecting — the character is still responding on the server.
+              {t('characterChat.view.reconnecting')}
             </div>
           )}
 
@@ -537,8 +544,8 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
               onKeyDown={handleKeyDown}
               placeholder={
                 selectedCharacter
-                  ? `Say something to ${selectedCharacter.name}...`
-                  : 'Select a character first...'
+                  ? t('characterChat.view.saySomethingTo').replace('{name}', selectedCharacter.name)
+                  : t('characterChat.view.selectCharacterFirst')
               }
               disabled={isStreaming || !characterId || branchId === undefined}
               className="min-h-[44px] max-h-[400px] resize-none text-[0.8125rem] bg-transparent
@@ -552,14 +559,14 @@ export function CharacterChatView({ storyId, initialCharacterId, onClose }: Char
               canSend={branchId !== undefined && !!input.trim() && !!characterId}
               onSend={() => { void handleSend() }}
               onStop={() => { void run.cancel() }}
-              stopLabel={`Stop ${selectedCharacter?.name ?? 'the character'}`}
+              stopLabel={t('characterChat.view.stopTarget').replace('{target}', selectedCharacter?.name ?? t('characterChat.characterFallback'))}
               idPrefix="character-chat"
               size="md"
             />
           </div>
 
           <p className="text-[0.625rem] text-muted-foreground text-center mt-2">
-            Enter to send · Shift+Enter for newline
+            {t('characterChat.view.sendHint')}
           </p>
         </div>
       </div>

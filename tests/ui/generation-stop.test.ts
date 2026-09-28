@@ -41,6 +41,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { InlineGenerationInput } from '@/components/prose/InlineGenerationInput'
+import { withLanguageProvider } from './test-providers'
 
 function streamOf(events: SequencedChatEvent[]): ReadableStream<SequencedChatEvent> {
   return new ReadableStream<SequencedChatEvent>({
@@ -77,7 +78,7 @@ function controlledRun(runId: string) {
 
 function renderInput() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const utils = render(
+  const utils = render(withLanguageProvider(
     React.createElement(QueryClientProvider, { client: queryClient },
       React.createElement(TooltipProvider, null,
         React.createElement(InlineGenerationInput, {
@@ -90,7 +91,7 @@ function renderInput() {
         }),
       ),
     ),
-  )
+  ))
   const textarea = utils.container.querySelector<HTMLTextAreaElement>(
     '[data-component-id="inline-generation-input"]',
   )!

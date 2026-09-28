@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type StoryMeta, type GlobalConfigSafe } from '@/lib/api'
-import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, FONT_CATALOGUE, loadFullFontCatalogue, useCustomCss, useWritingTransforms, useTransformContext, TRANSFORM_CONTEXT_LABELS, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
+import { useTheme, useQuickSwitch, useMentionTypes, BASE_MENTION_TYPES, useTimelineBar, useProseWidth, useUiFontSize, UI_FONT_SIZE_LABELS, useProseFontSize, PROSE_FONT_SIZE_LABELS, useFontPreferences, getActiveFont, getRecommendedFontWeight, FONT_CATALOGUE, ensureFontLoaded, useCustomCss, useWritingTransforms, useTransformContext, type TransformContext, type FontRole, type ProseWidth, type UiFontSize, type ProseFontSize } from '@/lib/theme'
 import { Settings2, ChevronRight, ExternalLink, Eye, EyeOff, Puzzle, RotateCcw, CircleHelp, Code } from 'lucide-react'
 import { useHelp } from '@/hooks/use-help'
 import { CustomCssPanel } from '@/components/settings/CustomCssPanel'
@@ -17,11 +17,12 @@ import { ProviderSelect } from '@/components/settings/ProviderSelect'
 import { getDesktopBridge, onDesktopBridgeReady } from '@/lib/desktop'
 import { resolveProvider, getInheritLabel } from '@/lib/model-role-helpers'
 import { useInteractionSounds } from '@/lib/interaction-sounds'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 import {
   BUILTIN_FRAGMENT_TYPES,
   compareFragmentTypeVisuals,
   FragmentTypeDisplayIcon,
-  getFragmentTypeVisual,
+  getLocalizedFragmentTypeVisual,
 } from '@/components/fragments/fragment-type-icons'
 import {
   SettingsSection,
@@ -64,8 +65,12 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
   activeFont: string
   onSelect: (name: string) => void
 }) {
-  useEffect(() => { loadFullFontCatalogue() }, [])
+  const { t } = useLanguage()
   const options = FONT_CATALOGUE[role]
+
+  useEffect(() => {
+    ensureFontLoaded(activeFont)
+  }, [activeFont])
   return (
     <div className="px-3 py-2.5">
       <p className="text-[0.75rem] font-medium text-foreground/80 mb-0.5">{label}</p>
@@ -76,8 +81,16 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
           return (
             <button
               key={opt.name}
-              onClick={() => onSelect(opt.name)}
-              style={{ fontFamily: `"${opt.name}", ${opt.fallback}` }}
+              onPointerEnter={() => ensureFontLoaded(opt.name)}
+              onFocus={() => ensureFontLoaded(opt.name)}
+              onClick={() => {
+                ensureFontLoaded(opt.name)
+                onSelect(opt.name)
+              }}
+              style={{
+                fontFamily: `"${opt.name}", ${opt.fallback}`,
+                fontWeight: getRecommendedFontWeight(role, opt.name),
+              }}
               className={`px-2.5 py-1 rounded-md text-[0.75rem] border transition-all duration-150 inline-flex items-center gap-1.5 ${isActive
                   ? 'border-foreground/25 bg-foreground/5 text-foreground shadow-[0_0_0_1px_var(--foreground)/5]'
                   : 'border-transparent text-muted-foreground hover:text-foreground/70 hover:bg-accent/30'
@@ -86,7 +99,7 @@ function FontPicker({ role, label, description, activeFont, onSelect }: {
               {opt.name}
               {opt.tag && (
                 <span className="text-[0.5rem] font-sans font-medium uppercase tracking-wider text-primary/60 bg-primary/8 px-1.5 py-px rounded-full leading-tight">
-                  {opt.tag}
+                  {opt.tag === 'high-visibility' ? t('settings.typography.highVisibility') : opt.tag}
                 </span>
               )}
             </button>
@@ -106,16 +119,17 @@ function MentionTypePicker({
   enabledTypes: string[]
   onChange: (types: string[]) => void
 }) {
+  const { t } = useLanguage()
   const customTypes = story.settings.customFragmentTypes ?? []
   const options = useMemo(() => {
     const visuals = [
-      ...BASE_MENTION_TYPES.map((type) => getFragmentTypeVisual(type, customTypes)),
+      ...BASE_MENTION_TYPES.map((type) => getLocalizedFragmentTypeVisual(type, customTypes, t)),
       ...customTypes
         .filter((def) => !BUILTIN_FRAGMENT_TYPES.has(def.type))
-        .map((def) => getFragmentTypeVisual(def.type, customTypes)),
+        .map((def) => getLocalizedFragmentTypeVisual(def.type, customTypes, t)),
     ]
     return visuals.sort(compareFragmentTypeVisuals)
-  }, [customTypes])
+  }, [customTypes, t])
   const enabled = new Set(enabledTypes)
 
   const toggleType = (type: string) => {
@@ -149,6 +163,51 @@ function MentionTypePicker({
   )
 }
 
+const MODEL_ROLE_DISPLAY_KEYS: Record<string, { label: TranslationKey; description: TranslationKey }> = {
+  generation: {
+    label: 'settings.providers.modelRole.generation.label',
+    description: 'settings.providers.modelRole.generation.description',
+  },
+  'character-chat': {
+    label: 'settings.providers.modelRole.characterChat.label',
+    description: 'settings.providers.modelRole.characterChat.description',
+  },
+  directions: {
+    label: 'settings.providers.modelRole.directions.label',
+    description: 'settings.providers.modelRole.directions.description',
+  },
+  librarian: {
+    label: 'settings.providers.modelRole.librarian.label',
+    description: 'settings.providers.modelRole.librarian.description',
+  },
+  'story-setup': {
+    label: 'settings.providers.modelRole.storySetup.label',
+    description: 'settings.providers.modelRole.storySetup.description',
+  },
+}
+
+function getModelRoleDisplay(
+  role: { key: string; label: string; description: string },
+  t: (key: TranslationKey) => string,
+): { label: string; description: string } {
+  const keys = MODEL_ROLE_DISPLAY_KEYS[role.key]
+  return keys
+    ? { label: t(keys.label), description: t(keys.description) }
+    : { label: role.label, description: role.description }
+}
+
+function getLocalizedSettingsInheritLabel(
+  rawLabel: string,
+  roles: Array<{ key: string; label: string }>,
+  t: (key: TranslationKey) => string,
+): string {
+  let label = rawLabel.replace(/^Inherit/, t('settings.providers.inherit'))
+  for (const role of roles) {
+    const keys = MODEL_ROLE_DISPLAY_KEYS[role.key]
+    if (keys) label = label.replace(`· ${role.label}`, `· ${t(keys.label)}`)
+  }
+  return label
+}
 
 function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: {
   story: StoryMeta
@@ -157,6 +216,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
   onManageProviders: () => void
 }) {
   const { openHelp } = useHelp()
+  const { t } = useLanguage()
   const settings = story.settings
   const overrides = settings.modelOverrides ?? {}
 
@@ -175,7 +235,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
           type="button"
           onClick={() => openHelp('settings#providers')}
           className="text-muted-foreground hover:text-primary/60 transition-colors"
-          title="About model configuration"
+          title={t('settings.providers.aboutModelConfiguration')}
         >
           <CircleHelp className="size-3" />
         </button>
@@ -186,13 +246,14 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
           const directModelId = overrides[role.key]?.modelId ?? null
           const effectiveProviderId = resolveProvider(role.key, settings, globalConfig)
           const isGeneration = role.key === 'generation'
+          const roleDisplay = getModelRoleDisplay(role, t)
 
           return (
             <div key={role.key} className="px-3 py-2">
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="min-w-0">
-                  <p className="text-[0.75rem] font-medium text-foreground/80">{role.label}</p>
-                  <p className="text-[0.625rem] text-muted-foreground leading-snug">{role.description}</p>
+                  <p className="text-[0.75rem] font-medium text-foreground/80">{roleDisplay.label}</p>
+                  <p className="text-[0.625rem] text-muted-foreground leading-snug">{roleDisplay.description}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -207,7 +268,13 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                       })
                     }}
                     disabled={updateMutation.isPending}
-                    inheritLabel={isGeneration ? undefined : getInheritLabel(role.key, roles, settings, globalConfig)}
+                    inheritLabel={isGeneration
+                      ? undefined
+                      : getLocalizedSettingsInheritLabel(
+                          getInheritLabel(role.key, roles, settings, globalConfig),
+                          roles,
+                          t,
+                        )}
                   />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -228,7 +295,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                       })
                     }}
                     disabled={updateMutation.isPending}
-                    defaultLabel={isGeneration ? 'Default' : 'Inherit'}
+                    defaultLabel={isGeneration ? t('settings.providers.default') : t('settings.providers.inherit')}
                   />
                 </div>
                 <div className="shrink-0 w-16">
@@ -244,8 +311,9 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
                       })
                     }}
                     disabled={updateMutation.isPending}
-                    placeholder="Temp"
-                    title="Temperature (0–2). Leave empty to use provider default."
+                    placeholder={t('settings.providers.temperatureShort')}
+                    title={t('settings.providers.temperatureDescription')}
+                    invalidTitle={`${t('settings.numberInput.enterValueFrom')} 0 ${t('settings.numberInput.to')} 2.`}
                     className="w-full"
                   />
                 </div>
@@ -261,7 +329,7 @@ function LLMSection({ story, globalConfig, updateMutation, onManageProviders }: 
         >
           <span className="flex items-center gap-1.5">
             <Settings2 className="size-3" />
-            Manage providers
+            {t('settings.providers.manageProviders')}
           </span>
           <ChevronRight className="size-3" />
         </button>
@@ -286,6 +354,7 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
   onUpdate: (data: { guidedContinuePrompt?: string; guidedSceneSettingPrompt?: string; guidedSuggestPrompt?: string }) => void
   isPending: boolean
 }) {
+  const { t } = useLanguage()
   const [continuePrompt, setContinuePrompt] = useState(story.settings.guidedContinuePrompt ?? '')
   const [sceneSettingPrompt, setSceneSettingPrompt] = useState(story.settings.guidedSceneSettingPrompt ?? '')
   const [suggestPrompt, setSuggestPrompt] = useState(story.settings.guidedSuggestPrompt ?? '')
@@ -307,8 +376,8 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
   return (
     <div className="space-y-4">
         <div>
-          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">Continue prompt</label>
-          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">Used when clicking the "Continue" button</p>
+          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">{t('settings.authoring.continuePrompt')}</label>
+          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">{t('settings.authoring.continuePromptDescription')}</p>
           <textarea
             value={continuePrompt}
             onChange={(e) => setContinuePrompt(e.target.value)}
@@ -320,8 +389,8 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
           />
         </div>
         <div>
-          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">Scene-setting prompt</label>
-          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">Used when clicking the "Scene-setting" button</p>
+          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">{t('settings.authoring.sceneSettingPrompt')}</label>
+          <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">{t('settings.authoring.sceneSettingPromptDescription')}</p>
           <textarea
             value={sceneSettingPrompt}
             onChange={(e) => setSceneSettingPrompt(e.target.value)}
@@ -333,9 +402,9 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
           />
         </div>
         <div>
-          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">Suggest directions prompt</label>
+          <label className="text-[0.6875rem] font-medium text-foreground/80 mb-1 block">{t('settings.authoring.suggestDirectionsPrompt')}</label>
           <p className="text-[0.625rem] text-muted-foreground mb-1.5 leading-snug">
-            Prompt for generating direction suggestions. Use <code className="text-[0.625rem] bg-muted/50 px-1 rounded">{'{{count}}'}</code> for the number of suggestions.
+            {t('settings.authoring.suggestDirectionsPromptDescription')} <code className="text-[0.625rem] bg-muted/50 px-1 rounded">{'{{count}}'}</code> {t('settings.authoring.suggestDirectionsCountSuffix')}
           </p>
           <textarea
             value={suggestPrompt}
@@ -348,7 +417,7 @@ function GuidedPromptsControls({ story, onUpdate, isPending }: {
           />
         </div>
         <p className="text-[0.625rem] text-muted-foreground italic">
-          Leave empty to use the default prompt. Changes are saved when you leave each field.
+          {t('settings.authoring.guidedPromptSaveNotice')}
         </p>
     </div>
   )
@@ -358,6 +427,7 @@ const DEFAULT_HUB = 'https://errata.tealios.com'
 
 function ErrataNetSection() {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
   const { data: config } = useQuery({
     queryKey: ['erratanet-config'],
     queryFn: () => api.erratanet.getConfig(),
@@ -388,26 +458,26 @@ function ErrataNetSection() {
 
   return (
     <>
-      <SectionHeading label="ErrataNet" />
+      <SectionHeading label={t('settings.erratanet.heading')} />
       <div className="space-y-3">
         <SettingsCard>
           <SettingRow
-            label="ErrataNet"
-            description="Browse, install, and publish community packs from a hub."
+            label={t('settings.erratanet.heading')}
+            description={t('settings.erratanet.description')}
           >
             <Toggle
               checked={enabled}
               disabled={setConfig.isPending}
               onChange={(next) => setConfig.mutate(next ? { enabled: true, introSeen: true } : { enabled: false })}
-              label="Toggle ErrataNet"
+              label={t('settings.erratanet.toggle')}
             />
           </SettingRow>
         </SettingsCard>
 
         <div className={`rounded-lg border border-border/30 p-3 ${enabled ? '' : 'pointer-events-none opacity-40'}`}>
-          <p className="text-[0.75rem] font-medium text-foreground/80">API endpoint</p>
+          <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.erratanet.apiEndpoint')}</p>
           <p className="mt-0.5 text-[0.625rem] leading-snug text-muted-foreground">
-            The hub Errata connects to for browsing and publishing packs.
+            {t('settings.erratanet.apiEndpointDescription')}
           </p>
           <input
             value={endpoint}
@@ -435,6 +505,7 @@ export function SettingsPanel({
   pluginSidebarVisibility,
 }: SettingsPanelProps) {
   const queryClient = useQueryClient()
+  const { t, language } = useLanguage()
 
   const { data: plugins } = useQuery({
     queryKey: ['plugins'],
@@ -475,7 +546,7 @@ export function SettingsPanel({
   const [proseWidth, setProseWidth] = useProseWidth()
   const [uiFontSize, setUiFontSize] = useUiFontSize()
   const [proseFontSize, setProseFontSize] = useProseFontSize()
-  const [fontPrefs, setFont, resetFonts] = useFontPreferences()
+  const [fontPrefs, setFont, resetFonts] = useFontPreferences(language)
   const hasCustomFonts = Object.keys(fontPrefs).length > 0
   const [, customCssEnabled, , setCustomCssEnabled] = useCustomCss()
   const [hasDesktopBridge, setHasDesktopBridge] = useState(() => getDesktopBridge() !== null)
@@ -492,27 +563,27 @@ export function SettingsPanel({
     <div className="p-4 space-y-4" data-component-id="settings-panel-root">
       {/* Appearance */}
       <SettingsSection id="set-appearance" label="Appearance" group="Interface">
-        <SectionHeading label="Appearance" />
+        <SectionHeading label={t('settings.appearance.heading')} />
         <SettingsCard>
-          <SettingRow label="Theme">
+          <SettingRow label={t('settings.appearance.theme')}>
             <SegmentedControl
               value={theme}
               options={[
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-                { value: 'high-contrast', label: 'High' },
+                { value: 'light', label: t('settings.appearance.light') },
+                { value: 'dark', label: t('settings.appearance.dark') },
+                { value: 'high-contrast', label: t('settings.appearance.highContrast') },
               ]}
               onChange={setTheme}
             />
           </SettingRow>
-          <SettingRow label="Interaction sounds" description="Play subtle feedback for controls">
+          <SettingRow label={t('settings.appearance.interactionSounds')} description={t('settings.appearance.interactionSoundsDescription')}>
             <Toggle
               checked={interactionSounds}
               onChange={setInteractionSounds}
-              label="Toggle interaction sounds"
+              label={t('settings.appearance.toggleInteractionSounds')}
             />
           </SettingRow>
-          <SettingRow label="UI size" description="Scale the entire interface">
+          <SettingRow label={t('settings.appearance.uiSize')} description={t('settings.appearance.uiSizeDescription')}>
             <SegmentedControl<UiFontSize>
               value={uiFontSize}
               options={[
@@ -525,28 +596,28 @@ export function SettingsPanel({
               onChange={setUiFontSize}
             />
           </SettingRow>
-          <SettingRow label="Quick switch" description="Show chevrons to swap between variations">
-            <Toggle checked={quickSwitch} onChange={setQuickSwitch} label="Toggle quick switch" />
+          <SettingRow label={t('settings.appearance.quickSwitch')} description={t('settings.appearance.quickSwitchDescription')}>
+            <Toggle checked={quickSwitch} onChange={setQuickSwitch} label={t('settings.appearance.toggleQuickSwitch')} />
           </SettingRow>
-          <SettingRow label="Mentions" description="Highlight analyzed fragment references in prose">
+          <SettingRow label={t('settings.appearance.mentions')} description={t('settings.appearance.mentionsDescription')}>
             <MentionTypePicker story={story} enabledTypes={mentionTypes} onChange={setMentionTypes} />
           </SettingRow>
-          <SettingRow label="Timeline bar" description="Show timeline switcher above prose">
-            <Toggle checked={timelineBar} onChange={setTimelineBar} label="Toggle timeline bar" />
+          <SettingRow label={t('settings.appearance.timelineBar')} description={t('settings.appearance.timelineBarDescription')}>
+            <Toggle checked={timelineBar} onChange={setTimelineBar} label={t('settings.appearance.toggleTimelineBar')} />
           </SettingRow>
-          <SettingRow label="Prose width" description="Reading column width">
+          <SettingRow label={t('settings.appearance.proseWidth')} description={t('settings.appearance.proseWidthDescription')}>
             <SegmentedControl<ProseWidth>
               value={proseWidth}
               options={[
-                { value: 'narrow', label: 'Narrow' },
-                { value: 'medium', label: 'Medium' },
-                { value: 'wide', label: 'Wide' },
-                { value: 'full', label: 'Full' },
+                { value: 'narrow', label: t('settings.appearance.widthNarrow') },
+                { value: 'medium', label: t('settings.appearance.widthMedium') },
+                { value: 'wide', label: t('settings.appearance.widthWide') },
+                { value: 'full', label: t('settings.appearance.widthFull') },
               ]}
               onChange={setProseWidth}
             />
           </SettingRow>
-          <SettingRow label="Font size" description="Prose text size">
+          <SettingRow label={t('settings.appearance.fontSize')} description={t('settings.appearance.fontSizeDescription')}>
             <SegmentedControl<ProseFontSize>
               value={proseFontSize}
               options={[
@@ -559,8 +630,8 @@ export function SettingsPanel({
               onChange={setProseFontSize}
             />
           </SettingRow>
-          <SettingRow label="Custom CSS" description="Apply your own styles globally">
-            <Toggle checked={customCssEnabled} onChange={setCustomCssEnabled} label="Toggle custom CSS" />
+          <SettingRow label={t('settings.appearance.customCss')} description={t('settings.appearance.customCssDescription')}>
+            <Toggle checked={customCssEnabled} onChange={setCustomCssEnabled} label={t('settings.appearance.toggleCustomCss')} />
           </SettingRow>
           {customCssEnabled && (
             <button
@@ -570,7 +641,7 @@ export function SettingsPanel({
             >
               <span className="flex items-center gap-1.5">
                 <Code className="size-3" />
-                Edit custom CSS
+                {t('settings.appearance.editCustomCss')}
               </span>
               <ChevronRight className="size-3" />
             </button>
@@ -582,44 +653,44 @@ export function SettingsPanel({
       {/* Typography */}
       <SettingsSection id="set-typography" label="Typography" group="Interface">
         <SectionHeading
-          label="Typography"
+          label={t('settings.typography.heading')}
           action={hasCustomFonts && (
             <button
               onClick={resetFonts}
               className="flex items-center gap-1 text-[0.625rem] text-muted-foreground hover:text-foreground/60 transition-colors"
             >
               <RotateCcw className="size-2.5" />
-              Reset
+              {t('settings.typography.reset')}
             </button>
           )}
         />
         <SettingsCard>
           <FontPicker
             role="display"
-            label="Display"
-            description="Titles, headings, story names"
-            activeFont={getActiveFont('display', fontPrefs)}
+            label={t('settings.typography.display')}
+            description={t('settings.typography.displayDescription')}
+            activeFont={getActiveFont('display', fontPrefs, language)}
             onSelect={(name) => setFont('display', name)}
           />
           <FontPicker
             role="prose"
-            label="Prose"
-            description="Reading experience, story content"
-            activeFont={getActiveFont('prose', fontPrefs)}
+            label={t('settings.typography.prose')}
+            description={t('settings.typography.proseDescription')}
+            activeFont={getActiveFont('prose', fontPrefs, language)}
             onSelect={(name) => setFont('prose', name)}
           />
           <FontPicker
             role="sans"
-            label="Interface"
-            description="UI text, buttons, labels"
-            activeFont={getActiveFont('sans', fontPrefs)}
+            label={t('settings.typography.interface')}
+            description={t('settings.typography.interfaceDescription')}
+            activeFont={getActiveFont('sans', fontPrefs, language)}
             onSelect={(name) => setFont('sans', name)}
           />
           <FontPicker
             role="mono"
-            label="Code"
-            description="Fragment IDs, monospace text"
-            activeFont={getActiveFont('mono', fontPrefs)}
+            label={t('settings.typography.code')}
+            description={t('settings.typography.codeDescription')}
+            activeFont={getActiveFont('mono', fontPrefs, language)}
             onSelect={(name) => setFont('mono', name)}
           />
         </SettingsCard>
@@ -640,15 +711,15 @@ export function SettingsPanel({
 
       {/* Generation */}
       <SettingsSection id="set-generation" label="Generation" group="Writing">
-        <SectionHeading label="Generation" helpTopic="generation#overview" />
+        <SectionHeading label={t('settings.generation.heading')} helpTopic="generation#overview" helpLabel={t('common.learnMore')} />
         <div className="space-y-3">
-          <SettingsGroup title="Workflow" description="How prose generation runs and what the model is allowed to do.">
-            <SettingRow label="Generation mode" description="How prose generation is handled">
+          <SettingsGroup title={t('settings.generation.workflow')} description={t('settings.generation.workflowDescription')}>
+            <SettingRow label={t('settings.generation.mode')} description={t('settings.generation.modeDescription')}>
               <SegmentedControl
                 value={(story.settings.generationMode ?? 'standard') as 'standard' | 'prewriter'}
                 options={[
-                  { value: 'standard' as const, label: 'Standard' },
-                  { value: 'prewriter' as const, label: 'Prewriter' },
+                  { value: 'standard' as const, label: t('settings.generation.standard') },
+                  { value: 'prewriter' as const, label: t('settings.generation.prewriter') },
                 ]}
                 onChange={(v) => updateMutation.mutate({ generationMode: v })}
                 disabled={updateMutation.isPending}
@@ -656,40 +727,40 @@ export function SettingsPanel({
             </SettingRow>
             {(story.settings.generationMode ?? 'standard') === 'prewriter' && (
               <>
-                <SettingRow label="Prewriter reasoning" description="How much the prewriter deliberates. Short favors speed; Extensive favors depth.">
+                <SettingRow label={t('settings.generation.prewriterReasoning')} description={t('settings.generation.prewriterReasoningDescription')}>
                   <SegmentedControl
                     value={(story.settings.prewriterReasoning ?? 'normal') as 'short' | 'normal' | 'extensive'}
                     options={[
-                      { value: 'short' as const, label: 'Short' },
-                      { value: 'normal' as const, label: 'Normal' },
-                      { value: 'extensive' as const, label: 'Extensive' },
+                      { value: 'short' as const, label: t('settings.generation.reasoningShort') },
+                      { value: 'normal' as const, label: t('settings.generation.reasoningNormal') },
+                      { value: 'extensive' as const, label: t('settings.generation.reasoningExtensive') },
                     ]}
                     onChange={(v) => updateMutation.mutate({ prewriterReasoning: v })}
                     disabled={updateMutation.isPending}
                   />
                 </SettingRow>
-                <SettingRow label="Clarify before writing" description="Let the prewriter ask you questions when your direction is ambiguous, before it writes.">
+                <SettingRow label={t('settings.generation.clarifyBeforeWriting')} description={t('settings.generation.clarifyBeforeWritingDescription')}>
                   <Toggle
                     checked={story.settings.clarifyBeforeGenerate ?? false}
                     onChange={(next) => updateMutation.mutate({ clarifyBeforeGenerate: next })}
                     disabled={updateMutation.isPending}
-                    label="Toggle clarify before writing"
+                    label={t('settings.generation.toggleClarifyBeforeWriting')}
                   />
                 </SettingRow>
               </>
             )}
-            <SettingRow label="Output format" helpTopic="generation#output-format">
+            <SettingRow label={t('settings.generation.outputFormat')} helpTopic="generation#output-format" helpLabel={t('common.learnMore')}>
               <SegmentedControl
                 value={story.settings.outputFormat}
                 options={[
-                  { value: 'plaintext', label: 'Plain' },
-                  { value: 'markdown', label: 'Markdown' },
+                  { value: 'plaintext', label: t('settings.generation.plain') },
+                  { value: 'markdown', label: t('settings.generation.markdown') },
                 ]}
                 onChange={(v) => updateMutation.mutate({ outputFormat: v })}
                 disabled={updateMutation.isPending}
               />
             </SettingRow>
-            <SettingRow label="Max steps" description="Tool-use rounds per generation" helpTopic="generation#max-steps">
+            <SettingRow label={t('settings.generation.maxSteps')} description={t('settings.generation.maxStepsDescription')} helpTopic="generation#max-steps" helpLabel={t('common.learnMore')}>
               <NumberField
                 value={story.settings.maxSteps ?? 10}
                 min={1}
@@ -698,31 +769,31 @@ export function SettingsPanel({
                 disabled={updateMutation.isPending}
               />
             </SettingRow>
-            <SettingRow label="Disable thinking" description="Suppress extended thinking / reasoning mode on models that support it">
+            <SettingRow label={t('settings.generation.disableThinking')} description={t('settings.generation.disableThinkingDescription')}>
               <Toggle
                 checked={story.settings.disableThinking ?? false}
                 onChange={(next) => updateMutation.mutate({ disableThinking: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable thinking"
+                label={t('settings.generation.toggleDisableThinking')}
               />
             </SettingRow>
-            <SettingRow label="Expand thinking by default" description="Show the model's thinking expanded while it generates, instead of collapsed">
+            <SettingRow label={t('settings.generation.expandThinking')} description={t('settings.generation.expandThinkingDescription')}>
               <Toggle
                 checked={story.settings.expandThoughtsByDefault ?? true}
                 onChange={(next) => updateMutation.mutate({ expandThoughtsByDefault: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle expand thinking by default"
+                label={t('settings.generation.toggleExpandThinking')}
               />
             </SettingRow>
           </SettingsGroup>
 
-          <SettingsGroup title="Context" description="How the prompt is assembled before generation starts.">
-            <SettingRow label="Fragment ordering" description="Grouped bundles fragments by type. Custom unlocks the Fragment Order panel for drag-and-drop sequencing." helpTopic="settings#prompt-control">
+          <SettingsGroup title={t('settings.generation.context')} description={t('settings.generation.contextDescription')}>
+            <SettingRow label={t('settings.generation.fragmentOrdering')} description={t('settings.generation.fragmentOrderingDescription')} helpTopic="settings#prompt-control" helpLabel={t('common.learnMore')}>
               <SegmentedControl
                 value={story.settings.contextOrderMode ?? 'simple'}
                 options={[
-                  { value: 'simple', label: 'Grouped' },
-                  { value: 'advanced', label: 'Custom' },
+                  { value: 'simple', label: t('settings.generation.grouped') },
+                  { value: 'advanced', label: t('settings.generation.custom') },
                 ]}
                 onChange={(v) => updateMutation.mutate({ contextOrderMode: v })}
                 disabled={updateMutation.isPending}
@@ -730,24 +801,24 @@ export function SettingsPanel({
             </SettingRow>
             <div className="px-3 py-2.5">
               <div className="flex items-center gap-1">
-                <p className="text-[0.75rem] font-medium text-foreground/80">Context limit</p>
+                <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.generation.contextLimit')}</p>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); openHelp('generation#context-limit') }}
                   className="text-muted-foreground hover:text-primary/60 transition-colors"
-                  title="Learn more"
+                  title={t('settings.generation.learnMore')}
                 >
                   <CircleHelp className="size-3" />
                 </button>
               </div>
-              <p className="text-[0.625rem] text-muted-foreground mt-0.5 leading-snug">How much recent prose to include</p>
+              <p className="text-[0.625rem] text-muted-foreground mt-0.5 leading-snug">{t('settings.generation.contextLimitDescription')}</p>
               <div className="flex items-center justify-between gap-2 mt-2.5">
                 <SegmentedControl
                   value={(story.settings.contextCompact?.type ?? 'proseLimit') as 'proseLimit' | 'maxTokens' | 'maxCharacters'}
                   options={[
-                    { value: 'proseLimit' as const, label: 'Fragments' },
-                    { value: 'maxTokens' as const, label: 'Tokens' },
-                    { value: 'maxCharacters' as const, label: 'Characters' },
+                    { value: 'proseLimit' as const, label: t('settings.generation.fragments') },
+                    { value: 'maxTokens' as const, label: t('settings.generation.tokens') },
+                    { value: 'maxCharacters' as const, label: t('settings.generation.characters') },
                   ]}
                   onChange={(v) => {
                     const defaults = { proseLimit: 10, maxTokens: 40000, maxCharacters: 160000 } as const
@@ -767,37 +838,37 @@ export function SettingsPanel({
             </div>
           </SettingsGroup>
 
-          <SettingsGroup title="Librarian" description="What happens after prose is generated and the librarian follows up.">
-            <SettingRow label="Disable auto analysis" description="Do not run the librarian automatically after prose generation">
+          <SettingsGroup title={t('settings.generation.librarian')} description={t('settings.generation.librarianDescription')}>
+            <SettingRow label={t('settings.generation.disableAutoAnalysis')} description={t('settings.generation.disableAutoAnalysisDescription')}>
               <Toggle
                 checked={story.settings.disableLibrarianAutoAnalysis ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianAutoAnalysis: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable auto analysis"
+                label={t('settings.generation.toggleDisableAutoAnalysis')}
               />
             </SettingRow>
-            <SettingRow label="Auto-apply suggestions" description="Apply evidence-backed fragment corrections and new reusable records automatically" helpTopic="librarian#auto-suggestions">
+            <SettingRow label={t('settings.generation.autoApplySuggestions')} description={t('settings.generation.autoApplySuggestionsDescription')} helpTopic="librarian#auto-suggestions" helpLabel={t('common.learnMore')}>
               <Toggle
                 checked={story.settings.autoApplyLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ autoApplyLibrarianSuggestions: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle auto-apply suggestions"
+                label={t('settings.generation.toggleAutoApplySuggestions')}
               />
             </SettingRow>
-            <SettingRow label="Disable automatic directions" description="Skip directions during automatic Librarian analysis; manual suggestions remain available">
+            <SettingRow label={t('settings.generation.disableAutomaticDirections')} description={t('settings.generation.disableAutomaticDirectionsDescription')}>
               <Toggle
                 checked={story.settings.disableLibrarianDirections ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianDirections: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle automatic directions"
+                label={t('settings.generation.toggleAutomaticDirections')}
               />
             </SettingRow>
-            <SettingRow label="Disable suggestions" description="Skip fragment corrections and new-record suggestions during analysis">
+            <SettingRow label={t('settings.generation.disableSuggestions')} description={t('settings.generation.disableSuggestionsDescription')}>
               <Toggle
                 checked={story.settings.disableLibrarianSuggestions ?? false}
                 onChange={(next) => updateMutation.mutate({ disableLibrarianSuggestions: next })}
                 disabled={updateMutation.isPending}
-                label="Toggle disable suggestions"
+                label={t('settings.generation.toggleDisableSuggestions')}
               />
             </SettingRow>
           </SettingsGroup>
@@ -806,22 +877,26 @@ export function SettingsPanel({
 
       {/* Authoring (transforms + guided prompts) */}
       <SettingsSection id="set-authoring" label="Authoring" group="Writing">
-        <SectionHeading label="Authoring" />
+        <SectionHeading label={t('settings.authoring.heading')} />
         <div className="space-y-6">
           <div className="space-y-2.5">
             <div>
               <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">
-                Selection transforms{enabledTransformCount > 0 ? ` · ${enabledTransformCount} active` : ''}
+                {t('settings.authoring.selectionTransforms')}{enabledTransformCount > 0 ? ` · ${enabledTransformCount} ${t('settings.authoring.active')}` : ''}
               </p>
               <p className="text-[0.6875rem] text-muted-foreground mt-0.5 leading-snug">
-                Quick rewrites in the floating toolbar when you select text. Drag to reorder, toggle to show or hide.
+                {t('settings.authoring.selectionTransformsDescription')}
               </p>
             </div>
             <SettingsCard>
-              <SettingRow label="Surrounding context" description="How much of the passage around your selection a transform can read.">
+              <SettingRow label={t('settings.authoring.surroundingContext')} description={t('settings.authoring.surroundingContextDescription')}>
                 <SegmentedControl
                   value={transformContext}
-                  options={(['tight', 'wide', 'passage'] as TransformContext[]).map((v) => ({ value: v, label: TRANSFORM_CONTEXT_LABELS[v] }))}
+                  options={[
+                    { value: 'tight' as TransformContext, label: t('settings.authoring.contextNearby') },
+                    { value: 'wide' as TransformContext, label: t('settings.authoring.contextWider') },
+                    { value: 'passage' as TransformContext, label: t('settings.authoring.contextWholePassage') },
+                  ]}
                   onChange={setTransformContext}
                 />
               </SettingRow>
@@ -831,9 +906,9 @@ export function SettingsPanel({
 
           <div className="space-y-2.5">
             <div>
-              <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">Guided mode prompts</p>
+              <p className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">{t('settings.authoring.guidedModePrompts')}</p>
               <p className="text-[0.6875rem] text-muted-foreground mt-0.5 leading-snug">
-                The prompts behind the guided writing buttons. Leave a field empty to use its default.
+                {t('settings.authoring.guidedModePromptsDescription')}
               </p>
             </div>
             <GuidedPromptsControls story={story} onUpdate={(data) => updateMutation.mutate(data)} isPending={updateMutation.isPending} />
@@ -860,7 +935,7 @@ export function SettingsPanel({
 
       {/* Plugins */}
       <SettingsSection id="set-plugins" label="Plugins" group="System">
-        <SectionHeading label="Plugins" helpTopic="settings#plugins" className="mb-3" />
+        <SectionHeading label={t('settings.plugins.heading')} helpTopic="settings#plugins" helpLabel={t('common.learnMore')} className="mb-3" />
         {plugins && plugins.length > 0 ? (
           <div className="space-y-2">
             {plugins.map((plugin) => {
@@ -883,7 +958,7 @@ export function SettingsPanel({
                           ? 'bg-foreground'
                           : 'bg-muted-foreground/20'
                         }`}
-                      aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+                      aria-label={`${isEnabled ? t('settings.plugins.disable') : t('settings.plugins.enable')} ${plugin.name}`}
                     >
                       <span
                         className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-background transition-[left] duration-150 ${isEnabled ? 'left-[16px]' : 'left-[2px]'
@@ -909,7 +984,7 @@ export function SettingsPanel({
                           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground/70 hover:bg-accent/40 transition-colors"
                         >
                           <ExternalLink className="size-3" />
-                          Open panel
+                          {t('settings.plugins.openPanel')}
                         </button>
                       )}
                       {onTogglePluginSidebar && (
@@ -918,7 +993,7 @@ export function SettingsPanel({
                           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground hover:text-foreground/70 hover:bg-accent/40 transition-colors"
                         >
                           {isSidebarVisible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-                          {isSidebarVisible ? 'Visible in sidebar' : 'Hidden from sidebar'}
+                          {isSidebarVisible ? t('settings.plugins.visibleInSidebar') : t('settings.plugins.hiddenFromSidebar')}
                         </button>
                       )}
                     </div>
@@ -930,7 +1005,7 @@ export function SettingsPanel({
         ) : (
           <div className="flex flex-col items-center py-6 text-center">
             <Puzzle className="size-5 text-muted-foreground mb-2" />
-            <p className="text-[0.6875rem] text-muted-foreground">No plugins available</p>
+            <p className="text-[0.6875rem] text-muted-foreground">{t('settings.plugins.noneAvailable')}</p>
           </div>
         )}
       </SettingsSection>

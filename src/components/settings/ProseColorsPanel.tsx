@@ -1,32 +1,33 @@
 import { useRef } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import { useProseColors, type ProseColorConfig } from '@/lib/theme'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface ColorChannel {
   key: keyof ProseColorConfig
-  label: string
-  description: string
-  defaultHint: string
+  labelKey: TranslationKey
+  descriptionKey: TranslationKey
+  defaultHintKey: TranslationKey
 }
 
 const CHANNELS: ColorChannel[] = [
   {
     key: 'dialogue',
-    label: 'Dialogue',
-    description: 'Quoted speech wrapped in double quotes',
-    defaultHint: 'Muted blue',
+    labelKey: 'settings.proseColors.dialogue',
+    descriptionKey: 'settings.proseColors.dialogueDescription',
+    defaultHintKey: 'settings.proseColors.dialogueDefault',
   },
   {
     key: 'narration',
-    label: 'Narration',
-    description: 'Base prose text color',
-    defaultHint: 'Theme foreground',
+    labelKey: 'settings.proseColors.narration',
+    descriptionKey: 'settings.proseColors.narrationDescription',
+    defaultHintKey: 'settings.proseColors.narrationDefault',
   },
   {
     key: 'emphasis',
-    label: 'Emphasis',
-    description: 'Italic text outside of dialogue',
-    defaultHint: 'Inherits narration',
+    labelKey: 'settings.proseColors.emphasis',
+    descriptionKey: 'settings.proseColors.emphasisDescription',
+    defaultHintKey: 'settings.proseColors.emphasisDefault',
   },
 ]
 
@@ -100,13 +101,14 @@ function ColorRow({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const presets = PRESETS[channel.key]
+  const { t } = useLanguage()
 
   return (
     <div className="px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
         <div>
-          <p className="text-[0.75rem] font-medium text-foreground/80">{channel.label}</p>
-          <p className="text-[0.625rem] text-muted-foreground leading-snug">{channel.description}</p>
+          <p className="text-[0.75rem] font-medium text-foreground/80">{t(channel.labelKey)}</p>
+          <p className="text-[0.625rem] text-muted-foreground leading-snug">{t(channel.descriptionKey)}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {value && (
@@ -114,7 +116,7 @@ function ColorRow({
               type="button"
               onClick={onClear}
               className="text-muted-foreground hover:text-foreground/60 transition-colors"
-              title="Reset to default"
+              title={t('settings.proseColors.resetDefault')}
             >
               <X className="size-3" />
             </button>
@@ -124,7 +126,7 @@ function ColorRow({
             onClick={() => inputRef.current?.click()}
             className="size-7 rounded-md border border-border/40 hover:border-foreground/30 transition-colors cursor-pointer relative overflow-hidden"
             style={{ backgroundColor: value || 'transparent' }}
-            title={value || `Default (${channel.defaultHint})`}
+            title={value || `${t('settings.proseColors.default')} (${t(channel.defaultHintKey)})`}
           >
             {!value && (
               <span className="absolute inset-0 flex items-center justify-center text-[0.5rem] text-muted-foreground">
@@ -172,6 +174,7 @@ She paused, *weighing her options carefully*, before answering.
  */
 export function ProseColorsControls() {
   const [colors, setColors, resetColors] = useProseColors()
+  const { t } = useLanguage()
 
   const hasCustomColors = Object.values(colors).some(Boolean)
 
@@ -188,7 +191,7 @@ export function ProseColorsControls() {
   return (
     <div className="rounded-lg border border-border/30 divide-y divide-border/20">
       <div className="flex items-center justify-between px-3 py-2">
-        <p className="text-[0.75rem] font-medium text-foreground/80">Prose colors</p>
+        <p className="text-[0.75rem] font-medium text-foreground/80">{t('settings.proseColors.heading')}</p>
         {hasCustomColors && (
           <button
             type="button"
@@ -196,7 +199,7 @@ export function ProseColorsControls() {
             className="flex items-center gap-1 text-[0.625rem] text-muted-foreground hover:text-foreground/60 transition-colors"
           >
             <RotateCcw className="size-2.5" />
-            Reset all
+            {t('settings.proseColors.resetAll')}
           </button>
         )}
       </div>
@@ -214,7 +217,7 @@ export function ProseColorsControls() {
       {/* Live preview */}
       <div className="px-4 py-4">
         <p className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-2">
-          Preview
+          {t('settings.proseColors.preview')}
         </p>
         <div
           className="prose-content rounded-lg border border-border/20 bg-background p-4 text-[0.8125rem] leading-relaxed"

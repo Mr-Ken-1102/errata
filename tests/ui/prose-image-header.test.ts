@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { ProseImageHeader } from '@/components/prose/ProseImageHeader'
 import type { Fragment } from '@/lib/api'
 import type { HeaderImage } from '@/lib/fragment-visuals'
+import { withLanguageProvider } from './test-providers'
 
 function makeFragment(overrides: Partial<Fragment> = {}): Fragment {
   return {
@@ -28,7 +29,7 @@ function makeFragment(overrides: Partial<Fragment> = {}): Fragment {
 
 function render(ui: ReactElement): string {
   const client = new QueryClient()
-  return renderToStaticMarkup(createElement(QueryClientProvider, { client }, ui))
+  return renderToStaticMarkup(withLanguageProvider(createElement(QueryClientProvider, { client }, ui)))
 }
 
 const header: HeaderImage = {

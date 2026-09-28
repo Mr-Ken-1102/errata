@@ -12,12 +12,14 @@ import {
   PanelTitle,
 } from '@/components/ui/panel'
 import { useCustomCss } from '@/lib/theme'
+import { useLanguage } from '@/lib/i18n'
 
 interface CustomCssPanelProps {
   onClose: () => void
 }
 
 export function CustomCssPanel({ onClose }: CustomCssPanelProps) {
+  const { t } = useLanguage()
   const [savedCss, , setCss] = useCustomCss()
   const [value, setValue] = useState(savedCss)
 
@@ -39,8 +41,8 @@ export function CustomCssPanel({ onClose }: CustomCssPanelProps) {
       <PanelHeader>
         <PanelHeaderText className="flex-row items-center gap-2">
           <Code2 className="size-4 text-muted-foreground" />
-          <PanelTitle>Custom CSS</PanelTitle>
-          <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Appearance</span>
+          <PanelTitle>{t('settings.customCss.title')}</PanelTitle>
+          <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">{t('settings.customCss.appearance')}</span>
         </PanelHeaderText>
         <PanelActions>
           <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={onClose} data-component-id="custom-css-panel-close">
@@ -52,13 +54,13 @@ export function CustomCssPanel({ onClose }: CustomCssPanelProps) {
       <PanelBody className="px-6 py-6" data-component-id="custom-css-panel-scroll">
         <div className="max-w-3xl w-full mx-auto space-y-4">
           <Hint className="text-[0.625rem] leading-snug">
-            Add your own CSS to customize the interface. Styles are applied globally when Custom CSS is enabled.
+            {t('settings.customCss.description')}
           </Hint>
 
           <Textarea
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="/* Example: Increase default body contrast */\n.text-muted-foreground { color: #eee !important; }\n\n/* Example: Make buttons squarer */\nbutton { border-radius: 4px !important; }"
+            placeholder={t('settings.customCss.editorPlaceholder')}
             className="min-h-[60vh] font-mono text-sm resize-none"
             spellCheck={false}
             data-component-id="custom-css-panel-editor"
@@ -67,16 +69,16 @@ export function CustomCssPanel({ onClose }: CustomCssPanelProps) {
           <div className="flex items-center justify-between gap-2">
             <Button variant="outline" size="sm" onClick={handleReset} disabled={!value} data-component-id="custom-css-panel-clear">
               <RotateCcw className="size-3.5 mr-1.5" />
-              Clear
+              {t('settings.customCss.clear')}
             </Button>
 
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} data-component-id="custom-css-panel-cancel">
-                Cancel
+                {t('settings.customCss.cancel')}
               </Button>
               <Button size="sm" onClick={handleSave} data-component-id="custom-css-panel-save">
                 <Save className="size-3.5 mr-1.5" />
-                Save CSS
+                {t('settings.customCss.save')}
               </Button>
             </div>
           </div>

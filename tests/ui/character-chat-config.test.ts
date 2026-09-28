@@ -2,9 +2,10 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { ChatConfig } from '@/components/character-chat/ChatConfig'
+import { withLanguageProvider } from './test-providers'
 
 function renderConfig(): string {
-  return renderToStaticMarkup(React.createElement(ChatConfig, {
+  return renderToStaticMarkup(withLanguageProvider(React.createElement(ChatConfig, {
     characters: [],
     selectedCharacterId: null,
     onCharacterChange: vi.fn(),
@@ -17,7 +18,7 @@ function renderConfig(): string {
     onShowConversations: vi.fn(),
     onClose: vi.fn(),
     mediaById: new Map(),
-  }))
+  })))
 }
 
 function elementWithComponentId(html: string, componentId: string): string {

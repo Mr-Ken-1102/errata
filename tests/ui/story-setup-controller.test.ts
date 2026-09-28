@@ -104,6 +104,46 @@ describe('useStorySetupController', () => {
     expect(window.localStorage.length).toBe(0)
   })
 
+  it('accepts a repaired snapshot after an intermediate updateStorySetup tool error', async () => {
+    const checklist = [
+      { key: 'starting-point' as const, status: 'covered' as const, note: 'Recovered story seed' },
+    ]
+    chat.mockResolvedValue(new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          type: 'tool-error',
+          id: 'bad-1',
+          toolName: 'updateStorySetup',
+          error: 'Missing fragment type',
+        })
+        controller.enqueue({
+          type: 'tool-result',
+          id: 'ok-2',
+          toolName: 'updateStorySetup',
+          result: { saved: true, checklist, fragments: [] },
+        })
+        controller.enqueue({ type: 'text', text: 'What made the detective retire?' })
+        controller.enqueue({ type: 'finish', finishReason: 'stop', stepCount: 3 })
+        controller.close()
+      },
+    }))
+
+    const { result } = renderHook(
+      () => useStorySetupController({
+        storyId: 'story-test',
+        sessionScope: 'main',
+        contentRevision: 'revision-1',
+        active: true,
+      }),
+      { wrapper: makeWrapper() },
+    )
+
+    await waitFor(() => expect(result.current.contextReady).toBe(true))
+    expect(result.current.error).toBeNull()
+    expect(result.current.checklist[0]).toEqual(checklist[0])
+    expect(result.current.messages.at(-1)?.content).toBe('What made the detective retire?')
+  })
+
   it('accepts a read-only assessment only after its tool result arrives', async () => {
     const checklist = [
       { key: 'starting-point' as const, status: 'covered' as const, note: 'Existing draft' },

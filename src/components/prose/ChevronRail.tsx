@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface ChevronRailProps {
   direction: 'prev' | 'next'
@@ -10,6 +11,7 @@ interface ChevronRailProps {
 
 /** Full-height chevron rail that follows cursor vertically */
 export function ChevronRail({ direction, disabled, onClick, fragmentId }: ChevronRailProps) {
+  const { t } = useLanguage()
   const railRef = useRef<HTMLDivElement>(null)
   const [chevronY, setChevronY] = useState<number | null>(null)
   const [proximity, setProximity] = useState(0)
@@ -65,7 +67,7 @@ export function ChevronRail({ direction, disabled, onClick, fragmentId }: Chevro
       ref={railRef}
       role="button"
       tabIndex={disabled ? -1 : 0}
-      aria-label={isLeft ? 'Previous variation' : 'Next variation'}
+      aria-label={isLeft ? t('chevronRail.previousVariation') : t('chevronRail.nextVariation')}
       className={`absolute top-0 bottom-0 w-12 z-20 flex items-center justify-center ${
         isLeft ? '-left-12' : '-right-12'
       }`}

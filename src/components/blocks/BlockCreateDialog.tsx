@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Code2, FileText, Monitor, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { componentId } from '@/lib/dom-ids'
+import { useLanguage } from '@/lib/i18n'
 
 interface BlockCreateDialogProps {
   open: boolean
@@ -25,6 +26,7 @@ interface BlockCreateDialogProps {
 }
 
 export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateDialogProps) {
+  const { t } = useLanguage()
   const [name, setName] = useState('')
   const [role, setRole] = useState<'system' | 'user'>('user')
   const [type, setType] = useState<'simple' | 'script'>('simple')
@@ -44,19 +46,19 @@ export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateD
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px] max-h-[85vh] flex flex-col overflow-hidden" data-component-id="block-create-dialog">
         <DialogHeader>
-          <DialogTitle className="font-display text-lg">New Custom Block</DialogTitle>
+          <DialogTitle className="font-display text-lg">{t('blockCreate.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-5 py-1 pr-1">
           {/* Name */}
           <div>
             <h4 className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-2">
-              Name
+              {t('blockCreate.name')}
             </h4>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. World Rules, Tone Guide..."
+              placeholder={t('blockCreate.namePlaceholder')}
               autoFocus
               className="h-9"
               data-component-id="block-create-name"
@@ -67,12 +69,12 @@ export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateD
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <h4 className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-2">
-                Role
+                {t('blockCreate.role')}
               </h4>
               <div className="flex rounded-lg bg-muted/25 p-[3px] gap-[3px]">
                 {([
-                  { value: 'system' as const, label: 'System', Icon: Monitor },
-                  { value: 'user' as const, label: 'User', Icon: User },
+                  { value: 'system' as const, label: t('blockCreate.system'), Icon: Monitor },
+                  { value: 'user' as const, label: t('blockCreate.user'), Icon: User },
                 ]).map(({ value, label, Icon }) => (
                 <button
                   key={value}
@@ -94,12 +96,12 @@ export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateD
 
             <div>
               <h4 className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-2">
-                Type
+                {t('blockCreate.type')}
               </h4>
               <div className="flex rounded-lg bg-muted/25 p-[3px] gap-[3px]">
                 {([
-                  { value: 'simple' as const, label: 'Text', Icon: FileText },
-                  { value: 'script' as const, label: 'Script', Icon: Code2 },
+                  { value: 'simple' as const, label: t('blockCreate.text'), Icon: FileText },
+                  { value: 'script' as const, label: t('blockCreate.script'), Icon: Code2 },
                 ]).map(({ value, label, Icon }) => (
                 <button
                   key={value}
@@ -123,13 +125,13 @@ export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateD
           {/* Content */}
           <div>
             <h4 className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium mb-2">
-              Content
+              {t('blockCreate.content')}
             </h4>
 
             {type === 'script' && (
               <div className="mb-2.5 rounded-md bg-amber-500/5 border border-amber-500/10 px-3 py-2">
                 <p className="text-[0.625rem] text-amber-600/70 dark:text-amber-400/70 leading-relaxed">
-                  Write a JS function body that returns a string. Access story data via <code className="font-mono bg-amber-500/10 px-1 rounded text-[0.625rem]">ctx</code>: ctx.story, ctx.proseFragments, ctx.authorInput, etc.
+                  {t('blockCreate.scriptHintPrefix')} <code className="font-mono bg-amber-500/10 px-1 rounded text-[0.625rem]">ctx</code>: ctx.story, ctx.proseFragments, ctx.authorInput, etc.
                 </p>
               </div>
             )}
@@ -140,7 +142,7 @@ export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateD
               placeholder={
                 type === 'script'
                   ? 'return `Word count: ${ctx.proseFragments.reduce((n, f) => n + f.content.split(" ").length, 0)}`'
-                  : 'Block content...'
+                  : t('blockCreate.contentPlaceholder')
               }
               rows={6}
               className={cn('text-xs resize-y min-h-32 max-h-[40vh] overflow-y-auto', type === 'script' && 'font-mono bg-muted/15')}
@@ -151,10 +153,10 @@ export function BlockCreateDialog({ open, onOpenChange, onSubmit }: BlockCreateD
 
         <DialogFooter className="gap-2 pt-3 border-t border-border/30">
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-xs" data-component-id="block-create-cancel">
-            Cancel
+            {t('blockCreate.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!name.trim() || !content.trim()} className="text-xs gap-1.5" data-component-id="block-create-submit">
-            Create Block
+            {t('blockCreate.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -13,6 +13,7 @@
 #>
 
 $ErrorActionPreference = 'Stop'
+$BunVersion = '1.4.2'
 $RepoUrl = 'https://github.com/Mr-Ken-1102/errata.git'
 $RepoDir = 'errata'
 
@@ -36,21 +37,37 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 # --- Bun ---
-Write-Step 'Checking for Bun...'
-if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
-    Write-Host 'Bun not found. Installing...'
-    irm bun.sh/install.ps1 | iex
-    # Refresh PATH
-    $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+Write-Step "Checking for Bun $BunVersion..."
+$bunCommand = Get-Command bun -ErrorAction SilentlyContinue
+$bunVersion = if ($bunCommand) { (& bun --version).Trim() } else { $null }
+
+if ($bunVersion -ne $BunVersion) {
+    if ($bunVersion) {
+        Write-Host "Bun $bunVersion found; installing the project-pinned Bun $BunVersion..."
+    } else {
+        Write-Host "Bun not found. Installing project-pinned Bun $BunVersion..."
+    }
+
+    $installerText = Invoke-RestMethod 'https://bun.sh/install.ps1'
+    $installer = [scriptblock]::Create($installerText)
+    & $installer -Version $BunVersion
+
+    # Prefer the project-pinned user installation even if another Bun exists
+    # earlier in the machine PATH.
+    $bunBin = Join-Path $HOME '.bun\bin'
+    $env:Path = $bunBin + ';' +
+                [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                 [System.Environment]::GetEnvironmentVariable('Path', 'User')
-    if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
-        Write-Error 'Bun installation succeeded but bun is still not on PATH. Please restart your terminal and run this script again.'
+
+    $bunCommand = Get-Command bun -ErrorAction SilentlyContinue
+    $bunVersion = if ($bunCommand) { (& bun --version).Trim() } else { $null }
+    if ($bunVersion -ne $BunVersion) {
+        Write-Error "Expected Bun $BunVersion after installation, but found '$bunVersion'."
         exit 1
     }
-    Write-Host 'Bun installed.' -ForegroundColor Green
-} else {
-    Write-Host "Bun found: $(bun --version)"
 }
+
+Write-Host "Bun ready: $bunVersion" -ForegroundColor Green
 
 # --- Repository ---
 Write-Step 'Setting up repository...'
@@ -83,8 +100,8 @@ if ($insideRepo) {
 }
 
 # --- Dependencies ---
-Write-Step 'Installing dependencies...'
-bun install
+Write-Step 'Installing locked dependencies...'
+bun install --frozen-lockfile
 
 # --- Start ---
 Write-Step 'Starting dev server...'

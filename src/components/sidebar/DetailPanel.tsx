@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, ChevronsLeftRight, ChevronsRightLeft } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 const FragmentList = lazy(() => import('@/components/fragments/FragmentList').then((module) => ({ default: module.FragmentList })))
 const ContextOrderPanel = lazy(() => import('@/components/fragments/ContextOrderPanel').then((module) => ({ default: module.ContextOrderPanel })))
@@ -52,22 +53,22 @@ interface DetailPanelProps {
   onAskLibrarianConsumed?: () => void
 }
 
-const SECTION_TITLES: Record<string, string> = {
-  'story-info': 'Story Info',
-  fragments: 'All Fragments',
-  characters: 'Characters',
-  guidelines: 'Guidelines',
-  knowledge: 'Knowledge',
-  'fragment-types': 'Fragment Types',
-  media: 'Media',
-  archive: 'Archive',
-  branches: 'Timelines',
-  'context-order': 'Fragment Order',
-  blocks: 'Block Editor',
-  agents: 'Agents',
-  settings: 'Settings',
-  erratanet: 'ErrataNet',
-  'agent-activity': 'Librarian',
+const SECTION_TITLE_KEYS: Record<string, TranslationKey> = {
+  'story-info': 'detail.storyInfo',
+  fragments: 'sidebar.allFragments',
+  characters: 'sidebar.characters',
+  guidelines: 'sidebar.guidelines',
+  knowledge: 'sidebar.knowledge',
+  'fragment-types': 'sidebar.fragmentTypes',
+  media: 'sidebar.media',
+  archive: 'sidebar.archive',
+  branches: 'sidebar.timelines',
+  'context-order': 'sidebar.fragmentOrder',
+  blocks: 'detail.blockEditor',
+  agents: 'sidebar.agents',
+  settings: 'sidebar.settings',
+  erratanet: 'detail.erratanet',
+  'agent-activity': 'sidebar.librarian',
 }
 
 const SECTION_TO_TYPE: Record<string, string> = {
@@ -82,8 +83,8 @@ const SECTION_LIST_IDS: Record<string, string> = {
   knowledge: 'knowledge-sidebar-list',
 }
 
-function PanelLoading() {
-  return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading panel…</div>
+function PanelLoading({ label }: { label: string }) {
+  return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">{label}</div>
 }
 
 export function DetailPanel({
@@ -111,6 +112,7 @@ export function DetailPanel({
   askLibrarianCapturePov,
   onAskLibrarianConsumed,
 }: DetailPanelProps) {
+  const { t } = useLanguage()
   const isMobile = useIsMobile()
   const open = !!section
   const [mounted, setMounted] = useState(open)
@@ -195,15 +197,16 @@ export function DetailPanel({
   const customFragmentDefinition = customFragmentType
     ? story.settings.customFragmentTypes?.find((def) => def.type === customFragmentType)
     : undefined
+  const fixedTitleKey = SECTION_TITLE_KEYS[activeSection]
   const title = isPlugin
-    ? pluginName ?? 'Plugin'
-    : customFragmentDefinition?.name ?? SECTION_TITLES[activeSection] ?? activeSection
+    ? pluginName ?? t('detail.plugin')
+    : customFragmentDefinition?.name ?? (fixedTitleKey ? t(fixedTitleKey) : activeSection)
 
   const panelWidth = 440
   const isLibrarian = activeSection === 'agent-activity'
   const effectiveWidth = isLibrarian && expanded && expandedWidth > 0 ? expandedWidth : panelWidth
   const handleCreateCustomFragment = () => {
-    const rawType = window.prompt('Fragment type', 'knowledge')
+    const rawType = window.prompt(t('detail.fragmentTypePrompt'), 'knowledge')
     const fragmentType = rawType
       ?.trim()
       .toLowerCase()
@@ -218,7 +221,7 @@ export function DetailPanel({
   // inline detail panel.
   if (activeSection === 'settings') {
     return (
-      <Suspense fallback={<PanelLoading />}>
+      <Suspense fallback={<PanelLoading label={t('detail.loadingPanel')} />}>
         <SettingsView
           storyId={storyId}
           story={story}
@@ -235,7 +238,7 @@ export function DetailPanel({
   }
 
   const panelContent = (
-    <Suspense fallback={<PanelLoading />}>
+    <Suspense fallback={<PanelLoading label={t('detail.loadingPanel')} />}>
       {activeSection === 'story-info' && (
         <ScrollArea className="h-full">
           <StoryInfoPanel storyId={storyId} story={story} onLaunchWizard={onLaunchWizard} onExport={onExport} onDownloadStory={onDownloadStory} onExportProse={onExportProse} />
@@ -339,14 +342,14 @@ export function DetailPanel({
           <div className="h-full" data-component-id={componentId('plugin', pluginName, 'panel-root')}>
             <iframe
               src={`${pluginPanel.url}?storyId=${encodeURIComponent(storyId)}`}
-              title={`${pluginPanel.title} plugin panel`}
+              title={`${pluginPanel.title} ${t('detail.pluginPanel')}`}
               className="h-full w-full border-0 bg-background"
               sandbox="allow-scripts allow-same-origin allow-forms"
               data-component-id={componentId('plugin', pluginName, 'panel-iframe')}
             />
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">Plugin panel not found</p>
+          <p className="p-4 text-sm text-muted-foreground">{t('detail.pluginPanelNotFound')}</p>
         )
       })()}
     </Suspense>
@@ -398,8 +401,8 @@ export function DetailPanel({
                 variant="ghost"
                 className="size-7 text-muted-foreground hover:text-foreground"
                 onClick={() => setExpanded((e) => !e)}
-                title={expanded ? 'Collapse panel' : 'Expand panel'}
-                aria-label={expanded ? 'Collapse librarian panel' : 'Expand librarian panel'}
+                title={expanded ? t('detail.collapsePanel') : t('detail.expandPanel')}
+                aria-label={expanded ? t('detail.collapseLibrarianPanel') : t('detail.expandLibrarianPanel')}
                 data-component-id="detail-panel-expand"
               >
                 {expanded ? <ChevronsRightLeft className="size-4" /> : <ChevronsLeftRight className="size-4" />}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { AgentConfigPreview, AgentConfigSelection } from '@/lib/api/types'
 import { cn } from '@/lib/utils'
 import { Check, Minus, ChevronRight, Code2 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 /**
  * Controlled selection over an agent-config preview, down to individual blocks.
@@ -16,12 +17,6 @@ export interface AgentConfigSelectionState {
 }
 
 type Tri = 'on' | 'off' | 'partial'
-
-const SURFACE_LABEL: Record<string, string> = {
-  agents: 'Context & agent blocks',
-  providers: 'Provider shape',
-  modelRoles: 'Model assignments',
-}
 
 /** Humanize an agent name for display ('character-chat' -> 'character chat'). */
 function humanize(name: string): string {
@@ -93,9 +88,10 @@ function TriCheck({ state, className }: { state: Tri; className?: string }) {
 }
 
 function ScriptTag() {
+  const { t } = useLanguage()
   return (
     <span className="inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1 font-mono text-[0.5625rem] text-amber-600 dark:text-amber-400">
-      <Code2 className="size-2.5" /> script
+      <Code2 className="size-2.5" /> {t('erratanet.agentConfig.script')}
     </span>
   )
 }
@@ -114,6 +110,7 @@ export function AgentConfigSelector({
   value: AgentConfigSelectionState
   onChange: (next: AgentConfigSelectionState) => void
 }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const toggleExpand = (agent: string) =>
     setExpanded((prev) => {
@@ -184,8 +181,8 @@ export function AgentConfigSelector({
         <div className="rounded-md border border-border/40">
           <SurfaceHeader
             tri={agentsTri}
-            label={SURFACE_LABEL.agents}
-            count={`${preview.agents.length} ${preview.agents.length === 1 ? 'agent' : 'agents'}`}
+            label={t('erratanet.agentConfig.contextBlocks')}
+            count={`${preview.agents.length} ${preview.agents.length === 1 ? t('erratanet.agentConfig.agent') : t('erratanet.agentConfig.agents')}`}
             onToggle={toggleAllAgents}
           />
           <div className="divide-y divide-border/30 border-t border-border/30">
@@ -203,15 +200,15 @@ export function AgentConfigSelector({
                     </button>
                     <span className="shrink-0 text-[0.625rem] text-muted-foreground tabular-nums">
                       {agent.blocks.length > 0
-                        ? `${sel.length}/${agent.blocks.length} blocks`
-                        : `${agent.overrideCount} overrides`}
+                        ? `${sel.length}/${agent.blocks.length} ${t('erratanet.agentConfig.blocks')}`
+                        : `${agent.overrideCount} ${t('erratanet.agentConfig.overrides')}`}
                     </span>
                     {agent.blocks.length > 0 && (
                       <button
                         type="button"
                         onClick={() => toggleExpand(agent.name)}
                         className="grid size-5 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
-                        aria-label={isOpen ? 'Collapse' : 'Expand'}
+                        aria-label={isOpen ? t('erratanet.agentConfig.collapse') : t('erratanet.agentConfig.expand')}
                       >
                         <ChevronRight className={cn('size-3.5 transition-transform', isOpen && 'rotate-90')} />
                       </button>
@@ -230,7 +227,7 @@ export function AgentConfigSelector({
                             <span className="truncate text-[0.75rem]">{b.name}</span>
                             <span className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground">{b.role}</span>
                             {b.type === 'script' && <ScriptTag />}
-                            {!b.enabled && <span className="text-[0.5625rem] text-muted-foreground">off</span>}
+                            {!b.enabled && <span className="text-[0.5625rem] text-muted-foreground">{t('erratanet.agentConfig.off')}</span>}
                           </button>
                         </li>
                       ))}
@@ -246,7 +243,7 @@ export function AgentConfigSelector({
       {/* Provider shape */}
       {preview.providerShapes.length > 0 && (
         <FlatSurface
-          label={SURFACE_LABEL.providers}
+          label={t('erratanet.agentConfig.providerShape')}
           tri={flatTri(value.providers, providerNames)}
           onToggleAll={() => flatToggleAll('providers', providerNames)}
           items={preview.providerShapes.map((p) => ({
@@ -264,7 +261,7 @@ export function AgentConfigSelector({
       {/* Model assignments */}
       {preview.modelRoles.length > 0 && (
         <FlatSurface
-          label={SURFACE_LABEL.modelRoles}
+          label={t('erratanet.agentConfig.modelAssignments')}
           tri={flatTri(value.modelRoles, roleKeys)}
           onToggleAll={() => flatToggleAll('modelRoles', roleKeys)}
           items={preview.modelRoles.map((r) => ({

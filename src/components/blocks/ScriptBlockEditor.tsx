@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { componentId } from '@/lib/dom-ids'
+import { useLanguage } from '@/lib/i18n'
 
 // ── Context source ───────────────────────────────────────────────
 //
@@ -55,6 +56,7 @@ export function ScriptBlockEditor({
   /** If present, the expanded view offers a "Show context" pane. */
   context?: ScriptBlockContext
 }) {
+  const { t } = useLanguage()
   const [local, setLocal] = useState(value)
   const savedRef = useRef(value)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -96,7 +98,7 @@ export function ScriptBlockEditor({
         }
       } catch {
         if (id === requestIdRef.current) {
-          setEvalResult({ result: null, error: 'Failed to evaluate script' })
+          setEvalResult({ result: null, error: t('scriptBlock.failedEvaluate') })
           setEvalLoading(false)
         }
       }
@@ -104,7 +106,7 @@ export function ScriptBlockEditor({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [local, storyId])
+  }, [local, storyId, t])
 
   const saveIfDirty = useCallback(() => {
     if (local !== savedRef.current) {
@@ -131,7 +133,7 @@ export function ScriptBlockEditor({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          aria-label="Open expanded editor"
+          aria-label={t('scriptBlock.openExpanded')}
           className="absolute top-1.5 right-1.5 p-1 rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted/50 opacity-0 group-hover/script:opacity-100 focus-visible:opacity-100 transition-opacity"
         >
           <Maximize2 className="size-3" aria-hidden="true" />
@@ -182,6 +184,7 @@ function OutputPane({
   hasInput: boolean
   variant: 'compact' | 'expanded'
 }) {
+  const { t } = useLanguage()
   const hasError = !!evalResult?.error
   const preClass = variant === 'compact'
     ? 'whitespace-pre-wrap text-[0.6875rem] rounded-md p-2.5 max-h-[120px] overflow-y-auto border leading-relaxed font-mono'
@@ -191,12 +194,12 @@ function OutputPane({
     <div>
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-          Output
+          {t('scriptBlock.output')}
         </span>
         {evalLoading && (
           <span className="inline-flex items-center gap-1 text-muted-foreground/50">
             <span className="inline-block size-1 rounded-full bg-primary/50 animate-wisp-breathe" aria-hidden="true" />
-            <span className="text-[0.5625rem] uppercase tracking-[0.15em]">running</span>
+            <span className="text-[0.5625rem] uppercase tracking-[0.15em]">{t('scriptBlock.running')}</span>
           </span>
         )}
       </div>
@@ -210,11 +213,11 @@ function OutputPane({
         </pre>
       ) : !evalLoading && hasInput ? (
         <p className="text-xs font-display italic text-muted-foreground/50 px-1">
-          (no output yet)
+          {t('scriptBlock.noOutputYet')}
         </p>
       ) : !hasInput ? (
         <p className="text-xs font-display italic text-muted-foreground/50 px-1">
-          Write a script — the output will appear here as you type.
+          {t('scriptBlock.writeScriptHint')}
         </p>
       ) : null}
     </div>
@@ -223,9 +226,9 @@ function OutputPane({
 
 // ── Expanded split view ─────────────────────────────────────────
 
-function formatContextLabel(context?: ScriptBlockContext): string {
+function formatContextLabel(context: ScriptBlockContext | undefined, generationLabel: string): string {
   if (!context) return ''
-  if (context.type === 'generation') return 'Generation'
+  if (context.type === 'generation') return generationLabel
   return context.agentName
     .split('.')
     .map(p => p.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
@@ -261,6 +264,7 @@ function ExpandedScriptView({
   context?: ScriptBlockContext
   fragmentHints?: Array<{ id: string; name: string; type: string }>
 }) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [showContext, setShowContext] = useState(false)
   const canShowContext = !!context
@@ -315,7 +319,7 @@ function ExpandedScriptView({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Expanded script editor"
+      aria-label={t('scriptBlock.expandedAria')}
       data-cuelume-surface="bloom"
       className="fixed inset-0 z-50 flex flex-col bg-background animate-onboarding-fade-in"
     >
@@ -324,12 +328,12 @@ function ExpandedScriptView({
       <header className="shrink-0 flex items-start justify-between gap-4 px-6 py-3 border-b border-border/40">
         <div className="min-w-0 flex flex-col gap-0.5">
           <p className="font-display italic text-xl leading-tight text-foreground truncate">
-            {blockName || 'Untitled block'}
+            {blockName || t('scriptBlock.untitledBlock')}
           </p>
           <div className="flex items-center gap-2 text-[0.625rem] uppercase tracking-[0.15em] text-muted-foreground">
             {context && (
               <>
-                <span className="font-medium">{formatContextLabel(context)}</span>
+                <span className="font-medium">{formatContextLabel(context, t('scriptBlock.generation'))}</span>
                 <span aria-hidden="true" className="text-muted-foreground/40">·</span>
               </>
             )}
@@ -362,13 +366,13 @@ function ExpandedScriptView({
                 ? <PanelRightClose className="size-3.5" aria-hidden="true" />
                 : <PanelRightOpen className="size-3.5" aria-hidden="true" />
               }
-              {showContext ? 'Hide context' : 'Show context'}
+              {showContext ? t('scriptBlock.hideContext') : t('scriptBlock.showContext')}
             </button>
           )}
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close expanded editor"
+            aria-label={t('scriptBlock.closeExpanded')}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <X className="size-4" aria-hidden="true" />
@@ -407,13 +411,13 @@ function ExpandedScriptView({
         {showContext && (
           <section
             className="min-h-0 overflow-hidden flex flex-col border-t md:border-t-0 md:border-l border-border/40"
-            aria-label="Full agent context"
+            aria-label={t('scriptBlock.fullAgentContext')}
           >
             {/* Mini-header inside the context pane */}
             <div className="shrink-0 flex items-center justify-between px-4 py-2 border-b border-border/30">
               <div className="flex items-center gap-2">
                 <span className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">
-                  Full context
+                  {t('scriptBlock.fullContext')}
                 </span>
                 {previewLoading && (
                   <span className="inline-block size-1 rounded-full bg-primary/50 animate-wisp-breathe" aria-hidden="true" />
@@ -422,7 +426,7 @@ function ExpandedScriptView({
               <button
                 type="button"
                 onClick={handleRefreshContext}
-                aria-label="Refresh context"
+                aria-label={t('scriptBlock.refreshContext')}
                 className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors font-display italic focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded px-1.5 py-0.5"
                 disabled={previewLoading}
               >
@@ -430,7 +434,7 @@ function ExpandedScriptView({
                   className={`size-3 ${previewLoading ? 'animate-spinner-rotate' : ''}`}
                   aria-hidden="true"
                 />
-                refresh
+                {t('scriptBlock.refresh')}
               </button>
             </div>
 
@@ -441,7 +445,7 @@ function ExpandedScriptView({
               ) : (
                 <div className="flex-1 flex items-center justify-center p-6">
                   <span className="text-xs font-display italic text-muted-foreground/60">
-                    Loading context…
+                    {t('scriptBlock.loadingContext')}
                   </span>
                 </div>
               )}
@@ -453,10 +457,10 @@ function ExpandedScriptView({
       {/* Footer hint */}
       <footer className="shrink-0 flex items-center justify-between px-6 py-2 border-t border-border/30 text-[0.6875rem] text-muted-foreground/70">
         <span className="font-display italic">
-          Press <kbd className="font-mono text-[0.625rem] px-1 py-0.5 rounded bg-muted/50 not-italic">Esc</kbd> to close
+          {t('scriptBlock.press')} <kbd className="font-mono text-[0.625rem] px-1 py-0.5 rounded bg-muted/50 not-italic">Esc</kbd> {t('scriptBlock.toClose')}
         </span>
         <span className="font-display italic">
-          The preview runs {evalLoading ? 'now' : 'as you type'}.
+          {t('scriptBlock.previewRuns')} {evalLoading ? t('scriptBlock.now') : t('scriptBlock.asYouType')}.
         </span>
       </footer>
     </div>,
@@ -492,6 +496,7 @@ function ContextPane({
 }
 
 export function FragmentReference({ storyId }: { storyId: string }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const branchId = useActiveBranchId(storyId)
@@ -523,7 +528,7 @@ export function FragmentReference({ storyId }: { storyId: string }) {
       >
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         <BookOpen className="size-3" />
-        <span className="font-medium">Fragment Reference</span>
+        <span className="font-medium">{t('scriptBlock.fragmentReference')}</span>
       </button>
 
       {open && (
@@ -533,7 +538,7 @@ export function FragmentReference({ storyId }: { storyId: string }) {
               <Loader2 className="size-3 text-muted-foreground animate-spin" />
             </div>
           ) : grouped.size === 0 ? (
-            <p className="text-[0.625rem] text-muted-foreground/50 italic text-center py-2">No fragments</p>
+            <p className="text-[0.625rem] text-muted-foreground/50 italic text-center py-2">{t('scriptBlock.noFragments')}</p>
           ) : (
             Array.from(grouped.entries()).map(([type, items]) => (
               <div key={type}>
@@ -544,7 +549,7 @@ export function FragmentReference({ storyId }: { storyId: string }) {
                       <button
                         className="flex items-center gap-1 shrink-0"
                         onClick={() => handleCopy(item.id)}
-                        title="Copy ID"
+                        title={t('scriptBlock.copyId')}
                       >
                         <code className="text-[0.625rem] font-mono text-primary/70">{item.id}</code>
                         {copiedId === item.id ? (

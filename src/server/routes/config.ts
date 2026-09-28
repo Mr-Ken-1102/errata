@@ -10,7 +10,11 @@ import {
   maskProviders,
 } from '../config/storage'
 import { ProviderConfigSchema } from '../config/schema'
-import { isGeminiProvider, normalizeGeminiBaseURL } from '../config/provider-urls'
+import {
+  isGeminiProvider,
+  normalizeGeminiBaseURL,
+  normalizeOpenAICompatibleBaseURL,
+} from '../config/provider-urls'
 import {
   createOpenRouterOAuthAuthorizationUrl,
   ensureOpenRouterOAuthCallbackBridge,
@@ -59,9 +63,8 @@ async function fetchProviderModels(provider: {
     return { models }
   }
 
-  const base = provider.baseURL.replace(/\/+$/, '')
-
-  const url = /\/v\d+$/.test(base) ? `${base}/models` : `${base}/v1/models`
+  const base = normalizeOpenAICompatibleBaseURL(provider.baseURL)
+  const url = `${base}/models`
   const res = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${provider.apiKey}`,
@@ -143,8 +146,8 @@ async function testProviderConnection(
       return { ok: true, reply }
     }
 
-    const base = baseURL.replace(/\/+$/, '')
-    const url = /\/v\d+$/.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`
+    const base = normalizeOpenAICompatibleBaseURL(baseURL)
+    const url = `${base}/chat/completions`
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...customHeaders },

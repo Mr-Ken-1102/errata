@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Trash2, Star, Pencil, RefreshCw, Loader2, X, ArrowLeft, Minus, Zap, Copy, KeyRound } from 'lucide-react'
 import { EmptyHint, Hint } from '@/components/ui/prose-text'
 import { randomToken } from '@/lib/client-ids'
+import { useLanguage } from '@/lib/i18n'
 
 const PRESETS = {
   deepseek: { name: 'DeepSeek', baseURL: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-flash', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
@@ -40,6 +41,7 @@ const emptyForm: FormState = { preset: 'deepseek', name: 'DeepSeek', baseURL: 'h
  * Shows providers with a "Manage Providers" button that opens the full panel.
  */
 export function ProviderList({ onManage }: { onManage: () => void }) {
+  const { t } = useLanguage()
   const { data: config } = useQuery({
     queryKey: ['global-config'],
     queryFn: () => api.config.getProviders(),
@@ -51,20 +53,20 @@ export function ProviderList({ onManage }: { onManage: () => void }) {
   return (
     <div className="space-y-2">
       {providers.length === 0 ? (
-        <EmptyHint>No providers configured. Using DeepSeek via environment variable.</EmptyHint>
+        <EmptyHint>{t('providers.noConfiguredFallback')}</EmptyHint>
       ) : (
         providers.map((p) => (
           <div key={p.id} className="flex items-center gap-1.5 py-0.5">
             <span className="text-sm truncate">{p.name}</span>
             {defaultId === p.id && (
-              <span className="text-[0.625rem] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full shrink-0">default</span>
+              <span className="text-[0.625rem] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full shrink-0">{t('providers.defaultBadge')}</span>
             )}
             <span className="text-[0.6875rem] text-muted-foreground truncate ml-auto">{p.defaultModel}</span>
           </div>
         ))
       )}
       <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 w-full" onClick={onManage} data-component-id="provider-list-manage">
-        Manage Providers
+        {t('providers.manage')}
       </Button>
     </div>
   )
@@ -75,6 +77,7 @@ export function ProviderList({ onManage }: { onManage: () => void }) {
  */
 export function ProviderPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [fetchedModels, setFetchedModels] = useState<ModelOption[]>([])
@@ -139,7 +142,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
     try {
       const result = await api.config.startOpenRouterOAuth()
       window.open(result.authUrl, '_blank', 'noopener,noreferrer')
-      setOauthStatus({ type: 'success', message: 'Authorize OpenRouter in the new window. When it says connected, return here.' })
+      setOauthStatus({ type: 'success', message: t('providers.openRouterAuthorize') })
 
       let attempts = 0
       const poll = window.setInterval(async () => {
@@ -151,7 +154,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
         }
       }, 2000)
     } catch (err) {
-      setOauthStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to start OpenRouter sign-in.' })
+      setOauthStatus({ type: 'error', message: err instanceof Error ? err.message : t('providers.openRouterFailed') })
     } finally {
       setOauthStarting(false)
     }
@@ -216,7 +219,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
         }
       }
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Failed to fetch models')
+      setFetchError(err instanceof Error ? err.message : t('providers.fetchModelsFailed'))
     } finally {
       setFetchingModels(false)
     }
@@ -224,7 +227,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
 
   const handleTestConnection = async () => {
     if (!form || !form.defaultModel) {
-      setTestResult({ ok: false, error: 'Model is required to test' })
+      setTestResult({ ok: false, error: t('providers.modelRequired') })
       return
     }
     // Editing a saved provider leaves the key field blank, so there is nothing on
@@ -233,7 +236,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
     // result says so, rather than reporting a pass for settings the user changed.
     const useStored = !form.apiKey && !!editingId
     if (!useStored && (!form.baseURL || !form.apiKey)) {
-      setTestResult({ ok: false, error: 'Base URL and API Key are required' })
+      setTestResult({ ok: false, error: t('providers.baseUrlApiKeyRequired') })
       return
     }
     setTesting(true)
@@ -250,7 +253,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
         })
       setTestResult(result)
     } catch (err) {
-      setTestResult({ ok: false, error: err instanceof Error ? err.message : 'Test failed' })
+      setTestResult({ ok: false, error: err instanceof Error ? err.message : t('providers.testFailed') })
     } finally {
       setTesting(false)
     }
@@ -308,9 +311,9 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
               <ArrowLeft className="size-4" />
             </Button>
           )}
-          <h2 className="font-display text-lg">Providers</h2>
+          <h2 className="font-display text-lg">{t('providers.heading')}</h2>
           <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">
-            {form ? (editingId ? 'Edit' : 'Add New') : 'LLM Configuration'}
+            {form ? (editingId ? t('providers.edit') : t('providers.addNew')) : t('providers.llmConfiguration')}
           </span>
         </div>
         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={onClose} data-component-id="provider-panel-close">
@@ -328,7 +331,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button type="button" size="sm" className="gap-1.5" onClick={connectOpenRouter} disabled={oauthStarting}>
                       {oauthStarting ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
-                      Connect OpenRouter
+                      {t('providers.connectOpenRouter')}
                     </Button>
                   </div>
                   {oauthStatus && (
@@ -345,7 +348,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
             {/* Preset selector (only for new providers) */}
             {!editingId && (
               <div>
-                <label className={labelClass}>Preset</label>
+                <label className={labelClass}>{t('providers.preset')}</label>
                 <select
                   value={form.preset}
                   onChange={(e) => handlePresetChange(e.target.value as PresetKey)}
@@ -360,7 +363,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                   <option value="kimi-code">Kimi Code</option>
                   <option value="openrouter">OpenRouter</option>
                   <option value="zai">Z.AI</option>
-                  <option value="custom">Custom</option>
+                  <option value="custom">{t('providers.custom')}</option>
                 </select>
               </div>
             )}
@@ -368,16 +371,16 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
             {/* Two-column layout for name + base URL */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>Name</label>
+                <label className={labelClass}>{t('providers.name')}</label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className={inputClass}
-                  placeholder="Provider name"
+                  placeholder={t('providers.namePlaceholder')}
                 />
               </div>
               <div>
-                <label className={labelClass}>Base URL</label>
+                <label className={labelClass}>{t('providers.baseUrl')}</label>
                 <input
                   value={form.baseURL}
                   onChange={(e) => setForm({ ...form, baseURL: e.target.value })}
@@ -389,30 +392,30 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
 
             {/* API Key */}
             <div>
-              <label className={labelClass}>API Key</label>
+              <label className={labelClass}>{t('providers.apiKey')}</label>
               <input
                 type="password"
                 value={form.apiKey}
                 onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
                 className={inputClass}
-                placeholder={editingId ? 'Leave blank to keep current key' : 'Enter API key'}
+                placeholder={editingId ? t('providers.keepCurrentKey') : t('providers.enterApiKey')}
               />
             </div>
 
             {/* Custom Headers */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className={labelClass + ' !mb-0'}>Custom Headers</label>
+                <label className={labelClass + ' !mb-0'}>{t('providers.customHeaders')}</label>
                 <button
                   type="button"
                   className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground flex items-center gap-0.5 transition-colors"
                   onClick={() => setForm({ ...form, customHeaders: [...form.customHeaders, { key: '', value: '', _id: randomToken() }] })}
                 >
-                  <Plus className="size-3" /> Add
+                  <Plus className="size-3" /> {t('providers.add')}
                 </button>
               </div>
               {form.customHeaders.length === 0 ? (
-                <p className="text-[0.6875rem] text-muted-foreground italic">No custom headers</p>
+                <p className="text-[0.6875rem] text-muted-foreground italic">{t('providers.noCustomHeaders')}</p>
               ) : (
                 <div className="space-y-1.5">
                   {form.customHeaders.map((header, i) => (
@@ -425,7 +428,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                           setForm({ ...form, customHeaders: next })
                         }}
                         className={inputClass + ' flex-1'}
-                        placeholder="Header name"
+                        placeholder={t('providers.headerName')}
                       />
                       <input
                         value={header.value}
@@ -435,7 +438,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                           setForm({ ...form, customHeaders: next })
                         }}
                         className={inputClass + ' flex-[2]'}
-                        placeholder="Value"
+                        placeholder={t('providers.headerValue')}
                       />
                       <Button
                         type="button"
@@ -457,7 +460,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
 
             {/* Default Model with fetch */}
             <div>
-              <label className={labelClass}>Default Model</label>
+              <label className={labelClass}>{t('providers.defaultModel')}</label>
               <div className="flex gap-2">
                 {fetchedModels.length > 0 && !useCustomModel ? (
                   <select
@@ -466,11 +469,11 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                     className={inputClass + ' flex-1'}
                   >
                     {!fetchedModels.some(m => m.id === form.defaultModel) && form.defaultModel && (
-                      <option value={form.defaultModel}>{form.defaultModel} (current)</option>
+                      <option value={form.defaultModel}>{form.defaultModel} ({t('providers.current')})</option>
                     )}
                     {fetchedModels.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.id}{m.isFree ? ' (free)' : m.owned_by ? ` (${m.owned_by})` : ''}
+                        {m.id}{m.isFree ? ` (${t('providers.free')})` : m.owned_by ? ` (${m.owned_by})` : ''}
                       </option>
                     ))}
                   </select>
@@ -491,14 +494,14 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                   disabled={fetchingModels}
                 >
                   {fetchingModels ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
-                  Fetch Models
+                  {t('providers.fetchModels')}
                 </Button>
               </div>
               {(() => {
                 const suggested = (PRESETS[form.preset as keyof typeof PRESETS] as { models?: readonly string[] } | undefined)?.models ?? []
                 return suggested.length > 0 ? (
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mr-0.5">Suggested</span>
+                    <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mr-0.5">{t('providers.suggested')}</span>
                     {suggested.map((m) => (
                       <button
                         key={m}
@@ -518,20 +521,20 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                   className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground mt-1 underline"
                   onClick={() => setUseCustomModel(!useCustomModel)}
                 >
-                  {useCustomModel ? 'Use fetched models' : 'Enter model ID manually'}
+                  {useCustomModel ? t('providers.useFetchedModels') : t('providers.enterModelManually')}
                 </button>
               )}
               {fetchError && (
                 <p className="text-xs text-destructive mt-1">{fetchError}</p>
               )}
               {fetchedModels.length > 0 && !fetchError && (
-                <p className="text-[0.6875rem] text-muted-foreground mt-1">{fetchedModels.length} models available</p>
+                <p className="text-[0.6875rem] text-muted-foreground mt-1">{fetchedModels.length} {t('providers.modelsAvailable')}</p>
               )}
             </div>
 
             {/* Temperature */}
             <div>
-              <label className={labelClass}>Temperature</label>
+              <label className={labelClass}>{t('providers.temperature')}</label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -541,7 +544,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                   value={form.temperature}
                   onChange={(e) => setForm({ ...form, temperature: e.target.value })}
                   className={inputClass + ' w-32'}
-                  placeholder="Default"
+                  placeholder={t('providers.defaultPlaceholder')}
                 />
                 {form.temperature !== '' && (
                   <button
@@ -549,12 +552,12 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                     className="text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors"
                     onClick={() => setForm({ ...form, temperature: '' })}
                   >
-                    Reset
+                    {t('providers.reset')}
                   </button>
                 )}
               </div>
               <p className="text-[0.6875rem] text-muted-foreground mt-1">
-                Controls randomness (0 = deterministic, 2 = most creative). Leave empty for model default.
+                {t('providers.temperatureDescription')}
               </p>
             </div>
 
@@ -565,7 +568,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                 disabled={!canSubmit || isSaving}
                 data-component-id="provider-form-submit"
               >
-                {isSaving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Provider'}
+                {isSaving ? t('providers.saving') : editingId ? t('providers.saveChanges') : t('providers.addProvider')}
               </Button>
               <Button
                 variant="outline"
@@ -575,20 +578,20 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                 data-component-id="provider-form-test"
               >
                 {testing ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
-                Test
+                {t('providers.test')}
               </Button>
-              <Button variant="outline" onClick={closeForm} data-component-id="provider-form-cancel">Cancel</Button>
+              <Button variant="outline" onClick={closeForm} data-component-id="provider-form-cancel">{t('providers.cancel')}</Button>
             </div>
             {testResult && (
               <div className={`text-sm rounded-md p-3 mt-1 ${testResult.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
                 {testResult.ok ? (
-                  <p><span className="font-medium">Success:</span> {testResult.reply}</p>
+                  <p><span className="font-medium">{t('providers.success')}:</span> {testResult.reply}</p>
                 ) : (
-                  <p><span className="font-medium">Error:</span> {testResult.error}</p>
+                  <p><span className="font-medium">{t('providers.error')}:</span> {testResult.error}</p>
                 )}
                 {testResult.scope === 'stored' && (
                   <p className="mt-1 opacity-80">
-                    Tested this provider’s saved settings. Enter the API key above to test unsaved changes.
+                    {t('providers.storedSettingsTested')}
                   </p>
                 )}
               </div>
@@ -601,10 +604,10 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
           <div className="max-w-2xl mx-auto p-6 space-y-2">
             {providers.length === 0 && (
               <div className="text-center py-12">
-                <EmptyHint size="sm" className="mb-4">No providers configured.</EmptyHint>
-                <Hint className="mb-6">Using DeepSeek via environment variable as fallback.</Hint>
+                <EmptyHint size="sm" className="mb-4">{t('providers.noConfigured')}</EmptyHint>
+                <Hint className="mb-6">{t('providers.envFallback')}</Hint>
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={openAdd}>
-                  <Plus className="size-3" /> Add your first provider
+                  <Plus className="size-3" /> {t('providers.addFirst')}
                 </Button>
               </div>
             )}
@@ -615,34 +618,34 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{p.name}</span>
                     {defaultId === p.id && (
-                      <span className="text-[0.625rem] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">default</span>
+                      <span className="text-[0.625rem] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{t('providers.defaultBadge')}</span>
                     )}
                     {p.preset !== 'custom' && (
                       <span className="text-[0.625rem] text-muted-foreground">{p.preset}</span>
                     )}
                   </div>
                   <div className="text-[0.6875rem] text-muted-foreground mt-0.5 flex gap-3">
-                    <span>Model: {p.defaultModel}</span>
+                    <span>{t('providers.model')}: {p.defaultModel}</span>
                     <span>URL: {p.baseURL}</span>
-                    <span>Key: {p.apiKey}</span>
+                    <span>{t('providers.key')}: {p.apiKey}</span>
                     {p.customHeaders && Object.keys(p.customHeaders).length > 0 && (
-                      <span>{Object.keys(p.customHeaders).length} custom header{Object.keys(p.customHeaders).length !== 1 ? 's' : ''}</span>
+                      <span>{Object.keys(p.customHeaders).length} {t('providers.customHeaderCount')}</span>
                     )}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                   {defaultId !== p.id && (
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Set as default" onClick={() => setDefaultMutation.mutate(p.id)}>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title={t('providers.setDefault')} onClick={() => setDefaultMutation.mutate(p.id)}>
                       <Star className="size-3.5" />
                     </Button>
                   )}
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(p)}>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title={t('providers.edit')} onClick={() => openEdit(p)}>
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Duplicate" onClick={() => duplicateMutation.mutate(p.id)} disabled={duplicateMutation.isPending}>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title={t('providers.duplicate')} onClick={() => duplicateMutation.mutate(p.id)} disabled={duplicateMutation.isPending}>
                     <Copy className="size-3.5" />
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" title="Delete" onClick={() => deleteMutation.mutate(p.id)}>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" title={t('providers.delete')} onClick={() => deleteMutation.mutate(p.id)}>
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
@@ -652,7 +655,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
             {providers.length > 0 && (
               <div className="pt-2">
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={openAdd}>
-                  <Plus className="size-3" /> Add Provider
+                  <Plus className="size-3" /> {t('providers.addProvider')}
                 </Button>
               </div>
             )}
@@ -663,7 +666,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
       {/* Creator */}
       <div className="px-6 py-3 border-t border-border/30 text-center">
         <span className="text-[0.625rem] text-muted-foreground">
-          built by{' '}
+          {t('providers.builtBy')}{' '}
           <a
             href="https://github.com/tealios/"
             target="_blank"

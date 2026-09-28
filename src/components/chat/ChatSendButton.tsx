@@ -1,5 +1,6 @@
 import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useLanguage } from '@/lib/i18n'
 
 /** The two composer scales in use: the sidebar panel and the full-width view. */
 const SIZES = {
@@ -33,6 +34,7 @@ export function ChatSendButton({
   idPrefix,
   size = 'sm',
 }: ChatSendButtonProps) {
+  const { t } = useLanguage()
   const scale = SIZES[size]
 
   if (isStreaming) {
@@ -56,7 +58,7 @@ export function ChatSendButton({
       className={`${scale.button} shrink-0`}
       disabled={!canSend}
       onClick={onSend}
-      aria-label="Send message"
+      aria-label={t('chat.sendMessage')}
       data-component-id={`${idPrefix}-send`}
     >
       <Send className={scale.send} aria-hidden />

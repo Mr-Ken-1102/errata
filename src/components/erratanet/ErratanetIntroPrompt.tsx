@@ -10,9 +10,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useLanguage } from '@/lib/i18n'
 
 export function ErratanetIntroPrompt() {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
   const [dismissed, setDismissed] = useState(false)
 
   const { data: enetConfig } = useQuery({
@@ -53,19 +55,17 @@ export function ErratanetIntroPrompt() {
         data-component-id="erratanet-intro-prompt"
       >
         <DialogHeader>
-          <DialogTitle className="font-display text-xl italic">Try ErrataNet?</DialogTitle>
+          <DialogTitle className="font-display text-xl italic">{t('erratanet.intro.title')}</DialogTitle>
           <DialogDescription className="leading-relaxed">
-            ErrataNet lets you publish your stories and packs, and install community
-            character cards, guidelines, and worldbuilding. It stays hidden until you
-            turn it on. You can change this anytime in Settings, Remote.
+            {t('erratanet.intro.description')}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="ghost" onClick={handleNotNow} disabled={mutation.isPending}>
-            Not now
+            {t('erratanet.intro.notNow')}
           </Button>
           <Button onClick={handleEnable} disabled={mutation.isPending}>
-            Enable ErrataNet
+            {t('erratanet.intro.enable')}
           </Button>
         </DialogFooter>
       </DialogContent>

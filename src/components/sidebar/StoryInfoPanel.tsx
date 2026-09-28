@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Pencil, Download, Package, Wand2, FileText, ImagePlus, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { UsageSnapshot, UsageEntry } from '@/lib/api/token-usage'
+import { useLanguage, type AppLanguage, type TranslationKey } from '@/lib/i18n'
 
 interface StoryInfoPanelProps {
   storyId: string
@@ -27,27 +28,29 @@ function formatNumber(n: number): string {
   return String(n)
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, language: AppLanguage): string {
   const d = new Date(dateStr)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US'
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string, t: (key: TranslationKey) => string): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
   const diff = now - then
   const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1) return t('storyInfo.justNow')
+  if (mins < 60) return `${mins}${t('storyInfo.minutesAgoSuffix')}`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return `${hours}${t('storyInfo.hoursAgoSuffix')}`
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
+  if (days < 30) return `${days}${t('storyInfo.daysAgoSuffix')}`
   const months = Math.floor(days / 30)
-  return `${months}mo ago`
+  return `${months}${t('storyInfo.monthsAgoSuffix')}`
 }
 
 export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDownloadStory, onExportProse }: StoryInfoPanelProps) {
+  const { language, t } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [editing, setEditing] = useState(false)
@@ -144,7 +147,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       <div className="p-4 space-y-3" data-component-id="story-info-edit">
         {/* Cover Image */}
         <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Cover Image</label>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('storyInfo.coverImage')}</label>
           <input
             ref={coverInputRef}
             type="file"
@@ -158,13 +161,13 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
           />
           {coverImage ? (
             <div className="relative group/cover rounded-lg overflow-hidden" style={{ aspectRatio: '3/4', maxWidth: 160 }}>
-              <img src={coverImage} alt="Cover" className="w-full h-full object-cover" />
+              <img src={coverImage} alt={t('storyInfo.coverAlt')} className="w-full h-full object-cover" />
               <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover/cover:opacity-100 transition-opacity">
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
                   className="size-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-                  title="Change cover"
+                  title={t('storyInfo.changeCover')}
                 >
                   <ImagePlus className="size-3" />
                 </button>
@@ -172,7 +175,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
                   type="button"
                   onClick={() => setCoverImage(null)}
                   className="size-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-                  title="Remove cover"
+                  title={t('storyInfo.removeCover')}
                 >
                   <X className="size-3" />
                 </button>
@@ -185,16 +188,16 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
               className="flex items-center gap-2 rounded-lg border border-dashed border-border/60 hover:border-border transition-colors px-3 py-2.5 w-full text-left"
             >
               <ImagePlus className="size-4 text-muted-foreground/50 shrink-0" />
-              <span className="text-xs text-muted-foreground">Add cover image</span>
+              <span className="text-xs text-muted-foreground">{t('storyInfo.addCoverImage')}</span>
             </button>
           )}
         </div>
         <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Name</label>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('storyInfo.name')}</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-transparent" data-component-id="story-info-name" />
         </div>
         <div>
-          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">Description</label>
+          <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1.5 block">{t('storyInfo.description')}</label>
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -204,10 +207,10 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
         </div>
         <div className="flex gap-1.5">
           <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={updateMutation.isPending} data-component-id="story-info-save">
-            {updateMutation.isPending ? 'Saving...' : 'Save'}
+            {updateMutation.isPending ? t('storyInfo.saving') : t('storyInfo.save')}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={handleCancel} data-component-id="story-info-cancel">
-            Cancel
+            {t('storyInfo.cancel')}
           </Button>
         </div>
       </div>
@@ -236,7 +239,7 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
         {story.description ? (
           <p className="text-[0.8125rem] text-muted-foreground mt-1.5 leading-relaxed">{story.description}</p>
         ) : (
-          <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">No description</p>
+          <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">{t('storyInfo.noDescription')}</p>
         )}
       </div>
 
@@ -246,20 +249,20 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       {/* Stats grid */}
       <div className="px-5 py-4">
         <div className="grid grid-cols-3 gap-x-3 gap-y-3">
-          <StatCell value={formatNumber(stats.wordCount)} label="words" />
-          <StatCell value={String(stats.passages)} label="passages" />
-          <StatCell value={String(stats.generations)} label="generations" />
-          <StatCell value={String(stats.characters)} label="characters" />
-          <StatCell value={String(stats.guidelines)} label="guidelines" />
-          <StatCell value={String(stats.knowledge)} label="knowledge" />
+          <StatCell value={formatNumber(stats.wordCount)} label={t('storyInfo.words')} />
+          <StatCell value={String(stats.passages)} label={t('storyInfo.passages')} />
+          <StatCell value={String(stats.generations)} label={t('storyInfo.generations')} />
+          <StatCell value={String(stats.characters)} label={t('storyInfo.characters')} />
+          <StatCell value={String(stats.guidelines)} label={t('storyInfo.guidelines')} />
+          <StatCell value={String(stats.knowledge)} label={t('storyInfo.knowledge')} />
         </div>
 
         {/* Secondary stats row */}
         <div className="flex gap-4 mt-3 pt-3 border-t border-border/30">
-          <MiniStat label="pinned" value={stats.pinned} />
-          <MiniStat label="archived" value={stats.archived} />
-          <MiniStat label="variations" value={stats.totalVariations} />
-          <MiniStat label="total" value={stats.totalFragments} />
+          <MiniStat label={t('storyInfo.pinned')} value={stats.pinned} />
+          <MiniStat label={t('storyInfo.archived')} value={stats.archived} />
+          <MiniStat label={t('storyInfo.variations')} value={stats.totalVariations} />
+          <MiniStat label={t('storyInfo.total')} value={stats.totalFragments} />
         </div>
 
         {/* Token usage */}
@@ -288,12 +291,12 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       {/* Dates */}
       <div className="px-5 py-4 flex justify-between">
         <div>
-          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">Created</label>
-          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{formatDate(story.createdAt)}</p>
+          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">{t('storyInfo.created')}</label>
+          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{formatDate(story.createdAt, language)}</p>
         </div>
         <div className="text-right">
-          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">Updated</label>
-          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{timeAgo(story.updatedAt)}</p>
+          <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em]">{t('storyInfo.updated')}</label>
+          <p className="text-[0.6875rem] text-muted-foreground mt-0.5 font-mono">{timeAgo(story.updatedAt, t)}</p>
         </div>
       </div>
 
@@ -304,37 +307,37 @@ export function StoryInfoPanel({ storyId, story, onLaunchWizard, onExport, onDow
       <div className="px-5 py-4 grid grid-cols-2 gap-1.5">
         <ActionTile
           icon={Pencil}
-          label="Edit"
-          description="Name & description"
+          label={t('storyInfo.edit')}
+          description={t('storyInfo.editDescription')}
           onClick={() => setEditing(true)}
           dataComponentId="story-info-edit-action"
         />
         <ActionTile
           icon={Package}
-          label="Export"
-          description="Fragments as JSON"
+          label={t('storyInfo.export')}
+          description={t('storyInfo.exportDescription')}
           onClick={() => onExport?.()}
           dataComponentId="story-info-export"
         />
         <ActionTile
           icon={Download}
-          label="Download"
-          description="Full story as one file"
+          label={t('storyInfo.download')}
+          description={t('storyInfo.downloadDescription')}
           onClick={() => onDownloadStory?.()}
           dataComponentId="story-info-download"
         />
         <ActionTile
           icon={FileText}
-          label="Prose"
-          description="Story text as .txt"
+          label={t('storyInfo.prose')}
+          description={t('storyInfo.proseDescription')}
           onClick={() => onExportProse?.()}
           dataComponentId="story-info-prose"
         />
         {onLaunchWizard && (
           <ActionTile
             icon={Wand2}
-            label="Story setup"
-            description="Refine premise and fragments"
+            label={t('storyInfo.storySetup')}
+            description={t('storyInfo.storySetupDescription')}
             onClick={onLaunchWizard}
             dataComponentId="story-info-wizard"
           />
@@ -378,21 +381,22 @@ function ActionTile({ icon: Icon, label, description, onClick, dataComponentId }
   )
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  'generation.writer': 'Writer',
-  'generation.prewriter': 'Prewriter',
-  'librarian.analyze': 'Librarian',
-  'librarian.rollup': 'Memory roll-up',
-  'librarian.chat': 'Librarian chat',
-  'librarian.refine': 'Librarian refine',
-  'librarian.prose-transform': 'Prose transform',
-  'librarian.optimize-character': 'Character optimizer',
-  'directions.suggest': 'Directions',
-  'character-chat.chat': 'Character chat',
+const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
+  'generation.writer': 'storyInfo.source.writer',
+  'generation.prewriter': 'storyInfo.source.prewriter',
+  'librarian.analyze': 'storyInfo.source.librarian',
+  'librarian.rollup': 'storyInfo.source.memoryRollup',
+  'librarian.chat': 'storyInfo.source.librarianChat',
+  'librarian.refine': 'storyInfo.source.librarianRefine',
+  'librarian.prose-transform': 'storyInfo.source.proseTransform',
+  'librarian.optimize-character': 'storyInfo.source.characterOptimizer',
+  'directions.suggest': 'storyInfo.source.directions',
+  'character-chat.chat': 'storyInfo.source.characterChat',
 }
 
-function formatSourceName(source: string): string {
-  return SOURCE_LABELS[source] ?? source
+function formatSourceName(source: string, t: (key: TranslationKey) => string): string {
+  const key = SOURCE_LABEL_KEYS[source]
+  return key ? t(key) : source
 }
 
 function shortModelName(modelId: string): string {
@@ -402,17 +406,19 @@ function shortModelName(modelId: string): string {
 }
 
 function UsageRow({ label, entry, indent }: { label: string; entry: UsageEntry; indent?: boolean }) {
+  const { t } = useLanguage()
   return (
     <div className={`flex items-baseline justify-between ${indent ? 'pl-3' : ''}`}>
       <span className={`text-[0.625rem] text-muted-foreground ${indent ? '' : 'uppercase tracking-wider'} truncate mr-2`}>{label}</span>
       <span className="text-[0.6875rem] font-mono text-foreground/60 whitespace-nowrap shrink-0">
-        {formatNumber(entry.inputTokens)} in &middot; {formatNumber(entry.outputTokens)} out
+        {formatNumber(entry.inputTokens)} {t('storyInfo.inputShort')} &middot; {formatNumber(entry.outputTokens)} {t('storyInfo.outputShort')}
       </span>
     </div>
   )
 }
 
 function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSnapshot }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   if (snapshot.total.calls === 0) return null
 
@@ -433,24 +439,24 @@ function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSna
         }
         <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">{label}</span>
         <span className="text-[0.6875rem] font-mono text-foreground/60 ml-auto whitespace-nowrap">
-          {formatNumber(snapshot.total.inputTokens)} in &middot; {formatNumber(snapshot.total.outputTokens)} out
+          {formatNumber(snapshot.total.inputTokens)} {t('storyInfo.inputShort')} &middot; {formatNumber(snapshot.total.outputTokens)} {t('storyInfo.outputShort')}
         </span>
       </button>
       {expanded && (
         <div className="mt-1 space-y-0.5 ml-1">
           {sources.length > 0 && (
             <>
-              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">By agent</div>
+              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">{t('storyInfo.byAgent')}</div>
               {sources.map(([source, entry]) => (
                 <div key={source}>
-                  <UsageRow label={formatSourceName(source)} entry={entry} indent />
+                  <UsageRow label={formatSourceName(source, t)} entry={entry} indent />
                   {Object.keys(entry.byModel).length > 1 && Object.entries(entry.byModel)
                     .sort((a, b) => (b[1].inputTokens + b[1].outputTokens) - (a[1].inputTokens + a[1].outputTokens))
                     .map(([model, mEntry]) => (
                       <div key={model} className="pl-6 flex items-baseline justify-between opacity-60">
                         <span className="text-[0.5625rem] text-muted-foreground truncate mr-2">{shortModelName(model)}</span>
                         <span className="text-[0.625rem] font-mono text-foreground/50 whitespace-nowrap shrink-0">
-                          {formatNumber(mEntry.inputTokens)} in &middot; {formatNumber(mEntry.outputTokens)} out
+                          {formatNumber(mEntry.inputTokens)} {t('storyInfo.inputShort')} &middot; {formatNumber(mEntry.outputTokens)} {t('storyInfo.outputShort')}
                         </span>
                       </div>
                     ))
@@ -461,7 +467,7 @@ function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSna
           )}
           {models.length > 1 && (
             <>
-              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">By model</div>
+              <div className="text-[0.5625rem] text-muted-foreground/50 uppercase tracking-wider mt-1.5 mb-0.5">{t('storyInfo.byModel')}</div>
               {models.map(([model, entry]) => (
                 <UsageRow key={model} label={shortModelName(model)} entry={entry} indent />
               ))}
@@ -474,18 +480,20 @@ function UsageBreakdown({ label, snapshot }: { label: string; snapshot: UsageSna
 }
 
 function TokenUsageSection({ session, project }: { session: UsageSnapshot; project: UsageSnapshot }) {
+  const { t } = useLanguage()
   return (
     <div className="mt-3 pt-3 border-t border-border/30">
-      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Token Usage</label>
+      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">{t('storyInfo.tokenUsage')}</label>
       <div className="mt-1.5 space-y-1">
-        <UsageBreakdown label="Session" snapshot={session} />
-        <UsageBreakdown label="Project" snapshot={project} />
+<UsageBreakdown label={t('storyInfo.session')} snapshot={session} />
+<UsageBreakdown label={t('storyInfo.project')} snapshot={project} />
       </div>
     </div>
   )
 }
 
 function SummarySection({ summary }: { summary: string | undefined }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [overflows, setOverflows] = useState(false)
@@ -500,15 +508,15 @@ function SummarySection({ summary }: { summary: string | undefined }) {
   if (!summary) {
     return (
       <div className="px-5 py-4">
-        <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Authored memory</label>
-        <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">No authored memory</p>
+        <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">{t('storyInfo.authoredMemory')}</label>
+        <p className="text-[0.8125rem] text-muted-foreground mt-1.5 italic">{t('storyInfo.noAuthoredMemory')}</p>
       </div>
     )
   }
 
   return (
     <div className="px-5 py-4">
-      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">Authored memory</label>
+      <label className="text-[0.5625rem] text-muted-foreground uppercase tracking-[0.15em] font-medium">{t('storyInfo.authoredMemory')}</label>
       <div className="relative">
         <div
           ref={contentRef}
@@ -526,7 +534,7 @@ function SummarySection({ summary }: { summary: string | undefined }) {
             className="text-[0.6875rem] text-muted-foreground hover:text-muted-foreground mt-1 transition-colors"
             data-component-id="story-info-summary-toggle"
           >
-            {expanded ? 'Show less' : 'Read more'}
+            {expanded ? t('storyInfo.showLess') : t('storyInfo.readMore')}
           </button>
         )}
       </div>

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RefsSection, TagsSection } from '@/components/fragments/FragmentEditor'
+import { LANGUAGE_STORAGE_KEY, LanguageProvider } from '@/lib/i18n'
 
 const mocks = vi.hoisted(() => ({
   addTag: vi.fn(),
@@ -41,11 +42,18 @@ function renderWithQuery(child: ReturnType<typeof createElement>) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(createElement(QueryClientProvider, { client }, child))
+  return render(
+    createElement(
+      LanguageProvider,
+      null,
+      createElement(QueryClientProvider, { client }, child),
+    ),
+  )
 }
 
 describe('FragmentEditor IME-safe Enter actions', () => {
   beforeEach(() => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en')
     mocks.addTag.mockReset()
     mocks.addRef.mockReset()
     mocks.addTag.mockResolvedValue({ ok: true })

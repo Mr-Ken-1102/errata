@@ -12,6 +12,7 @@ on:
       - electron-builder.yml
       - build/installer.nsh
       - package.json
+      - bun.lock
       - .github/workflows/windows-desktop-smoke.yml
   workflow_dispatch:
 
@@ -25,9 +26,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
 
       - name: Validate start.bat
         shell: cmd

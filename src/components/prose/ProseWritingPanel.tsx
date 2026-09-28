@@ -28,6 +28,7 @@ import {
 import { useWritingTransforms, useTransformContext, TRANSFORM_CONTEXT_CHARS } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { Caption } from '@/components/ui/prose-text'
+import { useLanguage, type TranslationKey } from '@/lib/i18n'
 
 type SelectionTransformMode = 'rewrite' | 'expand' | 'compress' | 'custom'
 
@@ -135,12 +136,12 @@ const PassageItem = memo(function PassageItem({
   )
 })
 
-function SaveIndicator({ saveState, isDirty }: { saveState: 'idle' | 'saving' | 'saved'; isDirty: boolean }) {
+function SaveIndicator({ saveState, isDirty, tr }: { saveState: 'idle' | 'saving' | 'saved'; isDirty: boolean; tr: (key: TranslationKey) => string }) {
   if (saveState === 'saving') {
     return (
       <span className="flex items-center gap-1.5 text-[0.625rem] text-muted-foreground animate-in fade-in duration-150">
         <Loader2 className="size-2.5 animate-spin" />
-        <span className="hidden sm:inline">Saving</span>
+        <span className="hidden sm:inline">{tr('proseWriting.saving')}</span>
       </span>
     )
   }
@@ -148,7 +149,7 @@ function SaveIndicator({ saveState, isDirty }: { saveState: 'idle' | 'saving' | 
     return (
       <span className="flex items-center gap-1.5 text-[0.625rem] text-emerald-500/70 animate-in fade-in duration-150">
         <Check className="size-2.5" />
-        <span className="hidden sm:inline">Saved</span>
+        <span className="hidden sm:inline">{tr('proseWriting.saved')}</span>
       </span>
     )
   }
@@ -158,10 +159,10 @@ function SaveIndicator({ saveState, isDirty }: { saveState: 'idle' | 'saving' | 
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1.5 text-[0.625rem] text-amber-500/60">
             <Circle className="size-1.5 fill-current" />
-            <span className="hidden sm:inline">Unsaved</span>
+            <span className="hidden sm:inline">{tr('proseWriting.unsaved')}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Ctrl+S to save</TooltipContent>
+        <TooltipContent side="bottom">{tr('proseWriting.saveShortcut')}</TooltipContent>
       </Tooltip>
     )
   }
@@ -175,6 +176,7 @@ export function ProseWritingPanel({
   onClose,
   onFragmentChange,
 }: ProseWritingPanelProps) {
+  const { t: tr } = useLanguage()
   const queryClient = useQueryClient()
   const branchId = useActiveBranchId(storyId)
   const [isTransformingSelection, setIsTransformingSelection] = useState(false)
@@ -515,7 +517,7 @@ export function ProseWritingPanel({
       }, { branchId })
 
       if (result.status === 'error') {
-        setSelectionTransformReasoning(result.error ?? 'Transform failed')
+        setSelectionTransformReasoning(result.error ?? tr('proseWriting.transformFailed'))
         return
       }
       if (result.status === 'cancelled') return
@@ -600,10 +602,10 @@ export function ProseWritingPanel({
               </Caption>
             ) : (
               <span className="font-display text-sm text-muted-foreground">
-                Writing Panel
+                {tr('proseWriting.writingPanel')}
               </span>
             )}
-            <SaveIndicator saveState={saveState} isDirty={isDirty} />
+            <SaveIndicator saveState={saveState} isDirty={isDirty} tr={tr} />
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {/* Passage navigation */}
@@ -624,7 +626,7 @@ export function ProseWritingPanel({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
-                  {prevFragment ? 'Previous passage (Alt+\u2191)' : 'First passage'}
+                  {prevFragment ? tr('proseWriting.previousPassageShortcut') : tr('proseWriting.firstPassage')}
                 </TooltipContent>
               </Tooltip>
               <span className="text-[0.625rem] font-mono text-muted-foreground tabular-nums min-w-[2.5ch] text-center">
@@ -646,7 +648,7 @@ export function ProseWritingPanel({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
-                  {nextFragment ? 'Next passage (Alt+\u2193)' : 'Last passage'}
+                  {nextFragment ? tr('proseWriting.nextPassageShortcut') : tr('proseWriting.lastPassage')}
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -662,7 +664,7 @@ export function ProseWritingPanel({
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {sidebarCollapsed ? 'Show passages' : 'Hide passages'}
+                {sidebarCollapsed ? tr('proseWriting.showPassages') : tr('proseWriting.hidePassages')}
               </TooltipContent>
             </Tooltip>
 
@@ -718,7 +720,7 @@ export function ProseWritingPanel({
                   disabled={isTransformingSelection || !hasSelection}
                 >
                   {isTransformingSelection && selectionTransformMode === 'rewrite' ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                  Rewrite
+                  {tr('proseWriting.rewrite')}
                 </Button>
                 <Button
                   size="sm"
@@ -728,7 +730,7 @@ export function ProseWritingPanel({
                   disabled={isTransformingSelection || !hasSelection}
                 >
                   {isTransformingSelection && selectionTransformMode === 'expand' ? <Loader2 className="size-3 animate-spin" /> : <Wand2 className="size-3" />}
-                  Expand
+                  {tr('proseWriting.expand')}
                 </Button>
                 <Button
                   size="sm"
@@ -738,7 +740,7 @@ export function ProseWritingPanel({
                   disabled={isTransformingSelection || !hasSelection}
                 >
                   {isTransformingSelection && selectionTransformMode === 'compress' ? <Loader2 className="size-3 animate-spin" /> : <Minimize2 className="size-3" />}
-                  Compress
+                  {tr('proseWriting.compress')}
                 </Button>
                 {showTransformUndo && !isTransformingSelection && (
                   <div className="flex items-center ml-auto pl-1 border-l border-border/30">
@@ -752,7 +754,7 @@ export function ProseWritingPanel({
                       }}
                     >
                       <Undo2 className="size-2.5" />
-                      Undo
+                      {tr('proseWriting.undo')}
                     </Button>
                   </div>
                 )}
@@ -780,10 +782,10 @@ export function ProseWritingPanel({
               {/* Reasoning stream */}
               {(isTransformingSelection || selectionTransformReasoning.trim()) && (
                 <div className="border-t border-border/50 px-2.5 py-2">
-                  <p className="mb-1 text-[0.625rem] uppercase tracking-wide text-muted-foreground">Reasoning</p>
+                  <p className="mb-1 text-[0.625rem] uppercase tracking-wide text-muted-foreground">{tr('proseWriting.reasoning')}</p>
                   <div className="max-h-36 overflow-y-auto overscroll-contain pr-1">
                     <p className="text-[0.6875rem] leading-relaxed text-muted-foreground whitespace-pre-wrap">
-                      {selectionTransformReasoning.trim() || 'Thinking\u2026'}
+                      {selectionTransformReasoning.trim() || tr('proseWriting.thinking')}
                     </p>
                   </div>
                 </div>
@@ -800,7 +802,7 @@ export function ProseWritingPanel({
               <div className="flex items-center gap-2 mb-1">
                 <ChevronUp className="size-3 text-muted-foreground group-hover/ctx:text-muted-foreground transition-colors" />
                 <span className="text-[0.625rem] text-muted-foreground group-hover/ctx:text-muted-foreground transition-colors">
-                  Previous passage
+                  {tr('proseWriting.previousPassage')}
                 </span>
               </div>
               <p className="font-prose text-sm leading-relaxed text-muted-foreground group-hover/ctx:text-muted-foreground transition-colors line-clamp-2">
@@ -826,7 +828,7 @@ export function ProseWritingPanel({
               <div className="flex items-center gap-2 mt-1">
                 <ChevronDown className="size-3 text-muted-foreground group-hover/ctx:text-muted-foreground transition-colors" />
                 <span className="text-[0.625rem] text-muted-foreground group-hover/ctx:text-muted-foreground transition-colors">
-                  Next passage
+                  {tr('proseWriting.nextPassage')}
                 </span>
               </div>
             </button>
@@ -836,7 +838,7 @@ export function ProseWritingPanel({
         {/* Footer */}
         <div className="shrink-0 border-t border-border/30 px-4 py-2 sm:px-6 flex items-center justify-between gap-4">
           <span className="text-[0.625rem] text-muted-foreground hidden sm:inline">
-            Ctrl+S save &middot; Esc close &middot; Alt+&uarr;&darr; passages
+            Ctrl+S {tr('proseWriting.shortcutSave')} &middot; Esc {tr('proseWriting.shortcutClose')} &middot; Alt+&uarr;&darr; {tr('proseWriting.shortcutPassages')}
           </span>
           <span className="text-[0.625rem] text-muted-foreground sm:hidden">
             Ctrl+S &middot; Esc
@@ -846,7 +848,7 @@ export function ProseWritingPanel({
             &middot; {editorStats.chars.toLocaleString()}c
             &middot; ~{editorStats.tokens.toLocaleString()}t
             &middot; {editorStats.paragraphs}&para;
-            &middot; {readingTime(editorStats.words)} read
+            &middot; {readingTime(editorStats.words)} {tr('proseWriting.readLabel')}
           </span>
         </div>
       </div>
@@ -862,7 +864,7 @@ export function ProseWritingPanel({
         <div className="shrink-0 px-3 pt-4 pb-2">
           <div className="flex items-center justify-between mb-2.5">
             <h3 className="text-[0.625rem] uppercase tracking-[0.15em] text-muted-foreground font-medium">
-              Passages
+              {tr('proseWriting.passages')}
             </h3>
             <span className="text-[0.625rem] font-mono text-muted-foreground tabular-nums">
               {proseItems.length}
@@ -875,7 +877,7 @@ export function ProseWritingPanel({
               type="text"
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value)}
-              placeholder="Filter"
+              placeholder={tr('proseWriting.filter')}
               className="w-full bg-muted/30 hover:bg-muted/50 focus:bg-muted/50 border border-transparent focus:border-border/40 rounded-md pl-7 pr-2 py-1.5 text-[0.6875rem] text-foreground placeholder:text-muted-foreground outline-none transition-all"
             />
             {sidebarSearch && (
@@ -923,7 +925,7 @@ export function ProseWritingPanel({
 
             {sidebarSearch && filteredItems.length === 0 && (
               <p className="text-[0.6875rem] text-muted-foreground text-center py-6 italic">
-                No matches
+                {tr('proseWriting.noMatches')}
               </p>
             )}
           </div>

@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
+set "ERRATA_BUN_VERSION=1.4.2"
 set "ERRATA_NODE_VERSION=22.23.2"
 
 rem ============================================================================
@@ -10,7 +11,7 @@ rem Double-click start.bat from an unpacked Errata source checkout.
 rem No preinstalled Git, Node.js, or Bun is required.
 rem
 rem First run:
-rem   - Uses Windows PowerShell to install Bun for the current user when missing.
+rem   - Uses Windows PowerShell to install the project-pinned Bun version when needed.
 rem   - Downloads a verified portable Node.js runtime when Node is missing.
 rem   - Prepares project dependencies using the repository-standard Bun command.
 rem   - Starts the Electron desktop development shell.
@@ -49,10 +50,21 @@ if not exist "package.json" (
   echo [Errata] Keep start.bat in the root of the Errata source folder.
   exit /b 1
 )
+if not exist "bun.lock" (
+  echo [Errata] ERROR: bun.lock was not found next to package.json.
+  echo [Errata] This source checkout cannot reproduce its dependency graph.
+  exit /b 1
+)
 exit /b 0
 
 :find_bun
 set "BUN_EXE="
+if exist "%USERPROFILE%\.bun\bin\bun.exe" (
+  set "BUN_EXE=%USERPROFILE%\.bun\bin\bun.exe"
+  set "PATH=%USERPROFILE%\.bun\bin;%PATH%"
+  exit /b 0
+)
+
 where bun >nul 2>&1
 if not errorlevel 1 (
   for /f "delims=" %%B in ('where bun 2^>nul') do (
@@ -60,13 +72,16 @@ if not errorlevel 1 (
   )
 )
 if defined BUN_EXE exit /b 0
-
-if exist "%USERPROFILE%\.bun\bin\bun.exe" (
-  set "BUN_EXE=%USERPROFILE%\.bun\bin\bun.exe"
-  set "PATH=%USERPROFILE%\.bun\bin;%PATH%"
-  exit /b 0
-)
 exit /b 1
+
+:validate_bun_version
+set "BUN_ACTUAL_VERSION="
+for /f "usebackq delims=" %%V in (`"%BUN_EXE%" --version 2^>nul`) do (
+  if not defined BUN_ACTUAL_VERSION set "BUN_ACTUAL_VERSION=%%V"
+)
+if not defined BUN_ACTUAL_VERSION exit /b 1
+if not "%BUN_ACTUAL_VERSION%"=="%ERRATA_BUN_VERSION%" exit /b 1
+exit /b 0
 
 :find_powershell
 set "POWERSHELL_EXE="
@@ -88,9 +103,9 @@ exit /b 1
 
 :install_bun
 echo.
-echo [Errata] Bun is not installed. First-run setup will install Bun
-echo [Errata] for the current Windows user from https://bun.sh/.
-echo [Errata] Administrator rights are normally not required.
+echo [Errata] Errata requires Bun %ERRATA_BUN_VERSION%.
+echo [Errata] Setup will install that pinned version for the current Windows user
+echo [Errata] from https://bun.sh/. Administrator rights are normally not required.
 echo.
 
 call :find_powershell
@@ -101,9 +116,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [Errata] Installing Bun...
+echo [Errata] Installing Bun %ERRATA_BUN_VERSION%...
 "%POWERSHELL_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Stop'; Invoke-RestMethod 'https://bun.sh/install.ps1' | Invoke-Expression"
+  "$ErrorActionPreference='Stop'; $installer=[scriptblock]::Create((Invoke-RestMethod 'https://bun.sh/install.ps1')); & $installer -Version $env:ERRATA_BUN_VERSION"
 if errorlevel 1 (
   echo [Errata] ERROR: Bun installation failed.
   echo [Errata] Check your internet connection or security software and try again.
@@ -111,14 +126,19 @@ if errorlevel 1 (
 )
 
 set "PATH=%USERPROFILE%\.bun\bin;%PATH%"
-call :find_bun
-if errorlevel 1 (
+set "BUN_EXE=%USERPROFILE%\.bun\bin\bun.exe"
+if not exist "%BUN_EXE%" (
   echo [Errata] ERROR: Bun installer finished, but bun.exe could not be found.
-  echo [Errata] Expected location: "%USERPROFILE%\.bun\bin\bun.exe"
+  echo [Errata] Expected location: "%BUN_EXE%"
+  exit /b 1
+)
+call :validate_bun_version
+if errorlevel 1 (
+  echo [Errata] ERROR: Bun installer did not produce required version %ERRATA_BUN_VERSION%.
   exit /b 1
 )
 
-echo [Errata] Bun installed successfully.
+echo [Errata] Bun %ERRATA_BUN_VERSION% installed successfully.
 exit /b 0
 
 :resolve_node_runtime
@@ -223,13 +243,21 @@ call :find_bun
 if errorlevel 1 (
   call :install_bun
   if errorlevel 1 goto :fatal
+) else (
+  call :validate_bun_version
+  if errorlevel 1 (
+    echo.
+    echo [Errata] Installed Bun does not match required version %ERRATA_BUN_VERSION%.
+    call :install_bun
+    if errorlevel 1 goto :fatal
+  )
 )
 
 echo.
-echo [Errata] Bun: "%BUN_EXE%"
-"%BUN_EXE%" --version
+echo [Errata] Bun: "%BUN_EXE%" ^(%ERRATA_BUN_VERSION%^)
+call :validate_bun_version
 if errorlevel 1 (
-  echo [Errata] ERROR: Bun was found but could not execute.
+  echo [Errata] ERROR: Required Bun %ERRATA_BUN_VERSION% could not be verified.
   goto :fatal
 )
 
@@ -246,17 +274,22 @@ if errorlevel 1 (
   goto :fatal
 )
 
-echo.
-echo [Errata] Preparing dependencies...
-echo [Errata] This may take a few minutes on the first run.
-"%BUN_EXE%" install --frozen-lockfile
-if errorlevel 1 (
-  echo.
-  echo [Errata] ERROR: Dependency installation failed.
-  echo [Errata] Check your internet connection and available disk space.
+if not exist "bun.lock" (
+  echo [Errata] ERROR: bun.lock is missing.
+  echo [Errata] This checkout cannot perform a reproducible dependency install.
   goto :fatal
 )
 
+echo.
+echo [Errata] Verifying locked dependencies...
+echo [Errata] Bun will reuse current packages when they already match bun.lock.
+"%BUN_EXE%" install --frozen-lockfile
+if errorlevel 1 (
+  echo.
+  echo [Errata] ERROR: Locked dependency installation failed.
+  echo [Errata] package.json and bun.lock may be inconsistent, or files may be in use.
+  goto :fatal
+)
 if /I "%ERRATA_MODE%"=="web" goto :web
 goto :desktop
 
@@ -317,14 +350,15 @@ call :find_bun
 if errorlevel 1 (
   set "BUN_AVAILABLE=0"
   echo [Errata] Bun: NOT INSTALLED
-  echo [Errata] Default desktop/web mode will install it automatically when PowerShell is available.
+  echo [Errata] Default desktop/web mode will install Bun %ERRATA_BUN_VERSION% when PowerShell is available.
 ) else (
-  echo [Errata] Bun: "%BUN_EXE%"
-  "%BUN_EXE%" --version
+  call :validate_bun_version
   if errorlevel 1 (
-    echo [Errata] ERROR: Bun exists but could not execute.
+    echo [Errata] ERROR: Installed Bun does not match required version %ERRATA_BUN_VERSION%.
+    echo [Errata] Default desktop/web mode can install the pinned version automatically.
     exit /b 1
   )
+  echo [Errata] Bun: "%BUN_EXE%" ^(%ERRATA_BUN_VERSION%^)
 )
 
 set "NODE_AVAILABLE=1"

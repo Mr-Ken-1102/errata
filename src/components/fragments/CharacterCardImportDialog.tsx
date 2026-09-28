@@ -28,7 +28,8 @@ import {
   Loader2,
   Link as LinkIcon,
 } from 'lucide-react'
-import { FragmentTypeDisplayIcon, getFragmentTypeVisual } from '@/components/fragments/fragment-type-icons'
+import { FragmentTypeDisplayIcon } from '@/components/fragments/fragment-type-icons'
+import { useLanguage } from '@/lib/i18n'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -48,17 +49,17 @@ interface CharacterCardImportDialogProps {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const TYPE_CONFIG: Record<ImportableItemType, { label: string; className: string }> = {
-  character: { label: getFragmentTypeVisual('character').singularLabel, className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  knowledge: { label: getFragmentTypeVisual('knowledge').singularLabel, className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-  guideline: { label: getFragmentTypeVisual('guideline').singularLabel, className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  prose: { label: getFragmentTypeVisual('prose').singularLabel, className: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
+const TYPE_CONFIG: Record<ImportableItemType, { className: string }> = {
+  character: { className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  knowledge: { className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  guideline: { className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  prose: { className: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
 }
 
 const SOURCE_GROUPS = [
-  { key: 'character', label: 'Character', sources: ['main-character'] as const },
-  { key: 'extras', label: 'Card Extras', sources: ['scenario', 'first-message', 'system-prompt'] as const },
-  { key: 'lorebook', label: 'Lorebook', sources: ['lorebook-entry'] as const },
+  { key: 'character', sources: ['main-character'] as const },
+  { key: 'extras', sources: ['scenario', 'first-message', 'system-prompt'] as const },
+  { key: 'lorebook', sources: ['lorebook-entry'] as const },
 ] as const
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ export function CharacterCardImportDialog({
   imageDataUrl,
   onImported,
 }: CharacterCardImportDialogProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const urlInputRef = useRef<HTMLInputElement>(null)
 
@@ -115,12 +117,12 @@ export function CharacterCardImportDialog({
       if (parsed) {
         loadCard(parsed)
       } else {
-        setParseError('This file does not contain a recognized character card format.')
+        setParseError(t('characterCardImport.unrecognizedFile'))
       }
     } catch {
-      setParseError('Could not read file.')
+      setParseError(t('characterCardImport.readFileFailed'))
     }
-  }, [loadCard])
+  }, [loadCard, t])
 
   const handleUrlFetch = useCallback(async () => {
     const url = urlInputRef.current?.value?.trim()
@@ -137,14 +139,14 @@ export function CharacterCardImportDialog({
       if (parsed) {
         loadCard(parsed)
       } else {
-        setUrlError('Response is not a recognized character card format.')
+        setUrlError(t('characterCardImport.unrecognizedResponse'))
       }
     } catch (err) {
-      setUrlError(err instanceof Error ? err.message : 'Failed to fetch URL.')
+      setUrlError(err instanceof Error ? err.message : t('characterCardImport.fetchFailed'))
     } finally {
       setUrlFetching(false)
     }
-  }, [loadCard])
+  }, [loadCard, t])
 
   const handleUrlKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -261,21 +263,21 @@ export function CharacterCardImportDialog({
         </Badge>
       )}
       {cardData.card.creator && (
-        <span className="text-muted-foreground">by {cardData.card.creator}</span>
+        <span className="text-muted-foreground">{t('characterCardImport.by')} {cardData.card.creator}</span>
       )}
       <span className="text-muted-foreground ml-auto tabular-nums">
-        {totalCount} {totalCount === 1 ? 'entry' : 'entries'}
+        {totalCount} {totalCount === 1 ? t('characterCardImport.entryOne') : t('characterCardImport.entryMany')}
       </span>
     </span>
   ) : (
-    'JSON character card with optional lorebook entries'
+    t('characterCardImport.description')
   )
 
   return (
     <FileDropDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Import Character Card"
+      title={t('characterCardImport.title')}
       description={description}
       contentClassName={`transition-[max-width] duration-300 ${hasCard ? 'max-w-2xl' : 'max-w-[480px]'}`}
     >
@@ -284,14 +286,14 @@ export function CharacterCardImportDialog({
           <FileDropDialog.Dropzone
             onFiles={handleFiles}
             accept=".json,application/json"
-            label="Drop character card JSON"
-            hint="V2 or V3 character card .json files"
+            label={t('characterCardImport.dropLabel')}
+            hint={t('characterCardImport.dropHint')}
             icon={<BookOpen className="size-7" aria-hidden="true" />}
           />
 
           <div className="flex items-center gap-2">
             <div className="h-px flex-1 bg-border/30" />
-            <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">or paste URL</span>
+            <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">{t('characterCardImport.orPasteUrl')}</span>
             <div className="h-px flex-1 bg-border/30" />
           </div>
 
@@ -318,7 +320,7 @@ export function CharacterCardImportDialog({
               ) : (
                 <Globe className="size-3.5" />
               )}
-              Fetch
+              {t('characterCardImport.fetch')}
             </Button>
           </div>
         </>
@@ -349,17 +351,17 @@ export function CharacterCardImportDialog({
               onClick={selectAll}
               className="text-primary/60 hover:text-primary transition-colors"
             >
-              Select all
+              {t('characterCardImport.selectAll')}
             </button>
             <span className="text-border/60">/</span>
             <button
               onClick={deselectAll}
               className="text-muted-foreground hover:text-muted-foreground transition-colors"
             >
-              Deselect all
+              {t('characterCardImport.deselectAll')}
             </button>
             <span className="ml-auto text-muted-foreground tabular-nums">
-              {selectedCount} selected
+              {selectedCount} {t('characterCardImport.selected')}
             </span>
           </div>
 
@@ -375,7 +377,7 @@ export function CharacterCardImportDialog({
                   <div key={group.key}>
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground font-medium">
-                        {group.label}
+                        {t(group.key === 'character' ? 'characterCardImport.groupCharacter' : group.key === 'extras' ? 'characterCardImport.groupExtras' : 'characterCardImport.groupLorebook')}
                       </span>
                       <div className="h-px flex-1 bg-border/20" />
                       {group.key === 'lorebook' && (
@@ -406,14 +408,14 @@ export function CharacterCardImportDialog({
       <FileDropDialog.Errors>{parseError || urlError}</FileDropDialog.Errors>
 
       {importMutation.isError && (
-        <FileDropDialog.Errors>Import failed. Please try again.</FileDropDialog.Errors>
+        <FileDropDialog.Errors>{t('characterCardImport.importFailed')}</FileDropDialog.Errors>
       )}
 
       <FileDropDialog.Actions
-        meta={hasCard ? `${selectedCount} of ${totalCount} selected` : undefined}
+        meta={hasCard ? t('characterCardImport.selectedMeta').replace('{selected}', String(selectedCount)).replace('{total}', String(totalCount)) : undefined}
       >
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onOpenChange(false)}>
-          Cancel
+          {t('characterCardImport.cancel')}
         </Button>
         {hasCard && (
           <Button
@@ -425,12 +427,12 @@ export function CharacterCardImportDialog({
             {importMutation.isPending ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" />
-                Importing…
+                {t('characterCardImport.importing')}
               </>
             ) : (
               <>
                 <Check className="size-3.5" />
-                Import {selectedCount} {selectedCount === 1 ? 'Entry' : 'Entries'}
+                {selectedCount === 1 ? t('characterCardImport.importOne').replace('{count}', String(selectedCount)) : t('characterCardImport.importMany').replace('{count}', String(selectedCount))}
               </>
             )}
           </Button>
@@ -453,8 +455,15 @@ function ItemRow({
   onToggle: () => void
   onTypeChange: (type: ImportableItemType) => void
 }) {
+  const { t } = useLanguage()
   const activeType = state.typeOverride ?? item.suggestedType
   const config = TYPE_CONFIG[activeType]
+  const typeLabels: Record<ImportableItemType, string> = {
+    character: t('characterCardImport.typeCharacter'),
+    knowledge: t('characterCardImport.typeKnowledge'),
+    guideline: t('characterCardImport.typeGuideline'),
+    prose: t('characterCardImport.typeProse'),
+  }
 
   return (
     <div
@@ -512,20 +521,20 @@ function ItemRow({
             className={`shrink-0 flex items-center gap-1 text-[0.625rem] h-5 px-1.5 rounded-md border transition-colors ${config.className} hover:opacity-80`}
           >
             <FragmentTypeDisplayIcon type={activeType} className="size-3" />
-            <span>{config.label}</span>
+            <span>{typeLabels[activeType]}</span>
             <ChevronDown className="size-2.5 opacity-50" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[140px]">
           {(Object.entries(TYPE_CONFIG) as Array<[ImportableItemType, typeof TYPE_CONFIG.character]>).map(
-            ([type, cfg]) => (
+            ([type]) => (
               <DropdownMenuItem
                 key={type}
                 onClick={(e) => { e.stopPropagation(); onTypeChange(type) }}
                 className="gap-2 text-xs"
               >
                 <FragmentTypeDisplayIcon type={type} className="size-3.5" />
-                {cfg.label}
+                {typeLabels[type]}
                 {type === activeType && <Check className="size-3 ml-auto text-primary" />}
               </DropdownMenuItem>
             ),

@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { EmptyHint } from '@/components/ui/prose-text'
 import { cn } from '@/lib/utils'
 import { AgentConfigImportView } from './AgentConfigImportView'
+import { useLanguage } from '@/lib/i18n'
 import {
   X,
   ArrowLeft,
@@ -33,12 +34,6 @@ interface ErratanetBrowserPanelProps {
 type InstallTarget = 'this-story' | 'new-story'
 type KindFilter = 'all' | 'story' | 'fragment-pack' | 'agent-config'
 
-const KIND_FILTERS: { value: KindFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'story', label: 'Stories' },
-  { value: 'fragment-pack', label: 'Packs' },
-  { value: 'agent-config', label: 'Configs' },
-]
 
 /**
  * Parse a typed reference into a global pack id + optional version.
@@ -83,6 +78,13 @@ function splitIdVersion(ref: string, fallbackVersion?: string): { id: string; ve
 
 export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPanelProps) {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
+  const kindFilters = [
+    { value: 'all' as KindFilter, label: t('erratanet.browser.filterAll') },
+    { value: 'story' as KindFilter, label: t('erratanet.browser.filterStories') },
+    { value: 'fragment-pack' as KindFilter, label: t('erratanet.browser.filterPacks') },
+    { value: 'agent-config' as KindFilter, label: t('erratanet.browser.filterConfigs') },
+  ]
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ErratanetPackSummary[] | null>(null)
@@ -112,12 +114,12 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
         | { results?: ErratanetPackSummary[] }
       setResults(Array.isArray(res) ? res : res.results ?? [])
     } catch (err) {
-      setSearchError(err instanceof Error ? err.message : 'Search failed.')
+      setSearchError(err instanceof Error ? err.message : t('erratanet.browser.searchFailed'))
       setResults(null)
     } finally {
       setSearching(false)
     }
-  }, [query])
+  }, [query, t])
 
   const openPack = useCallback(
     async (id: string, version?: string) => {
@@ -139,28 +141,28 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
         // current story when one is in scope.
         setTarget(pack.contentKind === 'story' || !storyId ? 'new-story' : 'this-story')
       } catch (err) {
-        setPackError(err instanceof Error ? err.message : 'Could not load pack.')
+        setPackError(err instanceof Error ? err.message : t('erratanet.browser.loadPackFailed'))
         setSelected(null)
       } finally {
         setLoadingPack(false)
       }
     },
-    [storyId],
+    [storyId, t],
   )
 
   const handleDirectInstall = useCallback(() => {
     setDirectError(null)
     const parsed = parsePackRef(directRef)
     if (!parsed) {
-      setDirectError('Enter @user/pack, @user/pack@version, or a full pack URL.')
+      setDirectError(t('erratanet.browser.invalidReference'))
       return
     }
     openPack(parsed.id, parsed.version)
-  }, [directRef, openPack])
+  }, [directRef, openPack, t])
 
   const installMutation = useMutation({
     mutationFn: async () => {
-      if (!selected) throw new Error('No pack selected.')
+      if (!selected) throw new Error(t('erratanet.browser.noPackSelected'))
       const asNewStory = selected.contentKind === 'story' || target === 'new-story'
       return api.erratanet.install({
         id: selected.id,
@@ -180,14 +182,15 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
         queryClient.invalidateQueries({ queryKey: ['fragments', storyId] })
         queryClient.invalidateQueries({ queryKey: ['proseChain', storyId] })
       }
-      const where = res.createdStory ? 'a new story' : 'this story'
+      const where = res.createdStory ? t('erratanet.browser.newStoryLower') : t('erratanet.browser.thisStoryLower')
+      const unit = res.fragmentCount === 1 ? t('erratanet.browser.fragment') : t('erratanet.browser.fragments')
       setInstallResult({
         ok: true,
-        message: `Installed ${res.fragmentCount} ${res.fragmentCount === 1 ? 'fragment' : 'fragments'} into ${where}.`,
+        message: `${t('erratanet.browser.installed')} ${res.fragmentCount} ${unit} ${t('erratanet.browser.into')} ${where}.`,
       })
     },
     onError: (err) => {
-      setInstallResult({ ok: false, message: err instanceof Error ? err.message : 'Install failed.' })
+      setInstallResult({ ok: false, message: err instanceof Error ? err.message : t('erratanet.browser.installFailed') })
     },
   })
 
@@ -221,9 +224,9 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
               <ArrowLeft className="size-4" />
             </Button>
           )}
-          <h2 className="font-display text-lg">Browse and Install Packs</h2>
+          <h2 className="font-display text-lg">{t('erratanet.browser.title')}</h2>
           <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">
-            {configRef ? 'Import Config' : selected ? 'Pack Detail' : 'ErrataNet'}
+            {configRef ? t('erratanet.browser.importConfig') : selected ? t('erratanet.browser.packDetail') : 'ErrataNet'}
           </span>
         </div>
         <Button
@@ -254,7 +257,7 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
           <div className="max-w-2xl mx-auto p-6 space-y-6">
             {/* Search */}
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Search</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('erratanet.browser.search')}</label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
@@ -262,13 +265,13 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') runSearch() }}
-                    placeholder="Find packs, stories, and agent configs"
+                    placeholder={t('erratanet.browser.searchPlaceholder')}
                     className="pl-8"
                   />
                 </div>
                 <Button onClick={runSearch} disabled={searching || !query.trim()} className="gap-1.5 shrink-0">
                   {searching ? <Loader2 className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
-                  Search
+                  {t('erratanet.browser.search')}
                 </Button>
               </div>
               {searchError && <p className="text-xs text-destructive mt-2">{searchError}</p>}
@@ -276,7 +279,7 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
 
             {/* Install by reference */}
             <div className="rounded-md border border-border/30 bg-accent/10 p-3">
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Install by reference</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('erratanet.browser.installByReference')}</label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
@@ -284,7 +287,7 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
                     value={directRef}
                     onChange={(e) => setDirectRef(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleDirectInstall() }}
-                    placeholder="@user/pack@version or full URL"
+                    placeholder={t('erratanet.browser.referencePlaceholder')}
                     className="pl-8 font-mono text-xs"
                   />
                 </div>
@@ -295,7 +298,7 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
                   className="gap-1.5 shrink-0"
                 >
                   {loadingPack ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                  Open
+                  {t('erratanet.browser.open')}
                 </Button>
               </div>
               {directError && <p className="text-xs text-destructive mt-2">{directError}</p>}
@@ -306,7 +309,7 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
             {/* Kind filter (over the mixed search results) */}
             {results && results.length > 0 && (
               <div className="flex w-fit gap-[3px] rounded-lg bg-muted/25 p-[3px]">
-                {KIND_FILTERS.map((k) => {
+                {kindFilters.map((k) => {
                   const count =
                     k.value === 'all' ? results.length : results.filter((r) => r.contentKind === k.value).length
                   return (
@@ -331,11 +334,11 @@ export function ErratanetBrowserPanel({ storyId, onClose }: ErratanetBrowserPane
             <div className="space-y-2">
               {visibleResults === null ? (
                 <EmptyHint className="py-8 text-center block">
-                  Search the hub to discover fragment packs, stories, and agent configs.
+                  {t('erratanet.browser.emptySearchHint')}
                 </EmptyHint>
               ) : visibleResults.length === 0 ? (
                 <EmptyHint className="py-8 text-center block">
-                  {results && results.length > 0 ? 'Nothing of this kind in the results.' : 'No packs matched that search.'}
+                  {results && results.length > 0 ? t('erratanet.browser.nothingOfKind') : t('erratanet.browser.noMatches')}
                 </EmptyHint>
               ) : (
                 visibleResults.map((r) => (
@@ -364,6 +367,7 @@ function ResultRow({
   onSelect: () => void
   busy: boolean
 }) {
+  const { t } = useLanguage()
   const isStory = result.contentKind === 'story'
   const isConfig = result.contentKind === 'agent-config'
   const runsCode = result.agentConfig?.hasScripts ?? result.capabilities?.includes('scripts') ?? false
@@ -389,10 +393,10 @@ function ResultRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{result.title}</span>
-          <Badge variant="secondary" className="text-[0.5625rem] h-4 shrink-0">{isConfig ? 'config' : isStory ? 'story' : 'pack'}</Badge>
+          <Badge variant="secondary" className="text-[0.5625rem] h-4 shrink-0">{isConfig ? t('erratanet.browser.configBadge') : isStory ? t('erratanet.browser.storyBadge') : t('erratanet.browser.packBadge')}</Badge>
           {runsCode && (
             <span className="inline-flex items-center gap-0.5 rounded border border-amber-500/40 px-1 font-mono text-[0.5625rem] lowercase text-amber-600 dark:text-amber-400 shrink-0">
-              <Code2 className="size-2.5" /> code
+              <Code2 className="size-2.5" /> {t('erratanet.browser.codeBadge')}
             </span>
           )}
           {result.nsfw && (
@@ -412,14 +416,14 @@ function ResultRow({
           {isConfig ? (
             result.agentConfig ? (
               <span className="text-[0.5625rem] text-muted-foreground tabular-nums mr-0.5">
-                {result.agentConfig.blockCount} {result.agentConfig.blockCount === 1 ? 'block' : 'blocks'}
-                {result.agentConfig.agents.length > 0 ? ` · tunes ${result.agentConfig.agents.length}` : ''}
+                {result.agentConfig.blockCount} {result.agentConfig.blockCount === 1 ? t('erratanet.browser.block') : t('erratanet.browser.blocks')}
+                {result.agentConfig.agents.length > 0 ? ` · ${t('erratanet.browser.tunes')} ${result.agentConfig.agents.length}` : ''}
               </span>
             ) : null
           ) : (
             <>
               <span className="text-[0.5625rem] text-muted-foreground tabular-nums mr-0.5">
-                {result.fragmentCount ?? 0} {result.fragmentCount === 1 ? 'fragment' : 'fragments'}
+                {result.fragmentCount ?? 0} {result.fragmentCount === 1 ? t('erratanet.browser.fragment') : t('erratanet.browser.fragments')}
               </span>
               {(result.fragmentTypes ?? []).slice(0, 4).map((t) => (
                 <Badge key={t} variant="outline" className="text-[0.5625rem] h-3.5 px-1">{t}</Badge>
@@ -452,6 +456,7 @@ function PackDetailView({
   installing: boolean
   onInstall: () => void
 }) {
+  const { t } = useLanguage()
   const isStory = pack.contentKind === 'story'
   const idParts = useMemo(() => parseGlobalPackId(pack.id), [pack.id])
   const canChooseTarget = !isStory && !!storyId
@@ -475,7 +480,7 @@ function PackDetailView({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-display text-xl leading-tight">{pack.title}</h3>
-                <Badge variant="secondary" className="text-[0.625rem] h-4">{isStory ? 'story' : 'pack'}</Badge>
+                <Badge variant="secondary" className="text-[0.625rem] h-4">{isStory ? t('erratanet.browser.storyBadge') : t('erratanet.browser.packBadge')}</Badge>
                 {pack.nsfw && (
                   <Badge className="text-[0.625rem] h-4 bg-destructive/15 text-destructive border-transparent">nsfw</Badge>
                 )}
@@ -493,16 +498,16 @@ function PackDetailView({
 
           {/* Metadata */}
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <Meta label="Contents">
-              {pack.fragmentCount ?? 0} {pack.fragmentCount === 1 ? 'fragment' : 'fragments'}
+            <Meta label={t('erratanet.browser.contents')}>
+              {pack.fragmentCount ?? 0} {pack.fragmentCount === 1 ? t('erratanet.browser.fragment') : t('erratanet.browser.fragments')}
             </Meta>
-            <Meta label="License">{pack.license || 'unspecified'}</Meta>
+            <Meta label={t('erratanet.browser.license')}>{pack.license || t('erratanet.browser.unspecified')}</Meta>
           </div>
 
           {(pack.fragmentTypes?.length ?? 0) > 0 && (
             <div>
               <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mb-1.5 block">
-                Fragment types
+                {t('erratanet.browser.fragmentTypes')}
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {(pack.fragmentTypes ?? []).map((t) => (
@@ -514,7 +519,7 @@ function PackDetailView({
 
           {(pack.tags?.length ?? 0) > 0 && (
             <div>
-              <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mb-1.5 block">Tags</span>
+              <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mb-1.5 block">{t('erratanet.browser.tags')}</span>
               <div className="flex flex-wrap gap-1.5">
                 {(pack.tags ?? []).map((tag) => (
                   <span key={tag} className="text-[0.6875rem] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/60">#{tag}</span>
@@ -527,32 +532,32 @@ function PackDetailView({
           <div className="flex items-start gap-2 rounded-md border border-border/30 bg-accent/10 px-3 py-2">
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
             <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-              Packs install fragments and assets only. Context configuration and scripts are never imported.
+              {t('erratanet.browser.trustNote')}
             </p>
           </div>
 
           {/* Install target */}
           <div>
-            <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mb-1.5 block">Install to</span>
+            <span className="text-[0.625rem] uppercase tracking-wider text-muted-foreground mb-1.5 block">{t('erratanet.browser.installTo')}</span>
             {isStory ? (
-              <p className="text-xs text-muted-foreground">Stories always install as a new story.</p>
+              <p className="text-xs text-muted-foreground">{t('erratanet.browser.storyAlwaysNew')}</p>
             ) : canChooseTarget ? (
               <div className="grid grid-cols-2 gap-2">
                 <TargetOption
                   active={target === 'this-story'}
-                  title="This story"
-                  subtitle="Add fragments here"
+                  title={t('erratanet.browser.thisStory')}
+                  subtitle={t('erratanet.browser.addFragmentsHere')}
                   onClick={() => onTargetChange('this-story')}
                 />
                 <TargetOption
                   active={target === 'new-story'}
-                  title="New story"
-                  subtitle="Create a fresh story"
+                  title={t('erratanet.browser.newStory')}
+                  subtitle={t('erratanet.browser.createFreshStory')}
                   onClick={() => onTargetChange('new-story')}
                 />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">Fragments install into a new story.</p>
+              <p className="text-xs text-muted-foreground">{t('erratanet.browser.fragmentsIntoNew')}</p>
             )}
           </div>
 
@@ -568,7 +573,7 @@ function PackDetailView({
       <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border/50">
         <Button onClick={onInstall} disabled={installing || installed} className="gap-1.5">
           {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-          {installed ? 'Installed' : isStory ? 'Install as new story' : target === 'new-story' ? 'Install as new story' : 'Install into this story'}
+          {installed ? t('erratanet.browser.installedButton') : isStory ? t('erratanet.browser.installAsNew') : target === 'new-story' ? t('erratanet.browser.installAsNew') : t('erratanet.browser.installIntoThis')}
         </Button>
       </div>
     </>

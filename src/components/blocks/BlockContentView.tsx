@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { componentId } from '@/lib/dom-ids'
 import { EmptyHint } from '@/components/ui/prose-text'
+import { useLanguage } from '@/lib/i18n'
 
 interface BlockContentViewProps {
   messages: Array<{ role: string; content: string }>
@@ -44,12 +45,13 @@ function parseBlockSegments(messages: Array<{ role: string; content: string }>) 
 }
 
 export function BlockContentView({ messages, blocks, tools, className }: BlockContentViewProps) {
+  const { t } = useLanguage()
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const segments = useMemo(() => parseBlockSegments(messages), [messages])
   const hasTools = (tools?.length ?? 0) > 0
-  const enabledToolCount = useMemo(() => tools?.filter((t) => t.enabled).length ?? 0, [tools])
+  const enabledToolCount = useMemo(() => tools?.filter((tool) => tool.enabled).length ?? 0, [tools])
 
   // Build nav groups from explicit blocks list, or fall back to segments
   const navGroups = useMemo(() => {
@@ -64,10 +66,10 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
       groups[groups.length - 1].blocks.push({ id: block.id, name: block.name })
     }
     if (hasTools) {
-      groups.push({ role: 'tools', blocks: [{ id: TOOLS_BLOCK_ID, name: `Tools · ${enabledToolCount}/${tools!.length}` }] })
+      groups.push({ role: 'tools', blocks: [{ id: TOOLS_BLOCK_ID, name: `${t('blockContent.tools')} · ${enabledToolCount}/${tools!.length}` }] })
     }
     return groups
-  }, [blocks, segments, hasTools, enabledToolCount, tools])
+  }, [blocks, segments, hasTools, enabledToolCount, tools, t])
 
   const scrollToBlock = useCallback((blockId: string) => {
     setActiveBlockId(blockId)
@@ -80,7 +82,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
   if (segments.length === 0 && !hasTools) {
     return (
       <div className={cn('flex items-center justify-center py-16', className)}>
-        <EmptyHint>No blocks in context</EmptyHint>
+        <EmptyHint>{t('blockContent.empty')}</EmptyHint>
       </div>
     )
   }
@@ -140,7 +142,7 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
                   </span>
                 )}
                 <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-                  {seg.content.length.toLocaleString()} chars
+                  {seg.content.length.toLocaleString()} {t('blockContent.chars')}
                 </span>
                 <Badge
                   variant="outline"
@@ -166,33 +168,33 @@ export function BlockContentView({ messages, blocks, tools, className }: BlockCo
               )}
             >
               <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/10 border-b border-border/10">
-                <span className="text-[0.625rem] font-medium text-muted-foreground">Tools</span>
+                <span className="text-[0.625rem] font-medium text-muted-foreground">{t('blockContent.tools')}</span>
                 <span className="text-[0.5625rem] text-muted-foreground/70">
-                  sent to the model via the API tool schema
+                  {t('blockContent.toolSchemaHint')}
                 </span>
                 <span className="text-[0.5625rem] text-muted-foreground tabular-nums ml-auto shrink-0">
-                  {enabledToolCount}/{tools!.length} enabled
+                  {enabledToolCount}/{tools!.length} {t('blockContent.enabled')}
                 </span>
               </div>
 
               <div className="p-3 space-y-2">
-                {tools!.map((t) => (
-                  <div key={t.name} className={cn('flex flex-col gap-0.5', !t.enabled && 'opacity-45')}>
+                {tools!.map((tool) => (
+                  <div key={tool.name} className={cn('flex flex-col gap-0.5', !tool.enabled && 'opacity-45')}>
                     <div className="flex items-center gap-2">
-                      <code className={cn('text-[0.6875rem] font-mono text-foreground/90', !t.enabled && 'line-through')}>
-                        {t.name}
+                      <code className={cn('text-[0.6875rem] font-mono text-foreground/90', !tool.enabled && 'line-through')}>
+                        {tool.name}
                       </code>
-                      {!t.enabled && (
+                      {!tool.enabled && (
                         <Badge
                           variant="outline"
                           className="text-[0.5rem] h-3.5 px-1 font-normal border-transparent text-muted-foreground bg-muted/30 shrink-0 uppercase tracking-wide"
                         >
-                          disabled
+                          {t('blockContent.disabled')}
                         </Badge>
                       )}
                     </div>
-                    {t.description && (
-                      <p className="text-[0.625rem] text-muted-foreground leading-relaxed">{t.description}</p>
+                    {tool.description && (
+                      <p className="text-[0.625rem] text-muted-foreground leading-relaxed">{tool.description}</p>
                     )}
                   </div>
                 ))}

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, type Fragment } from '@/lib/api'
 import { qk } from '@/lib/query-keys'
 import { Textarea } from '@/components/ui/textarea'
+import { useLanguage } from '@/lib/i18n'
 
 interface VoiceFieldProps {
   storyId: string
@@ -30,6 +31,7 @@ export function VoiceField({
   fragment,
   disabled,
 }: VoiceFieldProps) {
+  const { t } = useLanguage()
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -89,9 +91,9 @@ export function VoiceField({
   return (
     <div data-component-id="character-voice-field">
       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Voice{' '}
+        {t('voiceField.label')}{' '}
         <span className="normal-case tracking-normal text-muted-foreground">
-          (used when this character is POV)
+          ({t('voiceField.povHint')})
         </span>
       </label>
       <Textarea
@@ -104,7 +106,7 @@ export function VoiceField({
         }}
         onBlur={() => commitRef.current()}
         disabled={disabled || !branchId || saveMutation.isPending}
-        placeholder="Diction, cadence, inner monologue, verbal habits, and how this character perceives the world..."
+        placeholder={t('voiceField.placeholder')}
         className="min-h-[72px] resize-y bg-transparent text-sm"
         data-component-id="character-voice-input"
       />

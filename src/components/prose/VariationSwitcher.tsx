@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { History, Check, ChevronDown } from 'lucide-react'
 import { Caption } from '@/components/ui/prose-text'
+import { useLanguage } from '@/lib/i18n'
 
 interface VariationSwitcherProps {
   storyId: string
@@ -21,6 +22,7 @@ interface VariationSwitcherProps {
 
 export function VariationSwitcher({ storyId, sectionIndex, entry }: VariationSwitcherProps) {
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
 
   const switchMutation = useMutation({
@@ -53,7 +55,7 @@ export function VariationSwitcher({ storyId, sectionIndex, entry }: VariationSwi
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64" data-component-id="variation-switcher-menu">
         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/50 mb-1">
-          Variations
+          {t('proseVariation.variations')}
         </div>
         {entry.proseFragments.map((fragment, idx) => {
           const isActive = fragment.id === entry.active
@@ -71,7 +73,7 @@ export function VariationSwitcher({ storyId, sectionIndex, entry }: VariationSwi
                   </span>
                   {isActive && (
                     <Badge variant="secondary" className="h-4 text-[0.5625rem] px-1">
-                      Active
+                      {t('proseVariation.active')}
                     </Badge>
                   )}
                 </div>

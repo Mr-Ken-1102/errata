@@ -23,6 +23,7 @@ import { PublishPackDialog } from './PublishPackDialog'
 import { ErratanetBrowserPanel } from './ErratanetBrowserPanel'
 import { AgentConfigSection } from './AgentConfigSection'
 import { PackLink } from './PackLink'
+import { useLanguage } from '@/lib/i18n'
 
 const DEFAULT_HUB = 'https://errata.tealios.com'
 
@@ -48,6 +49,7 @@ interface ErratanetPanelProps {
  */
 export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps) {
   const qc = useQueryClient()
+  const { t } = useLanguage()
   const branchId = useActiveBranchId(storyId)
 
   const { data: config } = useQuery({
@@ -101,12 +103,12 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
             <>
               <Divider />
               <section>
-                <Label>This story</Label>
+                <Label>{t('erratanet.panel.thisStory')}</Label>
                 {publishedAs ? (
                   <div className="space-y-3">
                     <div className="rounded-lg border border-border/40 bg-card/40 px-3.5 py-3">
                       <p className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">
-                        Published as
+                        {t('erratanet.panel.publishedAs')}
                       </p>
                       <PackLink pack={publishedAs.pack} hubUrl={config?.hubUrl} className="mt-1 text-[0.8125rem]" />
                       <p className="mt-0.5 font-mono text-[0.6875rem] text-muted-foreground">
@@ -115,21 +117,20 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
                     </div>
                     <Button className="w-full gap-2" onClick={() => setPublishOpen(true)}>
                       <ArrowUpFromLine className="size-4" />
-                      Sync update
+                      {t('erratanet.panel.syncUpdate')}
                     </Button>
                     <p className="text-[0.6875rem] leading-snug text-muted-foreground">
-                      Publishes your current prose chain and fragments as a new version of this pack.
+                      {t('erratanet.panel.syncUpdateDescription')}
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <p className="text-[0.75rem] leading-snug text-muted-foreground">
-                      This story is not on the hub yet. Publishing sends the whole story: branches,
-                      prose chain, and fragments.
+                      {t('erratanet.panel.notPublishedDescription')}
                     </p>
                     <Button className="w-full gap-2" onClick={() => setPublishOpen(true)}>
                       <UploadCloud className="size-4" />
-                      Publish story
+                      {t('erratanet.panel.publishStory')}
                     </Button>
                   </div>
                 )}
@@ -138,7 +139,7 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
                 {fragmentPacks.length > 0 && (
                   <div className="mt-4 space-y-2">
                     <p className="text-[0.625rem] uppercase tracking-wider text-muted-foreground">
-                      Fragment packs
+                      {t('erratanet.panel.fragmentPacks')}
                     </p>
                     {fragmentPacks.map((fp) => {
                       const resolved = fp.fragmentIds
@@ -153,8 +154,8 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
                           <div className="min-w-0 flex-1">
                             <PackLink pack={fp.pack} hubUrl={config?.hubUrl} className="text-[0.75rem]" />
                             <p className="font-mono text-[0.625rem] text-muted-foreground">
-                              v{fp.version} · {resolved.length} fragment{resolved.length === 1 ? '' : 's'}
-                              {missing > 0 ? ` · ${missing} missing` : ''}
+                              v{fp.version} · {resolved.length} {resolved.length === 1 ? t('erratanet.panel.fragment') : t('erratanet.panel.fragments')}
+                              {missing > 0 ? ` · ${missing} ${t('erratanet.panel.missing')}` : ''}
                             </p>
                           </div>
                           <Button
@@ -165,7 +166,7 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
                             onClick={() => setSyncPack({ pack: fp.pack, fragments: resolved })}
                           >
                             <ArrowUpFromLine className="size-3" />
-                            Sync
+                            {t('erratanet.panel.sync')}
                           </Button>
                         </div>
                       )
@@ -179,7 +180,7 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
                   onClick={() => onExport?.()}
                 >
                   <UploadCloud className="size-3.5" />
-                  Publish a fragment pack instead
+                  {t('erratanet.panel.publishFragmentPack')}
                 </Button>
               </section>
 
@@ -195,13 +196,13 @@ export function ErratanetPanel({ storyId, story, onExport }: ErratanetPanelProps
 
           <Divider />
           <section>
-            <Label>Discover</Label>
+            <Label>{t('erratanet.panel.discover')}</Label>
             <Button variant="outline" className="w-full gap-2" onClick={() => setBrowseOpen(true)}>
               <Search className="size-4" />
-              Browse and Install Packs
+              {t('erratanet.panel.browseInstall')}
             </Button>
             <p className="mt-2 text-[0.6875rem] leading-snug text-muted-foreground">
-              Find character cards, guideline packs, stories, and agent configs. No account needed to browse.
+              {t('erratanet.panel.discoverDescription')}
             </p>
           </section>
         </div>
@@ -264,6 +265,7 @@ function AccountBlock({
   handle: string | undefined
   qc: ReturnType<typeof useQueryClient>
 }) {
+  const { t } = useLanguage()
   const [hubUrl, setHubUrl] = useState('')
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -273,7 +275,7 @@ function AccountBlock({
 
   const hubUrlValue = hubUrl || config?.hubUrl || DEFAULT_HUB
   const registerUrl = `${hubUrlValue.trim().replace(/\/+$/, '')}/register`
-  const onError = (e: unknown) => setError(e instanceof Error ? e.message : 'Request failed.')
+  const onError = (e: unknown) => setError(e instanceof Error ? e.message : t('erratanet.account.requestFailed'))
 
   const loginMut = useMutation({
     mutationFn: (data: { hubUrl: string; identifier: string; password: string }) =>
@@ -282,7 +284,7 @@ function AccountBlock({
       qc.invalidateQueries({ queryKey: ['erratanet-config'] })
       qc.setQueryData(['erratanet-account'], acct)
       setPassword('')
-      setError(acct.connected ? null : acct.error ?? 'Could not log in.')
+      setError(acct.connected ? null : acct.error ?? t('erratanet.account.loginFailed'))
     },
     onError,
   })
@@ -297,7 +299,7 @@ function AccountBlock({
       qc.setQueryData(['erratanet-config'], cfg)
       qc.setQueryData(['erratanet-account'], acct)
       setToken('')
-      setError(acct.connected ? null : acct.error ?? 'Could not verify the token.')
+      setError(acct.connected ? null : acct.error ?? t('erratanet.account.tokenVerifyFailed'))
     },
     onError,
   })
@@ -319,7 +321,7 @@ function AccountBlock({
   if (connected) {
     return (
       <section>
-        <Label>Account</Label>
+        <Label>{t('erratanet.account.heading')}</Label>
         <div className="flex items-start gap-2.5">
           <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
             <Library className="size-3.5" />
@@ -342,7 +344,7 @@ function AccountBlock({
             ) : (
               <LogOut className="size-3" />
             )}
-            Sign out
+            {t('erratanet.account.signOut')}
           </Button>
         </div>
       </section>
@@ -351,33 +353,33 @@ function AccountBlock({
 
   const submitLogin = () => {
     const url = hubUrlValue.trim()
-    if (!url) return setError('Enter a hub URL.')
-    if (!identifier.trim()) return setError('Enter your username or email.')
-    if (!password) return setError('Enter your password.')
+    if (!url) return setError(t('erratanet.account.enterHubUrl'))
+    if (!identifier.trim()) return setError(t('erratanet.account.enterIdentifier'))
+    if (!password) return setError(t('erratanet.account.enterPassword'))
     setError(null)
     loginMut.mutate({ hubUrl: url, identifier: identifier.trim(), password })
   }
 
   const submitToken = () => {
     const url = hubUrlValue.trim()
-    if (!url) return setError('Enter a hub URL.')
-    if (!token.trim()) return setError('Enter an access token.')
+    if (!url) return setError(t('erratanet.account.enterHubUrl'))
+    if (!token.trim()) return setError(t('erratanet.account.enterToken'))
     setError(null)
     connectMut.mutate({ hubUrl: url, token: token.trim() })
   }
 
   return (
     <section>
-      <Label>Account</Label>
+      <Label>{t('erratanet.account.heading')}</Label>
       <p className="mb-3 text-[0.75rem] leading-snug text-muted-foreground">
-        Sign in to publish your stories and packs to the hub.
+        {t('erratanet.account.description')}
       </p>
 
       <div className="space-y-2">
         <Input
           value={hubUrlValue}
           onChange={(e) => setHubUrl(e.target.value)}
-          placeholder="Hub URL"
+          placeholder={t('erratanet.account.hubUrl')}
           autoComplete="off"
           spellCheck={false}
           className="h-9 font-mono text-[0.75rem]"
@@ -388,7 +390,7 @@ function AccountBlock({
             <Input
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="Username or email"
+              placeholder={t('erratanet.account.identifier')}
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
@@ -401,7 +403,7 @@ function AccountBlock({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submitLogin()
               }}
-              placeholder="Password"
+              placeholder={t('erratanet.account.password')}
               autoComplete="current-password"
               className="h-9"
             />
@@ -411,7 +413,7 @@ function AccountBlock({
               onClick={submitLogin}
             >
               {loginMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
-              Log in
+              {t('erratanet.account.logIn')}
             </Button>
             <p className="pt-0.5 text-[0.6875rem] text-muted-foreground">
               <a
@@ -420,7 +422,7 @@ function AccountBlock({
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
               >
-                Create an account
+                {t('erratanet.account.createAccount')}
                 <ExternalLink className="size-3" />
               </a>
               <span className="px-1.5 text-border">·</span>
@@ -432,7 +434,7 @@ function AccountBlock({
                   setError(null)
                 }}
               >
-                Use a token
+                {t('erratanet.account.useToken')}
               </button>
             </p>
           </>
@@ -442,7 +444,7 @@ function AccountBlock({
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="Access token (ern_...)"
+              placeholder={t('erratanet.account.accessTokenPlaceholder')}
               autoComplete="new-password"
               className="h-9 font-mono text-[0.75rem]"
             />
@@ -456,7 +458,7 @@ function AccountBlock({
               ) : (
                 <Plug className="size-4" />
               )}
-              Connect
+              {t('erratanet.account.connect')}
             </Button>
             <p className="pt-0.5 text-[0.6875rem] text-muted-foreground">
               <button
@@ -467,7 +469,7 @@ function AccountBlock({
                   setError(null)
                 }}
               >
-                Log in with a password instead
+                {t('erratanet.account.passwordInstead')}
               </button>
             </p>
           </>

@@ -279,6 +279,20 @@ function completedStepUsageDiagnostics(stepUsages: ToolLoopStepUsage[]): Array<R
   })
 }
 
+function combineTokenUsage(
+  ...usages: Array<{ inputTokens: number; outputTokens: number } | undefined>
+): { inputTokens: number; outputTokens: number } | undefined {
+  const present = usages.filter((usage): usage is { inputTokens: number; outputTokens: number } => usage !== undefined)
+  if (present.length === 0) return undefined
+  return present.reduce(
+    (sum, usage) => ({
+      inputTokens: sum.inputTokens + usage.inputTokens,
+      outputTokens: sum.outputTokens + usage.outputTokens,
+    }),
+    { inputTokens: 0, outputTokens: 0 },
+  )
+}
+
 async function runOnlineAnalyzePass(
   input: LibrarianPipelineInput,
   collector: AnalysisCollector,
@@ -335,7 +349,7 @@ async function runOnlineAnalyzePass(
       sampling,
     })
 
-    const result = await runCompiledToolPass({
+    let result = await runCompiledToolPass({
       compiled,
       model,
       temperature,
@@ -352,20 +366,78 @@ async function runOnlineAnalyzePass(
       abortSignal,
       idleTimeoutMs,
     })
-    const { modelId: servedModelId, usage } = await resolveAndReportServedUsage(
+    const firstReported = await resolveAndReportServedUsage(
       dataDir,
       storyId,
       'librarian.analyze',
       result.totalUsage,
       { providerId, configuredModelId: modelId, servedModelId: result.servedModelId },
     )
-    const toolCallNames = result.toolCalls.map((call) => call.toolName)
-    const workflowComplete = toolCallSucceeded(result.toolCalls, 'finishAnalysis')
+    let servedModelId = firstReported.modelId
+    let usage = firstReported.usage
+    const attempts = [result]
+    const allToolCalls = [...result.toolCalls]
+    const allStepUsages = [...result.stepUsages]
+    const firstReportSucceeded = toolCallSucceeded(result.toolCalls, 'reportAnalysis')
+    const firstWorkflowComplete = toolCallSucceeded(result.toolCalls, 'finishAnalysis')
+
+    // Small/local models sometimes stop after a valid observation instead of
+    // completing the required tail. Retry that tail once with the same tool
+    // closures so accepted report/proposal state remains authoritative. Do not
+    // retry transport/provider errors: those reach the catch path below.
+    if (firstReportSucceeded && !firstWorkflowComplete) {
+      requestLogger.info('Analyze observation completed without finishAnalysis; retrying completion once', {
+        finishReason: result.finishReason,
+        stepCount: result.stepCount,
+        toolCallNames: result.toolCalls.map((call) => call.toolName),
+      })
+      const recoveryCompiled = {
+        ...compiled,
+        messages: compiled.messages.map((message) => message.role === 'user'
+          ? {
+              ...message,
+              content: `${message.content}\n\n## Completion recovery\nA previous attempt already recorded a valid observation but ended before finishAnalysis succeeded. Accepted tool results are retained. Complete only unfinished required or started lanes, then call finishAnalysis. Do not repeat accepted work unless a tool requires a correction.`,
+            }
+          : message),
+      }
+      result = await runCompiledToolPass({
+        compiled: recoveryCompiled,
+        model,
+        temperature,
+        topP,
+        topK,
+        providerOptions,
+        maxOutputTokens: guards.maxOutputTokens,
+        maxSteps: 4,
+        emit,
+        terminalToolName: compiled.tools.finishAnalysis ? 'finishAnalysis' : undefined,
+        // reportAnalysis already succeeded in the first attempt, and the same
+        // tool closures retain that fact for finishAnalysis.
+        terminalRequiresToolName: undefined,
+        abortSignal,
+        idleTimeoutMs,
+      })
+      attempts.push(result)
+      allToolCalls.push(...result.toolCalls)
+      allStepUsages.push(...result.stepUsages)
+      const recoveryReported = await resolveAndReportServedUsage(
+        dataDir,
+        storyId,
+        'librarian.analyze',
+        result.totalUsage,
+        { providerId, configuredModelId: modelId, servedModelId: result.servedModelId },
+      )
+      servedModelId = recoveryReported.modelId
+      usage = combineTokenUsage(usage, recoveryReported.usage)
+    }
+    const toolCallNames = allToolCalls.map((call) => call.toolName)
+    const workflowComplete = toolCallSucceeded(allToolCalls, 'finishAnalysis')
     const proposalToolNames = new Set(['proposeRecordCorrections', 'proposeNewRecords'])
-    const proposalToolResults = result.toolCalls
+    const proposalToolResults = allToolCalls
       .filter((call) => proposalToolNames.has(call.toolName))
       .map((call) => call.result)
-    const stepUsage = completedStepUsageDiagnostics(result.stepUsages)
+    const stepUsage = completedStepUsageDiagnostics(allStepUsages)
+    const stepCount = attempts.reduce((sum, attempt) => sum + attempt.stepCount, 0)
     const durationMs = Date.now() - startTime
     const diagnostics = {
       toolNames: Object.keys(compiled.tools),
@@ -375,6 +447,8 @@ async function runOnlineAnalyzePass(
       outputTokens: usage?.outputTokens,
       sampling,
       stepUsage,
+      attemptCount: attempts.length,
+      recoveryAttempted: attempts.length > 1,
       reportToolCallCount: toolCallNames.filter((name) => name === 'reportAnalysis').length,
       proposalToolCallCount: proposalToolResults.length,
       proposalToolFailureCount: proposalToolResults.filter((result) => booleanToolResultField(result, 'ok') === false).length,
@@ -397,14 +471,14 @@ async function runOnlineAnalyzePass(
       baseURL: config.baseURL,
       headers: Object.keys(requestHeaders),
       finishReason: result.finishReason,
-      stepCount: result.stepCount,
+      stepCount,
       ...diagnostics,
     })
     return {
-      fullText: result.fullText,
-      stepCount: result.stepCount,
+      fullText: attempts.map((attempt) => attempt.fullText).join(''),
+      stepCount,
       finishReason: result.finishReason,
-      toolCalls: result.toolCalls,
+      toolCalls: allToolCalls,
       workflowComplete,
       pass: passRecord({
         name: 'analyze',
@@ -412,7 +486,7 @@ async function runOnlineAnalyzePass(
         startedAt,
         durationMs,
         modelId: servedModelId,
-        stepCount: result.stepCount,
+        stepCount,
         finishReason: result.finishReason,
         ...(!workflowComplete ? { error: 'Analyze ended without a successful finishAnalysis call' } : {}),
         diagnostics,

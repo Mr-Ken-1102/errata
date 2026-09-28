@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Bookmark, Sparkles, ChevronDown, ChevronUp, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { useLanguage } from '@/lib/i18n'
 
 interface ChapterMarkerProps {
   storyId: string
@@ -29,6 +30,7 @@ export const ChapterMarker = memo(function ChapterMarker({
   const [summaryDraft, setSummaryDraft] = useState(fragment.content)
   const titleRef = useRef<HTMLSpanElement>(null)
   const queryClient = useQueryClient()
+  const { t } = useLanguage()
 
   useEffect(() => {
     setSummaryDraft(fragment.content)
@@ -142,7 +144,7 @@ export const ChapterMarker = memo(function ChapterMarker({
               <Pencil className="size-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-[0.625rem]">Edit chapter</TooltipContent>
+          <TooltipContent side="bottom" className="text-[0.625rem]">{t('chapterMarker.editChapter')}</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -159,7 +161,7 @@ export const ChapterMarker = memo(function ChapterMarker({
               )}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-[0.625rem]">Generate summary</TooltipContent>
+          <TooltipContent side="bottom" className="text-[0.625rem]">{t('chapterMarker.generateSummary')}</TooltipContent>
         </Tooltip>
 
         {hasSummary && (
@@ -172,7 +174,7 @@ export const ChapterMarker = memo(function ChapterMarker({
                 {summaryExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-[0.625rem]">{summaryExpanded ? 'Collapse summary' : 'Expand summary'}</TooltipContent>
+            <TooltipContent side="bottom" className="text-[0.625rem]">{summaryExpanded ? t('chapterMarker.collapseSummary') : t('chapterMarker.expandSummary')}</TooltipContent>
           </Tooltip>
         )}
 
@@ -185,7 +187,7 @@ export const ChapterMarker = memo(function ChapterMarker({
               <Trash2 className="size-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-[0.625rem]">Delete chapter</TooltipContent>
+          <TooltipContent side="bottom" className="text-[0.625rem]">{t('chapterMarker.deleteChapter')}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -198,7 +200,7 @@ export const ChapterMarker = memo(function ChapterMarker({
                 value={summaryDraft}
                 onChange={(e) => setSummaryDraft(e.target.value)}
                 className="min-h-[120px] resize-y bg-background/50 text-[0.75rem] leading-relaxed"
-                placeholder="Chapter summary..."
+                placeholder={t('chapterMarker.summaryPlaceholder')}
               />
               <div className="flex justify-center gap-1.5">
                 <Button
@@ -210,7 +212,7 @@ export const ChapterMarker = memo(function ChapterMarker({
                     setIsEditingSummary(false)
                   }}
                 >
-                  Cancel
+                  {t('chapterMarker.cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -218,7 +220,7 @@ export const ChapterMarker = memo(function ChapterMarker({
                   disabled={updateSummaryMutation.isPending}
                   onClick={() => updateSummaryMutation.mutate(summaryDraft.trim())}
                 >
-                  {updateSummaryMutation.isPending ? 'Saving...' : 'Save summary'}
+                  {updateSummaryMutation.isPending ? t('chapterMarker.saving') : t('chapterMarker.saveSummary')}
                 </Button>
               </div>
             </div>
@@ -234,7 +236,7 @@ export const ChapterMarker = memo(function ChapterMarker({
                   className="h-6 text-[0.625rem] text-amber-500/80 hover:text-amber-400 hover:bg-amber-500/10"
                   onClick={() => setIsEditingSummary(true)}
                 >
-                  Edit summary
+                  {t('chapterMarker.editSummary')}
                 </Button>
               </div>
             </>
