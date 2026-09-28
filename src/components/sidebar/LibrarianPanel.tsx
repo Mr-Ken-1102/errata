@@ -539,6 +539,7 @@ function StoryContent({ storyId, status, onOpenChat }: LibrarianPanelProps & { s
               Object.entries(status.recentMentions ?? {}),
               fragmentById,
               customTypeByType,
+              t,
             )
 
             return (
