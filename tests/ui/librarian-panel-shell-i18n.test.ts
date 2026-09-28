@@ -191,4 +191,3 @@ describe('LibrarianPanel shell localization', () => {
     expect(source).toContain('<span className="opacity-70">{pass.status}</span>')
   })
 })
-

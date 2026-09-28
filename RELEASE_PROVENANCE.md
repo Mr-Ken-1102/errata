@@ -9,7 +9,7 @@ This document is the canonical provenance record for the first curated release l
 - SemVer / package version: **1.0.0**
 - Planned Git tag: **v1.0.0**
 - Repository / curator: `Mr-Ken-1102/errata`
-- Provenance prepared: **2026-09-22**
+- Provenance prepared: **2026-09-22**; release-readiness review refreshed: **2026-09-28**
 - License lineage: GPL-2.0, inherited from Errata upstream.
 
 ### Why this release is called v1.0
@@ -21,6 +21,33 @@ line can be numbered and audited independently.
 
 The machine-readable version is `1.0.0` and the Git tag must be `v1.0.0`; the human-facing
 release name may be displayed as **Errata v1.0**.
+
+
+## Current curated release-candidate checkpoint
+
+The latest **functional** checkpoint before the P2.4 documentation/whitespace closeout is:
+
+- Long-lived integration branch: `master-fix`
+- Functional checkpoint: `0598aaa159290eefce122ca003b05067310267be`
+- Functional tree: `5af5b559079de1a118b05281a0c7c9c727983235`
+- Frozen comparison/default branch during P0-P2 work:
+  `master @ 230b87878379ec0290b973fc3e747a63cbd3525b`
+- Integration PR: **#12 — master-fix integration and validation**
+- Package version: **1.0.0**
+- Planned release tag: **v1.0.0**
+- Tag status at this review: **not created**
+- GitHub Release status at this review: **not published**
+
+The P2.4 closeout changes release documentation and two whitespace-only test-file
+hygiene defects; it does not intentionally change application behavior. The final
+release commit is therefore established only after P2.4 exact-head validation,
+expected-head merge into `master-fix`, Owner authorization of P3, and the required
+post-merge validation on the default branch.
+
+Upstream has continued after the audited v1.12.0 baseline. At the 2026-09-28
+release-readiness review, `tealios/errata` `master` was observed at
+`8c3db3a1572726e477f88d6ef3af8fd248fa1a4f`. That newer upstream state is
+**not** silently merged or rebased into this v1.0 release scope.
 
 ## Curated distribution identity and isolation
 
@@ -123,6 +150,17 @@ These commits are useful anchors when auditing or upgrading individual subsystem
 | Best-of merge to master | `332d3f25a89fca529dfe6cdae9431860c44a8269` | 2026-09-22 | PR #2 merge commit; canonical post-integration master before release-prep |
 | Final release-prep HEAD | `a66846cfb9dc403f36dff5775d521036636b5a11` | 2026-09-22 | PR #4 final validated head after Windows installer-location hardening |
 | Release-prep merge to master | `d73b1f305a69ada9ec05121e8faccb4251ef8d1c` | 2026-09-22 | PR #4 merge checkpoint; tree exactly matches the validated release-prep HEAD |
+| Vietnamese UI integration to master-fix | `2500e04` | 2026-09-27 | Integrated the audited Vietnamese UI work into the frozen `master-fix` development line |
+| Story Setup reliability hardening | `40cd254` | 2026-09-27 | Merged structured-snapshot and stream-timing hardening after validation |
+| Strict provider Base URL integration | `9a8d042` | 2026-09-27 | Merged explicit OpenAI-compatible Base URL behavior; invalid unversioned endpoints are not silently repaired |
+| Vietnamese font/onboarding integration | `a009515` | 2026-09-27 | Merged Vietnamese-capable font defaults and onboarding layout stabilization |
+| Librarian analyze recovery | `27af617` | 2026-09-27 | Merged recovery for incomplete analyze-tool tails |
+| Agent UI localization | `bd27768` | 2026-09-28 | Merged localized agent display metadata while preserving model/machine identifiers |
+| P1.4 localization cleanup A | `83c1666` | 2026-09-28 | First exact-head validated final UI cleanup merge |
+| P1.4 localization cleanup B | `91d4a1d` | 2026-09-28 | Second exact-head validated final UI cleanup merge |
+| P1.4 localization cleanup C | `94eb2f72160dfedce38f05c3e692f424773c69f3` | 2026-09-28 | P1.4 closure merge; final classified UI rescan found no actionable leakage |
+| P1.5 manual UX remediation | `ac63ebb4905c0f7529153f79df7a6df036093626` | 2026-09-28 | Closed Settings role-presentation and Remote accessibility findings after runtime re-acceptance |
+| P2.1 reproducible toolchain | `0598aaa159290eefce122ca003b05067310267be` | 2026-09-28 | Merged locked Bun/Vite/Nitro toolchain, tracked `bun.lock`, frozen installs and exact-head CI checkout |
 
 ## Architectural decisions that must survive future upgrades
 
@@ -156,49 +194,94 @@ risk or complexity:
 
 ## Validation lineage and release gates
 
-Before release-prep, the integrated source tree passed:
+The historical 2026-09-22 release-prep validation remains part of the repository
+history, but later `master-fix` work supersedes it as the current release-candidate
+evidence.
 
-- Full Vitest suite: 159 suites, 1,488 tests / 1,491 runs in the latest reporting format.
-- App and desktop TypeScript checks.
-- Architecture boundary checks.
-- Production application build.
-- Windows desktop packaging smoke, including `start.bat check`, Electron packaging,
-  packaged sidecar verification, sidecar boot and HTTP 200 from `/api/health`.
+### P1.4 — localization regression closure
 
-PR #4 release-prep closed all pre-merge release gates on exact HEAD
-`a66846cfb9dc403f36dff5775d521036636b5a11` (tree
-`e8ada2f764d9e178562cf19fd582cec9c29343eb`):
+P1.4 closed/pass after three controlled cleanup merges. The final P1.4 merge
+`94eb2f72160dfedce38f05c3e692f424773c69f3` had a tree byte-identical to the
+validated head. Exact-head CI passed tests, app + desktop typecheck, architecture
+boundaries, production build, Windows desktop smoke, standalone packaging and
+desktop installer dry-runs. The final classified UI hard-code rescan reported no
+actionable user-facing English leakage.
 
-1. **vitest #172** — run ID `35696996552` — **success**. Standard PR CI covered tests,
-   app + desktop typecheck, architecture boundaries and production build.
-2. **Windows desktop smoke #34** — run ID `35696996566` — **success**. It validated
-   `start.bat`, desktop typecheck, unpacked Windows packaging, packaged sidecar presence,
-   sidecar boot and HTTP 200 from `/api/health`.
-3. **Desktop release #3** — run ID `35696996558` — **success**. Non-publishing installer
-   dry-runs passed on `windows-latest`, `ubuntu-latest` and `macos-latest`; the publish job
-   was skipped as intended.
-4. **Release Binary #3** — run ID `35696996573` — **success**. Non-publishing standalone
-   archive dry-runs passed for Windows x64, Linux x64 and macOS ARM64; the publish job was
-   skipped as intended.
+### P1.5 — manual UX acceptance
 
-PR #4 then merged to `master` as
-`d73b1f305a69ada9ec05121e8faccb4251ef8d1c`. The merge commit has the same tree SHA
-`e8ada2f764d9e178562cf19fd582cec9c29343eb` as the validated PR HEAD, so the merge itself
-introduced no executable-source mutation.
+P1.5 exercised the release-binary runtime in isolated data/browser directories across
+the story library, Provider settings, Writer, Story Setup, Librarian, Agent panel,
+Help, Settings, TTS and Remote surfaces. The first pass found one major Settings
+role-presentation localization gap and one minor Remote accessibility label gap.
+Both were remediated in frontend presentation only; server role identifiers,
+provider/model values and machine data were preserved.
 
-Post-merge validation on that exact `master` merge commit also completed successfully:
+The remediation head passed **214 test files / 1,711 tests**, typecheck,
+architecture, production build, Windows desktop smoke, standalone packaging and
+desktop installer matrix. Targeted runtime re-acceptance passed, and merge commit
+`ac63ebb4905c0f7529153f79df7a6df036093626` matched the validated tree.
 
-- **vitest #173** — run ID `35697656773` — **success**.
-- **Test Results #173** — run ID `35697833469` — **success**.
+### P2.1 — reproducible toolchain
 
-Windows desktop smoke and the release dry-run workflows do not automatically run on a normal
-`master` push; their validated PR HEAD and the merge commit are tree-identical, so the release
-packaging evidence above applies to the executable source merged by PR #4.
+P2.1 closed/pass with:
 
-The final documentation-only provenance closeout does not alter application code, packaging,
-workflows or release binaries. The immutable `v1.0.0` Git tag remains the canonical pointer to
-the final reviewed release commit once created; GitHub Actions attached to the relevant commits
-provide the validation evidence above.
+- Bun `1.4.2`
+- Node `>=22.12.0`
+- tracked `bun.lock`
+- Vite `7.3.6`
+- Nitro `3.0.1-20260821-003948-5e7235e6`
+- frozen dependency installs
+- explicit exact-PR-head checkout for validation workflows
+- Windows/Linux/macOS standalone packaging selection
+- improved `start.bat` / legacy `run.bat` diagnostics
+
+The P2.1 successor PR was merged with an expected-head lock as
+`0598aaa159290eefce122ca003b05067310267be`; the post-merge tree matched the
+validated branch tree exactly.
+
+### P2.2 — full CI matrix on canonical master-fix
+
+The canonical checkpoint `0598aaa159290eefce122ca003b05067310267be`
+(tree `5af5b559079de1a118b05281a0c7c9c727983235`) passed:
+
+1. **Vitest #358** — **215 test files / 1,716 tests**.
+2. App + desktop TypeScript checks.
+3. Architecture boundary checks.
+4. Production build.
+5. **Windows desktop smoke #93**.
+6. **Release Binary #48** — Windows x64, Linux x64 and macOS ARM64 dry-runs.
+7. **Desktop release #48** — Windows, Linux and macOS installer dry-runs.
+
+Representative runner logs resolved HEAD directly to `0598aaa...`; the validation
+did not rely on GitHub's synthetic PR merge commit.
+
+### P2.3 — controlled performance comparison
+
+P2.3 compared frozen `master`
+`230b87878379ec0290b973fc3e747a63cbd3525b` with canonical
+`master-fix` `0598aaa...` on one isolated Ubuntu GitHub runner. Both trees
+used Bun 1.4.2 and the same candidate `package.json` + `bun.lock` at runtime so
+dependency drift in frozen `master` could not distort the source/runtime comparison.
+
+The accepted run used three alternating trials per side, 30 measured iterations
+plus five warmups per trial on a synthetic 2,000-prose + 500-non-prose fixture.
+Correctness parity passed in every trial. No core metric met the predeclared
+material-regression rule (>20% slower in all three trials and >5 ms median absolute
+delta). Verdict: **PASS_NO_SIGNIFICANT_REGRESSION**.
+
+### P2.4 / P3 release boundary
+
+P2.4 is the final release-readiness review and documentation/hygiene closeout.
+It must be exact-head validated and merged into `master-fix` before the Owner is
+asked to authorize P3.
+
+The `Test Results` workflow has an attempt-scoped artifact-selection fix in
+`master-fix`, but GitHub `workflow_run` executes the workflow definition from
+the default branch. Therefore its final placement cannot be fully proven until an
+Owner-authorized P3 merge updates default `master`. After that merge, **Vitest +
+Test Results must both succeed before creating or publishing `v1.0.0`**.
+
+No tag or GitHub Release should be created merely because P2.4 passes.
 
 ## How to audit a future upgrade
 
@@ -213,9 +296,21 @@ When importing a newer upstream/fork version:
 6. Never overwrite this v1.0 provenance section; append a new release provenance section or a
    new versioned provenance document so historical traceability remains intact.
 
-## Release-prep note
+## Pre-release note
 
-After PR #4 merged and post-merge validation succeeded, **no `v1.0.0` tag or GitHub Release had
-yet been created**. This documentation-only provenance closeout records the completed evidence
-without changing executable source. The release must only be tagged from the final reviewed
-`master` commit after this closeout is merged and its CI is green.
+At the 2026-09-28 P2.4 review, no `v1.0.0` tag or GitHub Release had been
+created. The functional candidate through P2.3 is `master-fix @ 0598aaa...`;
+P2.4 is a documentation/hygiene closeout only.
+
+The release sequence remains intentionally gated:
+
+1. exact-head CI for the P2.4 remediation;
+2. expected-head merge of that remediation into `master-fix`;
+3. P2.4 readiness re-review;
+4. explicit Owner authorization for P3;
+5. controlled merge of current `master-fix` into default `master`;
+6. post-merge Vitest + `Test Results` verification on the default branch;
+7. only then create/publish `v1.0.0` if the Owner authorizes release publication.
+
+Future provenance must append to this record rather than rewriting the historical
+source lineage above.
