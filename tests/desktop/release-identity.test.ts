@@ -8,7 +8,7 @@ describe('curated desktop release identity', () => {
     const pkg = JSON.parse(read('package.json')) as { version: string }
     const builder = read('electron-builder.yml')
 
-    expect(pkg.version).toBe('1.0.0')
+    expect(pkg.version).toBe('1.0.1')
     expect(builder).toMatch(/^appId: io\.github\.mrken1102\.errata$/m)
     expect(builder).not.toContain('appId: com.viscerous.errata')
     expect(builder).toContain('include: build/installer.nsh')
