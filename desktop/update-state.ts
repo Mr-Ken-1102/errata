@@ -1,5 +1,29 @@
 import type { UpdateInfo } from 'builder-util-runtime'
 
+/** Fail closed: a failed story backup must never start desktop installation. */
+export type InstallUpdateResult =
+  | { ok: true }
+  | { ok: false; stage: 'backup' | 'install'; reason: string }
+
+export async function installAfterBackup(
+  backup: () => Promise<void>,
+  install: () => void,
+): Promise<InstallUpdateResult> {
+  try {
+    await backup()
+  } catch (err) {
+    return { ok: false, stage: 'backup', reason: err instanceof Error ? err.message : String(err) }
+  }
+
+  try {
+    install()
+  } catch (err) {
+    return { ok: false, stage: 'install', reason: err instanceof Error ? err.message : String(err) }
+  }
+
+  return { ok: true }
+}
+
 export type UpdateStatus =
   | 'idle'
   | 'checking'

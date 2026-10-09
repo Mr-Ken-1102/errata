@@ -14,7 +14,7 @@ import { readFile, writeFile, mkdir, cp, readdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { errataDataDir } from './sidecar'
-import { updateMetadata, type UpdateState } from './update-state'
+import { installAfterBackup, updateMetadata, type UpdateState } from './update-state'
 
 export interface UpdatePrefs {
   /** Deprecated. Kept in the bridge shape for compatibility with older renderer builds. */
@@ -99,11 +99,19 @@ async function applyUpdate() {
   if (applying) return
   applying = true
   try {
-    await backupStories()
-  } catch {
-    /* a failed backup should not block a user-requested update */
+    const result = await installAfterBackup(backupStories, () => autoUpdater.quitAndInstall())
+    if (!result.ok) {
+      setState({
+        status: 'error',
+        error: result.stage === 'backup'
+          ? `Update not installed because the story backup failed: ${result.reason}`
+          : `Update installation could not start: ${result.reason}`,
+      })
+    }
+  } finally {
+    // Failed backups and installation attempts must not block later retries.
+    applying = false
   }
-  autoUpdater.quitAndInstall()
 }
 
 function wireUpdaterEvents() {
@@ -212,9 +220,7 @@ export function setupUpdater(window: BrowserWindow) {
     return prefs
   })
 
-  ipcMain.handle('errata:update:install', () => {
-    void applyUpdate()
-  })
+  ipcMain.handle('errata:update:install', () => applyUpdate())
 
   if (!app.isPackaged) return
 

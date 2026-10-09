@@ -40,6 +40,9 @@ jobs:
       - name: Build production application
         run: bunx vite build
 
+      - name: Verify generated routes are synchronized
+        run: git diff --exit-code -- src/routeTree.gen.ts
+
       # Artifacts to be consumed by the Test Results workflow (vitest-results.yml)
 
       - name: Upload test artifacts

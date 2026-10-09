@@ -3,7 +3,15 @@
 All notable changes to Errata are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
-## [1.0.0] — Unreleased
+## [Unreleased]
+
+### Fixed
+- Desktop updates now require a successful story-data backup before installation;
+  backup failures surface an error and allow retry without proceeding unsafely.
+- Release documentation reflects the published v1.0.0 tag, assets and provenance.
+- Generated route declarations are synchronized with the pinned build toolchain.
+
+## [1.0.0] — 2026-09-28 (published)
 
 **Release identity:** **Errata v1.0** is the first curated release line of
 `Mr-Ken-1102/errata`. It is based on upstream `tealios/errata` v1.12.0
