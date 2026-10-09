@@ -113,7 +113,7 @@ Set `DATA_DIR` to control where story data is stored (default: `./data`).
 
 ## Release lineage
 
-The curated `Mr-Ken-1102/errata` release line starts at **Errata v1.0** (`1.0.0`, planned tag `v1.0.0`). This version number identifies the first curated release of this repository; it does **not** erase the older upstream Errata version history.
+The curated `Mr-Ken-1102/errata` release line starts at **Errata v1.0** (`v1.0.0`, published 2026-09-28). The current maintenance version is **v1.0.1** (`1.0.1`), including post-audit safety and build fixes. These curated version numbers identify releases of this repository; they do **not** replace or erase the upstream Errata version history.
 
 For exact source repositories, upstream/fork versions, branch snapshots, commit SHAs, dates, source authors/maintainers, what was selectively ported, what was only used as architectural input, and what was explicitly rejected or reverted, see [RELEASE_PROVENANCE.md](RELEASE_PROVENANCE.md).
 

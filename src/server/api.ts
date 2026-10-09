@@ -51,7 +51,7 @@ export function createApp(dataDir: string = DATA_DIR) {
       documentation: {
         info: {
           title: 'Errata API',
-          version: '1.0.0',
+          version: '1.0.1',
           description: 'AI-assisted writing app built around a fragment system.',
         },
         tags: [

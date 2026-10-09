@@ -3,7 +3,9 @@
 All notable changes to Errata are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
-## [Unreleased]
+## [1.0.1] — 2026-10-09
+
+Maintenance release: post-audit safety fixes from PR #50. No new features or story-data format changes.
 
 ### Fixed
 - Desktop updates now require a successful story-data backup before installation;
