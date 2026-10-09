@@ -7,7 +7,7 @@ This document is the canonical provenance record for the first curated release l
 
 - Product name: **Errata v1.0**
 - SemVer / package version: **1.0.0**
-- Planned Git tag: **v1.0.0**
+- Published Git tag: **v1.0.0**
 - Repository / curator: `Mr-Ken-1102/errata`
 - Provenance prepared: **2026-09-22**; release-readiness review refreshed: **2026-09-28**
 - License lineage: GPL-2.0, inherited from Errata upstream.
@@ -23,7 +23,22 @@ The machine-readable version is `1.0.0` and the Git tag must be `v1.0.0`; the hu
 release name may be displayed as **Errata v1.0**.
 
 
-## Current curated release-candidate checkpoint
+## Verified publication record (2026-10-09)
+
+The checkpoint below documents the **historical pre-publication review**; it no longer
+represents the current GitHub release status. Publication was verified independently:
+
+- Public release: [Errata v1.0](https://github.com/Mr-Ken-1102/errata/releases/tag/v1.0.0)
+- Publication time: **2026-09-28 09:04:55 UTC**
+- Published tag: **`v1.0.0`**, pointing to commit `ecbc97ce5bebc80d83a0ca27df83a312415886db`
+- Released source tree: `e41cfc41dbd5cfc7607260cf0da83bbec70b6745`
+- Assets: **13** (standalone/desktop installers and update metadata)
+- Current `master` after the two post-release signing changes were reverted:
+  `73a3b340c4c939b78e4dc841aa1d611ecc912e4f`, with **the same source tree**.
+- The existing release tag and its assets remain unchanged. Signing/notarization
+  experiments after publication were reverted; they are not part of the v1.0 tree.
+
+## Historical curated release-candidate checkpoint (pre-publication)
 
 The latest **functional** checkpoint before the P2.4 documentation/whitespace closeout is:
 
