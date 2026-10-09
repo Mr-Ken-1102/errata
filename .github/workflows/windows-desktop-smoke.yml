@@ -47,6 +47,10 @@ jobs:
       - name: Package unpacked Windows desktop
         run: bun run electron:pack
 
+      - name: Verify generated routes are synchronized on Windows
+        shell: pwsh
+        run: git diff --exit-code -- src/routeTree.gen.ts
+
       - name: Verify packaged server sidecar
         shell: pwsh
         run: |
